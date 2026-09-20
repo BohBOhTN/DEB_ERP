@@ -3,6 +3,13 @@ internal-docs/
 # macOS
 .DS_Store
 
+# Dependencies and generated output
+node_modules/
+backend/dist/
+frontend/dist/
+coverage/
+*.tsbuildinfo
+
 # Environment and secrets
 .env
 .env.*
