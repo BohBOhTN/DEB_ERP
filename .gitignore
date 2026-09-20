@@ -1,0 +1,10 @@
+internal-docs/
+
+# macOS
+.DS_Store
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
