@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { fetchHealth, type HealthEnvelope } from "../services/health";
+import { getCurrentUser, type CurrentUser } from "../features/auth/authApi";
+import { LoginForm } from "../features/auth/LoginForm";
+import { ProtectedShell } from "../features/shell/ProtectedShell";
 
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; health: HealthEnvelope }
-  | { status: "error" };
+  | { status: "anonymous" }
+  | { status: "authenticated"; user: CurrentUser };
 
 export function App() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -12,15 +14,15 @@ export function App() {
   useEffect(() => {
     let isMounted = true;
 
-    fetchHealth()
-      .then((health) => {
+    getCurrentUser()
+      .then((user) => {
         if (isMounted) {
-          setState({ status: "ready", health });
+          setState({ status: "authenticated", user });
         }
       })
       .catch(() => {
         if (isMounted) {
-          setState({ status: "error" });
+          setState({ status: "anonymous" });
         }
       });
 
@@ -29,47 +31,45 @@ export function App() {
     };
   }, []);
 
-  return (
-    <main className="shell">
-      <section className="intro" aria-labelledby="app-title">
-        <p className="eyebrow">Fondation R0</p>
-        <h1 id="app-title">Dar El Barka</h1>
-        <p className="summary">
-          Base technique prete pour construire la gestion de la boulangerie.
-        </p>
-      </section>
+  if (state.status === "loading") {
+    return (
+      <main className="auth-layout" aria-live="polite">
+        <p>Chargement de la session...</p>
+      </main>
+    );
+  }
 
-      <section className="status-panel" aria-live="polite">
-        <h2>Etat du systeme</h2>
-        {state.status === "loading" ? <p>Verification en cours...</p> : null}
-        {state.status === "error" ? (
-          <p role="alert">
-            Impossible de joindre l'API. Verifiez que le serveur backend est
-            demarre.
-          </p>
-        ) : null}
-        {state.status === "ready" ? (
-          <dl>
-            <div>
-              <dt>API</dt>
-              <dd>
-                {state.health.data.status === "ok" ? "Disponible" : "Limitee"}
-              </dd>
-            </div>
-            <div>
-              <dt>Base de donnees</dt>
-              <dd>
-                {state.health.data.database.status === "ok"
-                  ? "Connectee"
-                  : "Indisponible"}
-              </dd>
-            </div>
-            <div>
-              <dt>Environnement</dt>
-              <dd>{state.health.data.environment}</dd>
-            </div>
-          </dl>
-        ) : null}
+  if (state.status === "authenticated") {
+    return (
+      <ProtectedShell
+        onLogout={() => setState({ status: "anonymous" })}
+        user={state.user}
+      />
+    );
+  }
+
+  return (
+    <main className="auth-layout">
+      <section className="login-panel" aria-labelledby="login-title">
+        <div className="brand-lockup brand-lockup-centered">
+          <img
+            alt="Logo Dar El Barka"
+            className="brand-logo brand-logo-large"
+            src="/assets/dar-el-barka-logo.png"
+          />
+          <div>
+            <p className="eyebrow">Acces securise</p>
+            <h1 id="login-title">Dar El Barka</h1>
+          </div>
+        </div>
+        <p className="summary">
+          Connectez-vous pour acceder a votre espace de travail.
+        </p>
+        <LoginForm
+          onAuthenticated={(user) =>
+            setState({ status: "authenticated", user })
+          }
+        />
       </section>
     </main>
   );

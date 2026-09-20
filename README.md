@@ -1,15 +1,15 @@
 # Dar El Barka Bakery Management System
 
-Dar El Barka is a French-only, mobile-first bakery management web application. This repository is currently in Release R0, Sprint 0: repository and environment foundation.
+Dar El Barka is a French-only, mobile-first bakery management web application. This repository is currently in Release R0, Sprint 1: authentication and protected application shell.
 
 ## Scope Status
 
 Current sprint:
 
 - Release: R0 Engineering Foundation
-- Sprint: 0 Repository and environment foundation
-- Scope: app scaffolding, safe environments, Prisma baseline, health endpoint, quality gates, CI
-- Not in scope yet: authentication, RBAC, products, inventory, suppliers, POS, orders, distributors, expenses, or simulation
+- Sprint: 1 Authentication and protected application shell
+- Scope: authentication persistence, password hashing, session cookies, protected API middleware, French login shell, quality gates, CI
+- Not in scope yet: dynamic RBAC, products, inventory, suppliers, POS, orders, distributors, expenses, or simulation
 
 ## Repository Shape
 
@@ -44,8 +44,8 @@ Never commit real `.env` files, credentials, database passwords, tokens, or back
 | `NODE_ENV`             | Runtime environment, for example `development`          |
 | `PORT`                 | API port                                                |
 | `DATABASE_URL`         | PostgreSQL connection string                            |
-| `JWT_SECRET`           | Placeholder for Sprint 1 authentication secret          |
-| `JWT_EXPIRES_IN`       | Placeholder for Sprint 1 token lifetime                 |
+| `SESSION_COOKIE_NAME`  | HTTP-only session cookie name                           |
+| `SESSION_TTL_MINUTES`  | Session lifetime in minutes                             |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated browser origins allowed to call the API |
 | `RATE_LIMIT_MAX`       | Placeholder for Sprint 1 rate-limit maximum             |
 | `RATE_LIMIT_WINDOW_MS` | Placeholder for Sprint 1 rate-limit window              |
@@ -100,9 +100,29 @@ GET /api/health
 
 The response uses the project response envelope and includes a correlation ID.
 
+## Authentication
+
+Sprint 1 adds email/password authentication with bcrypt password hashes and opaque server-side sessions stored in an HTTP-only cookie.
+
+Available endpoints:
+
+```text
+POST /api/auth/login
+GET  /api/auth/me
+POST /api/auth/logout
+```
+
+Create a local user after applying migrations:
+
+```bash
+npm run users:create --workspace backend -- <email> <displayName> <password>
+```
+
+The current-user response includes an empty `effectivePermissions` array. Dynamic permissions are implemented in R1 Sprint 2.
+
 ## Prisma Workflow
 
-Prisma is configured in `backend/prisma/schema.prisma`. Sprint 0 does not create business tables or an initial migration because no foundation entity requires persistence yet.
+Prisma is configured in `backend/prisma/schema.prisma`. Sprint 1 adds the authentication foundation migration for `users` and `auth_sessions`.
 
 For future migration work:
 
@@ -125,7 +145,7 @@ npm run prisma:migrate:deploy --workspace backend
 
 - `main`: protected release baseline
 - `dev`: integration branch
-- `feature/r0-sprint-0-foundation`: current Sprint 0 implementation branch
+- `feature/r0-sprint-1-auth-shell`: current Sprint 1 implementation branch
 
 ## Documentation Authority
 
