@@ -40,15 +40,21 @@ select {
   font: inherit;
 }
 
-.shell {
+.auth-layout {
+  align-items: center;
   display: grid;
-  gap: 24px;
   min-height: 100vh;
   padding: 24px;
 }
 
-.intro {
-  align-self: end;
+.login-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 0 auto;
+  max-width: 440px;
+  padding: 24px;
+  width: 100%;
 }
 
 .eyebrow {
@@ -67,8 +73,8 @@ p {
 
 h1 {
   color: var(--brand-navy);
-  font-size: clamp(2.5rem, 12vw, 5rem);
-  line-height: 1;
+  font-size: 2.5rem;
+  line-height: 1.05;
   margin-bottom: 16px;
 }
 
@@ -79,13 +85,79 @@ h2 {
 
 .summary {
   color: var(--text-muted);
-  font-size: 1.125rem;
   line-height: 1.5;
-  max-width: 38rem;
+}
+
+.login-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+label {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 48px;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+button {
+  background: var(--brand-navy);
+  border: 0;
+  border-radius: 8px;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 48px;
+  padding: 10px 16px;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.secondary-button {
+  background: var(--surface);
+  border: 1px solid var(--brand-navy);
+  color: var(--brand-navy);
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.topbar {
+  align-items: center;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 16px 24px;
+}
+
+.topbar h1 {
+  font-size: 1.75rem;
+  margin-bottom: 0;
+}
+
+.workspace {
+  padding: 24px;
 }
 
 .status-panel {
-  align-self: start;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -118,10 +190,18 @@ dd {
   text-align: right;
 }
 
+[role="alert"] {
+  color: var(--danger);
+  font-weight: 700;
+}
+
 @media (min-width: 900px) {
-  .shell {
-    align-items: center;
-    grid-template-columns: minmax(0, 1fr) 360px;
+  .auth-layout,
+  .workspace {
     padding: 48px;
+  }
+
+  .status-panel {
+    max-width: 720px;
   }
 }
