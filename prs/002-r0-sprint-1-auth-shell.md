@@ -9,7 +9,7 @@
 
 Implements Release R0, Sprint 1 authentication and protected application shell.
 
-This PR adds email/password authentication, bcrypt password hashing, opaque server-side sessions, current-user lookup, logout, active-user enforcement, a protected French application shell, and focused tests.
+This PR adds email/password authentication, bcrypt password hashing, opaque server-side sessions, current-user lookup, logout, active-user enforcement, a protected French application shell, the Dar El Barka logo asset, and focused tests.
 
 ## Summary
 
@@ -23,8 +23,10 @@ This PR adds email/password authentication, bcrypt password hashing, opaque serv
 - Added baseline login rate limiting.
 - Added a local user creation script for development bootstrap.
 - Replaced the Sprint 0 health screen with a French login flow and protected shell.
+- Added the Dar El Barka logo under `frontend/public/assets/`.
+- Rendered the logo on the login screen and authenticated shell header.
 - Added backend service and route tests for valid login, invalid credentials, inactive users, anonymous access, current user, and logout.
-- Added frontend tests for session bootstrap, login, and generic French login failure.
+- Added frontend tests for session bootstrap, login, logo rendering, and generic French login failure.
 
 ## Out of Scope
 
@@ -36,6 +38,8 @@ This PR adds email/password authentication, bcrypt password hashing, opaque serv
 
 ## Verification
 
+- `npm run test --workspace frontend`: passed after adding and optimizing the logo.
+- `npm run build --workspace frontend`: passed after adding and optimizing the logo.
 - `npm run format:check`: passed.
 - `npm run lint`: passed.
 - `npm run typecheck`: passed.
@@ -55,6 +59,14 @@ New tables:
 - `auth_sessions`
 
 No business data tables are added.
+
+## Asset Impact
+
+Adds:
+
+- `frontend/public/assets/dar-el-barka-logo.png`
+
+The logo was optimized to `512x512` for web use before pushing.
 
 ## Environment Impact
 
@@ -78,3 +90,11 @@ Existing real `.env` files remain ignored.
 - [ ] No real `.env` files or secrets committed.
 - [ ] Scope remains limited to R0 Sprint 1.
 - [ ] Target branch is `dev`.
+
+## GitHub PR Link
+
+Use this compare URL:
+
+```text
+https://github.com/BohBOhTN/DEB_ERP/compare/dev...feature/r0-sprint-1-auth-shell?expand=1
+```
