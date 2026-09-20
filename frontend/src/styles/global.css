@@ -57,6 +57,31 @@ select {
   width: 100%;
 }
 
+.brand-lockup {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.brand-lockup-centered {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.brand-logo {
+  aspect-ratio: 1;
+  display: block;
+  flex: 0 0 auto;
+  height: 52px;
+  object-fit: contain;
+  width: 52px;
+}
+
+.brand-logo-large {
+  height: 88px;
+  width: 88px;
+}
+
 .eyebrow {
   color: var(--brand-olive);
   font-size: 0.875rem;

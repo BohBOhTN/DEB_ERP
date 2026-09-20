@@ -14,9 +14,16 @@ export function ProtectedShell({ user, onLogout }: ProtectedShellProps) {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">Session active</p>
-          <h1>Dar El Barka</h1>
+        <div className="brand-lockup">
+          <img
+            alt="Logo Dar El Barka"
+            className="brand-logo"
+            src="/assets/dar-el-barka-logo.png"
+          />
+          <div>
+            <p className="eyebrow">Session active</p>
+            <h1>Dar El Barka</h1>
+          </div>
         </div>
         <button
           className="secondary-button"

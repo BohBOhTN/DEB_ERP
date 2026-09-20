@@ -37,6 +37,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("Session active")).toBeVisible();
       expect(screen.getByText("Admin")).toBeVisible();
+      expect(screen.getByAltText("Logo Dar El Barka")).toBeVisible();
     });
   });
 
@@ -61,6 +62,7 @@ describe("App", () => {
       expect(
         screen.getByRole("button", { name: "Se connecter" }),
       ).toBeVisible();
+      expect(screen.getByAltText("Logo Dar El Barka")).toBeVisible();
     });
 
     fireEvent.change(screen.getByLabelText("Adresse e-mail"), {
