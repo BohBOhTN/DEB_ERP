@@ -13,6 +13,8 @@ import { healthRouter } from "./modules/health/health.routes.js";
 import type { HealthCheck } from "./modules/health/health.service.js";
 import { inventoryRouter } from "./modules/inventory/inventory.routes.js";
 import type { InventoryService } from "./modules/inventory/inventory.service.js";
+import { procurementRouter } from "./modules/procurement/procurement.routes.js";
+import type { ProcurementService } from "./modules/procurement/procurement.service.js";
 import { AppError } from "./shared/appError.js";
 import { correlationId } from "./shared/correlation.js";
 
@@ -35,6 +37,9 @@ export function createApp(params: {
   };
   inventory?: {
     inventoryService: InventoryService;
+  };
+  procurement?: {
+    procurementService: ProcurementService;
   };
 }): express.Express {
   const app = express();
@@ -85,6 +90,17 @@ export function createApp(params: {
         authService: params.auth.authService,
         cookie: params.auth.cookie,
         inventoryService: params.inventory.inventoryService,
+      }),
+    );
+  }
+
+  if (params.auth && params.procurement) {
+    app.use(
+      "/api/procurement",
+      procurementRouter({
+        authService: params.auth.authService,
+        cookie: params.auth.cookie,
+        procurementService: params.procurement.procurementService,
       }),
     );
   }
