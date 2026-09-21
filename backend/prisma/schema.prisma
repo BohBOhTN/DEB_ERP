@@ -464,6 +464,29 @@ model PosTerminal {
   @@map("pos_terminals")
 }
 
+model Customer {
+  id              String                @id @default(cuid())
+  name            String
+  normalizedName  String                @map("normalized_name")
+  phone           String?
+  address         String?
+  taxIdentifier   String?               @map("tax_identifier")
+  notes           String?
+  isActive        Boolean               @default(true) @map("is_active")
+  version         Int                   @default(1)
+  createdByUserId String                @map("created_by_user_id")
+  updatedByUserId String                @map("updated_by_user_id")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+  sales           Sale[]
+  payments        CustomerPayment[]
+  ledgerEntries   CustomerLedgerEntry[]
+
+  @@index([isActive])
+  @@index([normalizedName])
+  @@map("customers")
+}
+
 model PosSession {
   id                String           @id @default(cuid())
   terminalId        String           @map("terminal_id")
@@ -493,21 +516,27 @@ model PosSession {
 model Sale {
   id             String           @id @default(cuid())
   sessionId      String           @map("session_id")
+  customerId     String?          @map("customer_id")
   status         SaleStatus       @default(POSTED)
   paymentState   SalePaymentState @default(PAID) @map("payment_state")
   soldAt         DateTime         @map("sold_at")
   totalTnd       Decimal          @map("total_tnd") @db.Decimal(14, 3)
   paidAmountTnd  Decimal          @map("paid_amount_tnd") @db.Decimal(14, 3)
+  remainingDueTnd Decimal         @default(0) @map("remaining_due_tnd") @db.Decimal(14, 3)
   postedAt       DateTime         @map("posted_at")
   postedByUserId String           @map("posted_by_user_id")
   correlationId  String?          @map("correlation_id")
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")
   session        PosSession       @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  customer       Customer?        @relation(fields: [customerId], references: [id], onDelete: Restrict)
   lines          SaleLine[]
   payments       SalePayment[]
+  ledgerEntries  CustomerLedgerEntry[]
+  paymentAllocations CustomerPaymentAllocation[]
 
   @@index([sessionId])
+  @@index([customerId])
   @@index([status])
   @@index([soldAt])
   @@map("sales")
@@ -553,6 +582,62 @@ model SalePayment {
   @@map("sale_payments")
 }
 
+model CustomerPayment {
+  id            String                      @id @default(cuid())
+  customerId    String                      @map("customer_id")
+  amountTnd     Decimal                     @map("amount_tnd") @db.Decimal(14, 3)
+  method        CustomerPaymentMethod       @default(CASH)
+  paidAt        DateTime                    @map("paid_at")
+  reference     String?
+  notes         String?
+  actorUserId   String                      @map("actor_user_id")
+  correlationId String?                     @map("correlation_id")
+  createdAt     DateTime                    @default(now()) @map("created_at")
+  customer      Customer                    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  ledgerEntries CustomerLedgerEntry[]
+  allocations   CustomerPaymentAllocation[]
+
+  @@index([customerId])
+  @@index([paidAt])
+  @@map("customer_payments")
+}
+
+model CustomerPaymentAllocation {
+  id         String          @id @default(cuid())
+  paymentId  String          @map("payment_id")
+  saleId     String          @map("sale_id")
+  amountTnd  Decimal         @map("amount_tnd") @db.Decimal(14, 3)
+  createdAt  DateTime        @default(now()) @map("created_at")
+  payment    CustomerPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  sale       Sale            @relation(fields: [saleId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, saleId])
+  @@index([saleId])
+  @@map("customer_payment_allocations")
+}
+
+model CustomerLedgerEntry {
+  id            String                  @id @default(cuid())
+  customerId    String                  @map("customer_id")
+  saleId        String?                 @map("sale_id")
+  paymentId     String?                 @map("payment_id")
+  entryType     CustomerLedgerEntryType @map("entry_type")
+  amountTnd     Decimal                 @map("amount_tnd") @db.Decimal(14, 3)
+  occurredAt    DateTime                @map("occurred_at")
+  actorUserId   String                  @map("actor_user_id")
+  correlationId String?                 @map("correlation_id")
+  createdAt     DateTime                @default(now()) @map("created_at")
+  customer      Customer                @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  sale          Sale?                   @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  payment       CustomerPayment?        @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([customerId])
+  @@index([saleId])
+  @@index([paymentId])
+  @@index([occurredAt])
+  @@map("customer_ledger_entries")
+}
+
 enum PosSessionStatus {
   OPEN
   CLOSED
@@ -571,6 +656,17 @@ enum SalePaymentState {
 
 enum SalePaymentMethod {
   CASH
+}
+
+enum CustomerPaymentMethod {
+  CASH
+}
+
+enum CustomerLedgerEntryType {
+  SALE_RECEIVABLE
+  PAYMENT
+  SALE_REVERSAL
+  PAYMENT_REVERSAL
 }
 
 model IdempotencyRecord {
