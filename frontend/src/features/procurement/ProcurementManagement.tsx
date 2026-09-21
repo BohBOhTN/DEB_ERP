@@ -9,10 +9,14 @@ import type { ApiError, CurrentUser } from "../auth/authApi";
 import {
   cancelPurchase,
   createPurchase,
+  createSupplierPayment,
   createSupplier,
   estimateLineTotal,
   estimatePurchaseTotal,
   getPurchases,
+  getSupplierBalances,
+  getSupplierPayments,
+  getSupplierStatement,
   getSuppliers,
   postPurchase,
   unitOptionsForLine,
@@ -21,6 +25,9 @@ import {
   type PurchaseDraftLineInput,
   type PurchasePaymentTerms,
   type Supplier,
+  type SupplierBalance,
+  type SupplierPayment,
+  type SupplierStatement,
 } from "./procurementApi";
 
 interface ProcurementManagementProps {
@@ -33,12 +40,14 @@ type LoadState =
       status: "loaded";
       suppliers: Supplier[];
       purchases: Purchase[];
+      supplierBalances: SupplierBalance[];
+      supplierPayments: SupplierPayment[];
       rawMaterials: RawMaterial[];
       units: Unit[];
     }
   | { status: "error"; message: string };
 
-type ProcurementTab = "suppliers" | "purchases";
+type ProcurementTab = "suppliers" | "purchases" | "balances" | "payments";
 
 const emptyLine: PurchaseDraftLineInput = {
   rawMaterialId: "",
@@ -71,6 +80,16 @@ export function ProcurementManagement({ user }: ProcurementManagementProps) {
   const [lines, setLines] = useState<PurchaseDraftLineInput[]>([
     { ...emptyLine },
   ]);
+  const [statement, setStatement] = useState<SupplierStatement | null>(null);
+  const [paymentForm, setPaymentForm] = useState({
+    supplierId: "",
+    paidAt: new Date().toISOString().slice(0, 10),
+    amountTnd: "",
+    reference: "",
+    notes: "",
+    allocationPurchaseId: "",
+    allocationAmountTnd: "",
+  });
 
   const permissions = useMemo(
     () => new Set(user.effectivePermissions),
@@ -83,11 +102,20 @@ export function ProcurementManagement({ user }: ProcurementManagementProps) {
   const canCreatePurchases = permissions.has("purchases.create");
   const canPostPurchases = permissions.has("purchases.post");
   const canCancelPurchases = permissions.has("purchases.cancel");
+  const canViewSupplierBalances = permissions.has("supplier_balances.view");
+  const canViewSupplierPayments = permissions.has("supplier_payments.view");
+  const canCreateSupplierPayments = permissions.has("supplier_payments.create");
   const canLoadPurchaseInputs =
     permissions.has("raw_materials.view") && permissions.has("units.view");
   const visibleTabs = [
     ...(canViewPurchases
       ? [{ id: "purchases" as const, label: "Achats" }]
+      : []),
+    ...(canViewSupplierBalances
+      ? [{ id: "balances" as const, label: "Soldes" }]
+      : []),
+    ...(canViewSupplierPayments || canCreateSupplierPayments
+      ? [{ id: "payments" as const, label: "Paiements" }]
       : []),
     ...(canViewSuppliers
       ? [{ id: "suppliers" as const, label: "Fournisseurs" }]
@@ -95,7 +123,13 @@ export function ProcurementManagement({ user }: ProcurementManagementProps) {
   ];
 
   useEffect(() => {
-    if (!canViewSuppliers && !canViewPurchases) {
+    if (
+      !canViewSuppliers &&
+      !canViewPurchases &&
+      !canViewSupplierBalances &&
+      !canViewSupplierPayments &&
+      !canCreateSupplierPayments
+    ) {
       setState({
         status: "error",
         message: "Vous n'avez pas acces aux achats.",
@@ -127,16 +161,37 @@ export function ProcurementManagement({ user }: ProcurementManagementProps) {
     return () => {
       isMounted = false;
     };
-  }, [activeTab, canViewPurchases, canViewSuppliers, canLoadPurchaseInputs]);
+  }, [
+    activeTab,
+    canViewPurchases,
+    canViewSuppliers,
+    canViewSupplierBalances,
+    canViewSupplierPayments,
+    canCreateSupplierPayments,
+    canLoadPurchaseInputs,
+  ]);
 
   async function refreshProcurement(): Promise<LoadState> {
-    const [suppliers, purchases, rawMaterials, units] = await Promise.all([
+    const [
+      suppliers,
+      purchases,
+      supplierBalances,
+      supplierPayments,
+      rawMaterials,
+      units,
+    ] = await Promise.all([
       canViewSuppliers
         ? getSuppliers()
         : Promise.resolve(emptyPage<Supplier>()),
       canViewPurchases
         ? getPurchases()
         : Promise.resolve(emptyPage<Purchase>()),
+      canViewSupplierBalances
+        ? getSupplierBalances()
+        : Promise.resolve(emptyPage<SupplierBalance>()),
+      canViewSupplierPayments
+        ? getSupplierPayments()
+        : Promise.resolve(emptyPage<SupplierPayment>()),
       canLoadPurchaseInputs
         ? getRawMaterials()
         : Promise.resolve(emptyPage<RawMaterial>()),
@@ -147,6 +202,8 @@ export function ProcurementManagement({ user }: ProcurementManagementProps) {
       status: "loaded",
       suppliers: suppliers.items,
       purchases: purchases.items,
+      supplierBalances: supplierBalances.items,
+      supplierPayments: supplierPayments.items,
       rawMaterials: rawMaterials.items,
       units: units.items,
     };
@@ -205,6 +262,49 @@ export function ProcurementManagement({ user }: ProcurementManagementProps) {
       setLines([{ ...emptyLine }]);
       setNotice("Achat brouillon cree.");
     });
+  }
+
+  async function handleCreateSupplierPayment(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    await submit(async () => {
+      await createSupplierPayment({
+        supplierId: paymentForm.supplierId,
+        paidAt: paymentForm.paidAt,
+        amountTnd: paymentForm.amountTnd,
+        reference: paymentForm.reference,
+        notes: paymentForm.notes,
+        allocations:
+          paymentForm.allocationPurchaseId && paymentForm.allocationAmountTnd
+            ? [
+                {
+                  purchaseId: paymentForm.allocationPurchaseId,
+                  amountTnd: paymentForm.allocationAmountTnd,
+                },
+              ]
+            : [],
+      });
+      setPaymentForm({
+        supplierId: "",
+        paidAt: new Date().toISOString().slice(0, 10),
+        amountTnd: "",
+        reference: "",
+        notes: "",
+        allocationPurchaseId: "",
+        allocationAmountTnd: "",
+      });
+      setNotice("Paiement fournisseur enregistre.");
+    });
+  }
+
+  async function loadStatement(supplierId: string) {
+    setNotice("");
+    try {
+      setStatement(await getSupplierStatement(supplierId));
+    } catch (error) {
+      setNotice(readMessage(error));
+    }
   }
 
   if (state.status === "loading") {
@@ -452,6 +552,126 @@ export function ProcurementManagement({ user }: ProcurementManagementProps) {
           />
         </section>
       ) : null}
+
+      {activeTab === "balances" ? (
+        <section className="catalog-grid" aria-labelledby="balances-title">
+          <SupplierBalanceList
+            balances={state.supplierBalances}
+            onStatement={loadStatement}
+          />
+          <SupplierStatementPanel statement={statement} />
+        </section>
+      ) : null}
+
+      {activeTab === "payments" ? (
+        <section className="catalog-grid" aria-labelledby="payments-title">
+          {canCreateSupplierPayments ? (
+            <form
+              className="panel inline-form"
+              onSubmit={handleCreateSupplierPayment}
+            >
+              <h3 id="payments-title">Nouveau paiement</h3>
+              <select
+                aria-label="Fournisseur a payer"
+                onChange={(event) =>
+                  setPaymentForm({
+                    ...paymentForm,
+                    supplierId: event.target.value,
+                    allocationPurchaseId: "",
+                  })
+                }
+                required
+                value={paymentForm.supplierId}
+              >
+                <option value="">Fournisseur</option>
+                {state.suppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                aria-label="Date paiement"
+                onChange={(event) =>
+                  setPaymentForm({ ...paymentForm, paidAt: event.target.value })
+                }
+                required
+                type="date"
+                value={paymentForm.paidAt}
+              />
+              <input
+                aria-label="Montant paiement"
+                inputMode="decimal"
+                onChange={(event) =>
+                  setPaymentForm({
+                    ...paymentForm,
+                    amountTnd: event.target.value,
+                  })
+                }
+                placeholder="Montant TND"
+                required
+                value={paymentForm.amountTnd}
+              />
+              <select
+                aria-label="Achat alloue"
+                onChange={(event) =>
+                  setPaymentForm({
+                    ...paymentForm,
+                    allocationPurchaseId: event.target.value,
+                    allocationAmountTnd: event.target.value
+                      ? paymentForm.amountTnd
+                      : "",
+                  })
+                }
+                value={paymentForm.allocationPurchaseId}
+              >
+                <option value="">Sans allocation</option>
+                {state.purchases
+                  .filter(
+                    (purchase) =>
+                      purchase.status === "POSTED" &&
+                      purchase.supplierId === paymentForm.supplierId,
+                  )
+                  .map((purchase) => (
+                    <option key={purchase.id} value={purchase.id}>
+                      {purchase.supplier.name} · {purchase.totalTnd} TND
+                    </option>
+                  ))}
+              </select>
+              {paymentForm.allocationPurchaseId ? (
+                <input
+                  aria-label="Montant alloue"
+                  inputMode="decimal"
+                  onChange={(event) =>
+                    setPaymentForm({
+                      ...paymentForm,
+                      allocationAmountTnd: event.target.value,
+                    })
+                  }
+                  placeholder="Montant alloue"
+                  required
+                  value={paymentForm.allocationAmountTnd}
+                />
+              ) : null}
+              <input
+                aria-label="Reference paiement"
+                onChange={(event) =>
+                  setPaymentForm({
+                    ...paymentForm,
+                    reference: event.target.value,
+                  })
+                }
+                placeholder="Reference"
+                value={paymentForm.reference}
+              />
+              <button disabled={isSubmitting} type="submit">
+                Enregistrer le paiement
+              </button>
+            </form>
+          ) : null}
+          <SupplierPaymentList payments={state.supplierPayments} />
+        </section>
+      ) : null}
     </section>
   );
 }
@@ -695,6 +915,126 @@ function PurchaseList({
   );
 }
 
+function SupplierBalanceList({
+  balances,
+  onStatement,
+}: {
+  balances: SupplierBalance[];
+  onStatement: (supplierId: string) => void;
+}) {
+  if (balances.length === 0) {
+    return (
+      <section className="panel">
+        <p className="summary">Aucun solde fournisseur trouve.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel item-list" aria-label="Soldes fournisseurs">
+      <div className="panel-heading">
+        <h3 id="balances-title">Soldes fournisseurs</h3>
+        <span>{balances.length}</span>
+      </div>
+      {balances.map((balance) => (
+        <div className="catalog-row" key={balance.supplier.id}>
+          <div>
+            <span>{balance.supplier.name}</span>
+            <small>
+              {balance.openPurchaseCount} achat ouvert ·{" "}
+              {balance.overduePurchaseCount} en retard
+            </small>
+          </div>
+          <div className="button-row">
+            <strong>{balance.balanceTnd} TND</strong>
+            <button
+              className="secondary-button"
+              onClick={() => onStatement(balance.supplier.id)}
+              type="button"
+            >
+              Releve
+            </button>
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function SupplierStatementPanel({
+  statement,
+}: {
+  statement: SupplierStatement | null;
+}) {
+  if (!statement) {
+    return (
+      <section className="panel">
+        <p className="summary">
+          Selectionnez un fournisseur pour voir le releve.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel item-list" aria-label="Releve fournisseur">
+      <div className="panel-heading">
+        <h3>{statement.supplier.name}</h3>
+        <span>{statement.balanceTnd} TND</span>
+      </div>
+      {statement.purchases.length === 0 ? (
+        <p className="summary">Aucun achat confirme.</p>
+      ) : (
+        statement.purchases.map((purchase) => (
+          <div className="catalog-row" key={purchase.id}>
+            <div>
+              <span>{labelPaymentState(purchase.paymentState)}</span>
+              <small>
+                {purchase.totalTnd} TND ·{" "}
+                {purchase.dueDate
+                  ? new Date(purchase.dueDate).toLocaleDateString("fr-TN")
+                  : "Sans echeance"}
+              </small>
+            </div>
+            <strong>{purchase.balanceTnd} TND</strong>
+          </div>
+        ))
+      )}
+    </section>
+  );
+}
+
+function SupplierPaymentList({ payments }: { payments: SupplierPayment[] }) {
+  if (payments.length === 0) {
+    return (
+      <section className="panel">
+        <p className="summary">Aucun paiement fournisseur trouve.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel item-list" aria-label="Paiements fournisseurs">
+      <div className="panel-heading">
+        <h3>Paiements</h3>
+        <span>{payments.length}</span>
+      </div>
+      {payments.map((payment) => (
+        <div className="catalog-row" key={payment.id}>
+          <div>
+            <span>{payment.supplier?.name ?? "Fournisseur"}</span>
+            <small>
+              {new Date(payment.paidAt).toLocaleDateString("fr-TN")} ·{" "}
+              {payment.reference ?? "Sans reference"}
+            </small>
+          </div>
+          <strong>{payment.amountTnd} TND</strong>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function labelStatus(status: Purchase["status"]): string {
   if (status === "DRAFT") {
     return "Brouillon";
@@ -703,6 +1043,22 @@ function labelStatus(status: Purchase["status"]): string {
     return "Confirme";
   }
   return "Annule";
+}
+
+function labelPaymentState(state: string): string {
+  if (state === "PAID") {
+    return "Paye";
+  }
+  if (state === "PARTIALLY_PAID") {
+    return "Partiel";
+  }
+  if (state === "OVERDUE") {
+    return "En retard";
+  }
+  if (state === "CANCELLED") {
+    return "Annule";
+  }
+  return "Non paye";
 }
 
 function emptyPage<TItem>() {

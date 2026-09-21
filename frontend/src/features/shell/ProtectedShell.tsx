@@ -122,7 +122,10 @@ function buildNavigation(user: CurrentUser) {
     user.effectivePermissions.includes("purchases.view") ||
     user.effectivePermissions.includes("purchases.create") ||
     user.effectivePermissions.includes("purchases.post") ||
-    user.effectivePermissions.includes("purchases.cancel")
+    user.effectivePermissions.includes("purchases.cancel") ||
+    user.effectivePermissions.includes("supplier_balances.view") ||
+    user.effectivePermissions.includes("supplier_payments.view") ||
+    user.effectivePermissions.includes("supplier_payments.create")
   ) {
     modules.push({ id: "procurement", label: "Achats" });
   }

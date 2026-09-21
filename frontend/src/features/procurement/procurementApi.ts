@@ -48,6 +48,62 @@ export interface Purchase {
   lines: PurchaseLine[];
 }
 
+export type SupplierPaymentState =
+  "UNPAID" | "PARTIALLY_PAID" | "PAID" | "OVERDUE" | "CANCELLED";
+
+export interface SupplierBalance {
+  supplier: Supplier;
+  balanceTnd: string;
+  openPurchaseCount: number;
+  overduePurchaseCount: number;
+  openPurchases: Array<{
+    purchaseId: string;
+    dueDate: string | null;
+    balanceTnd: string;
+    paymentState: SupplierPaymentState;
+  }>;
+}
+
+export interface SupplierPayment {
+  id: string;
+  supplierId: string;
+  purchaseId: string | null;
+  amountTnd: string;
+  paidAt: string;
+  reference: string | null;
+  notes: string | null;
+  supplier?: Supplier;
+  allocations: SupplierPaymentAllocation[];
+}
+
+export interface SupplierPaymentAllocation {
+  id?: string;
+  paymentId?: string;
+  purchaseId: string;
+  amountTnd: string;
+  purchase?: Purchase;
+}
+
+export interface SupplierStatement {
+  supplier: Supplier;
+  balanceTnd: string;
+  purchases: Array<
+    Purchase & {
+      balanceTnd: string;
+      paymentState: SupplierPaymentState;
+    }
+  >;
+  ledgerEntries: Array<{
+    id: string;
+    entryType: string;
+    amountTnd: string;
+    occurredAt: string;
+    purchaseId: string | null;
+    paymentId: string | null;
+  }>;
+  payments: SupplierPayment[];
+}
+
 export interface PurchaseDraftLineInput {
   rawMaterialId: string;
   enteredUnitId: string;
@@ -61,6 +117,34 @@ export async function getSuppliers(): Promise<Page<Supplier>> {
 
 export async function getPurchases(): Promise<Page<Purchase>> {
   return getPage("/procurement/purchases", "purchases");
+}
+
+export async function getSupplierBalances(): Promise<Page<SupplierBalance>> {
+  return getPage("/procurement/supplier-balances", "supplierBalances");
+}
+
+export async function getSupplierStatement(
+  supplierId: string,
+): Promise<SupplierStatement> {
+  const response = await fetch(
+    `${apiBaseUrl}/procurement/suppliers/${supplierId}/statement`,
+    {
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    throw await readApiError(response);
+  }
+
+  const body = (await response.json()) as ApiEnvelope<{
+    statement: SupplierStatement;
+  }>;
+  return body.data.statement;
+}
+
+export async function getSupplierPayments(): Promise<Page<SupplierPayment>> {
+  return getPage("/procurement/supplier-payments", "supplierPayments");
 }
 
 export async function createSupplier(params: {
@@ -119,6 +203,23 @@ export async function cancelPurchase(
   reason: string,
 ): Promise<void> {
   await postCommand(`/procurement/purchases/${purchaseId}/cancel`, { reason });
+}
+
+export async function createSupplierPayment(params: {
+  supplierId: string;
+  paidAt: string;
+  amountTnd: string;
+  reference: string;
+  notes: string;
+  allocations: Array<{
+    purchaseId: string;
+    amountTnd: string;
+  }>;
+}): Promise<void> {
+  await postCommand("/procurement/supplier-payments", {
+    ...params,
+    paidAt: toIsoDate(params.paidAt),
+  });
 }
 
 export function estimateLineTotal(

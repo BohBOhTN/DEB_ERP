@@ -30,11 +30,28 @@ export interface PurchaseListParams {
   pageSize: number;
 }
 
+export interface SupplierBalanceListParams {
+  dueBefore?: Date;
+  page: number;
+  pageSize: number;
+}
+
+export interface SupplierPaymentListParams {
+  supplierId?: string;
+  page: number;
+  pageSize: number;
+}
+
 export interface PurchaseLineInput {
   rawMaterialId: string;
   enteredUnitId: string;
   enteredQuantity: string;
   unitPriceTnd: string;
+}
+
+export interface SupplierPaymentAllocationInput {
+  purchaseId: string;
+  amountTnd: string;
 }
 
 export type ProcurementTransactionStep =
@@ -565,6 +582,299 @@ export class ProcurementService {
     );
   }
 
+  public async listSupplierBalances(params: SupplierBalanceListParams) {
+    const suppliers = await this.prisma.supplier.findMany({
+      orderBy: [{ isActive: "desc" }, { name: "asc" }],
+      skip: (params.page - 1) * params.pageSize,
+      take: params.pageSize,
+    });
+    const supplierIds = suppliers.map((supplier) => supplier.id);
+    const [total, ledgerEntries, purchases] = await this.prisma.$transaction([
+      this.prisma.supplier.count(),
+      this.prisma.supplierLedgerEntry.findMany({
+        where: {
+          supplierId: {
+            in: supplierIds,
+          },
+        },
+      }),
+      this.prisma.purchase.findMany({
+        where: {
+          supplierId: {
+            in: supplierIds,
+          },
+          status: PurchaseStatus.POSTED,
+          ...(params.dueBefore ? { dueDate: { lte: params.dueBefore } } : {}),
+        },
+      }),
+    ]);
+
+    const items = suppliers.map((supplier) => {
+      const balance = sumDecimals(
+        ledgerEntries
+          .filter((entry) => entry.supplierId === supplier.id)
+          .map((entry) => new Prisma.Decimal(entry.amountTnd)),
+        3,
+      );
+      const openPurchases = purchases
+        .filter((purchase) => purchase.supplierId === supplier.id)
+        .map((purchase) => {
+          const purchaseBalance = purchaseBalanceFromEntries(
+            purchase.id,
+            ledgerEntries,
+          );
+          return {
+            purchaseId: purchase.id,
+            dueDate: purchase.dueDate,
+            balanceTnd: purchaseBalance.toFixed(3),
+            paymentState: derivePaymentState(purchase, purchaseBalance),
+          };
+        })
+        .filter((purchase) => new Prisma.Decimal(purchase.balanceTnd).gt(0));
+
+      return {
+        supplier,
+        balanceTnd: balance.toFixed(3),
+        openPurchaseCount: openPurchases.length,
+        overduePurchaseCount: openPurchases.filter(
+          (purchase) => purchase.paymentState === "OVERDUE",
+        ).length,
+        openPurchases,
+      };
+    });
+
+    return paginated(items, total, params);
+  }
+
+  public async getSupplierStatement(supplierId: string) {
+    const supplier = await this.findSupplierOrThrow(supplierId);
+    const [ledgerEntries, payments, purchases] = await this.prisma.$transaction(
+      [
+        this.prisma.supplierLedgerEntry.findMany({
+          where: {
+            supplierId,
+          },
+          include: {
+            purchase: true,
+            payment: true,
+          },
+          orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
+        }),
+        this.prisma.supplierPayment.findMany({
+          where: {
+            supplierId,
+          },
+          include: {
+            allocations: true,
+          },
+          orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+        }),
+        this.prisma.purchase.findMany({
+          where: {
+            supplierId,
+            status: {
+              in: [PurchaseStatus.POSTED, PurchaseStatus.CANCELLED],
+            },
+          },
+          orderBy: [{ purchaseDate: "desc" }, { createdAt: "desc" }],
+        }),
+      ],
+    );
+
+    const balance = sumDecimals(
+      ledgerEntries.map((entry) => new Prisma.Decimal(entry.amountTnd)),
+      3,
+    );
+
+    return {
+      supplier,
+      balanceTnd: balance.toFixed(3),
+      purchases: purchases.map((purchase) => {
+        const purchaseBalance = purchaseBalanceFromEntries(
+          purchase.id,
+          ledgerEntries,
+        );
+        return {
+          ...purchase,
+          balanceTnd: purchaseBalance.toFixed(3),
+          paymentState: derivePaymentState(purchase, purchaseBalance),
+        };
+      }),
+      ledgerEntries,
+      payments,
+    };
+  }
+
+  public async listSupplierPayments(params: SupplierPaymentListParams) {
+    const where = {
+      ...(params.supplierId ? { supplierId: params.supplierId } : {}),
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.supplierPayment.findMany({
+        where,
+        include: {
+          supplier: true,
+          allocations: {
+            include: {
+              purchase: true,
+            },
+          },
+        },
+        orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+        skip: (params.page - 1) * params.pageSize,
+        take: params.pageSize,
+      }),
+      this.prisma.supplierPayment.count({ where }),
+    ]);
+
+    return paginated(items, total, params);
+  }
+
+  public async createSupplierPayment(
+    params: {
+      idempotencyKey: string;
+      supplierId: string;
+      paidAt: Date;
+      amountTnd: string;
+      reference?: string;
+      notes?: string;
+      allocations?: SupplierPaymentAllocationInput[];
+    },
+    actor: ProcurementActor,
+  ) {
+    const amountTnd = parsePositiveMoney(params.amountTnd);
+    const allocations = params.allocations ?? [];
+
+    return this.runIdempotentCommand(
+      `supplier_payment.create.${params.supplierId}`,
+      params.idempotencyKey,
+      {
+        ...params,
+        amountTnd: amountTnd.toFixed(3),
+      },
+      async (tx) => {
+        const supplier = await tx.supplier.findUnique({
+          where: {
+            id: params.supplierId,
+          },
+        });
+
+        if (!supplier) {
+          throw new AppError({
+            statusCode: 404,
+            code: "SUPPLIER_NOT_FOUND",
+            message: "Fournisseur introuvable.",
+          });
+        }
+
+        const ledgerEntries = await tx.supplierLedgerEntry.findMany({
+          where: {
+            supplierId: params.supplierId,
+          },
+        });
+        const currentBalance = sumDecimals(
+          ledgerEntries.map((entry) => new Prisma.Decimal(entry.amountTnd)),
+          3,
+        );
+
+        if (!currentBalance.greaterThan(0)) {
+          throw new AppError({
+            statusCode: 400,
+            code: "SUPPLIER_BALANCE_NOT_DUE",
+            message: "Ce fournisseur n'a pas de solde a payer.",
+          });
+        }
+
+        if (amountTnd.greaterThan(currentBalance)) {
+          throw new AppError({
+            statusCode: 400,
+            code: "SUPPLIER_OVERPAYMENT_REJECTED",
+            message: "Le paiement ne peut pas depasser le solde fournisseur.",
+          });
+        }
+
+        const allocationRows = await this.validateSupplierPaymentAllocations(
+          {
+            supplierId: params.supplierId,
+            amountTnd,
+            allocations,
+            ledgerEntries,
+          },
+          tx,
+        );
+        const payment = await tx.supplierPayment.create({
+          data: {
+            supplierId: params.supplierId,
+            purchaseId:
+              allocationRows.length === 1
+                ? allocationRows[0]?.purchaseId
+                : null,
+            amountTnd: amountTnd.toFixed(3),
+            paidAt: params.paidAt,
+            reference: emptyToNull(params.reference),
+            notes: emptyToNull(params.notes),
+            actorUserId: actor.actorUserId,
+            correlationId: actor.correlationId,
+          },
+        });
+
+        if (allocationRows.length > 0) {
+          await tx.supplierPaymentAllocation.createMany({
+            data: allocationRows.map((allocation) => ({
+              paymentId: payment.id,
+              purchaseId: allocation.purchaseId,
+              amountTnd: allocation.amountTnd.toFixed(3),
+            })),
+          });
+
+          await tx.supplierLedgerEntry.createMany({
+            data: allocationRows.map((allocation) => ({
+              supplierId: params.supplierId,
+              purchaseId: allocation.purchaseId,
+              paymentId: payment.id,
+              entryType: SupplierLedgerEntryType.PAYMENT,
+              amountTnd: allocation.amountTnd.negated().toFixed(3),
+              occurredAt: params.paidAt,
+              actorUserId: actor.actorUserId,
+              correlationId: actor.correlationId,
+            })),
+          });
+        } else {
+          await tx.supplierLedgerEntry.create({
+            data: {
+              supplierId: params.supplierId,
+              paymentId: payment.id,
+              entryType: SupplierLedgerEntryType.PAYMENT,
+              amountTnd: amountTnd.negated().toFixed(3),
+              occurredAt: params.paidAt,
+              actorUserId: actor.actorUserId,
+              correlationId: actor.correlationId,
+            },
+          });
+        }
+
+        await this.auditWithClient(tx, {
+          actor,
+          action: "supplier_payment.create",
+          entity: "supplier_payment",
+          targetId: payment.id,
+          after: {
+            payment,
+            allocations: allocationRows,
+          },
+        });
+
+        return {
+          payment,
+          allocations: allocationRows.map((allocation) => ({
+            purchaseId: allocation.purchaseId,
+            amountTnd: allocation.amountTnd.toFixed(3),
+          })),
+        };
+      },
+    );
+  }
+
   private async findSupplierOrThrow(supplierId: string) {
     const supplier = await this.prisma.supplier.findUnique({
       where: {
@@ -875,6 +1185,85 @@ export class ProcurementService {
     return location;
   }
 
+  private async validateSupplierPaymentAllocations(
+    params: {
+      supplierId: string;
+      amountTnd: Prisma.Decimal;
+      allocations: SupplierPaymentAllocationInput[];
+      ledgerEntries: Array<{ purchaseId: string | null; amountTnd: unknown }>;
+    },
+    client: Prisma.TransactionClient,
+  ) {
+    if (params.allocations.length === 0) {
+      return [];
+    }
+
+    const allocations = params.allocations.map((allocation) => ({
+      purchaseId: allocation.purchaseId,
+      amountTnd: parsePositiveMoney(allocation.amountTnd),
+    }));
+    const duplicatePurchaseId = findDuplicate(
+      allocations.map((allocation) => allocation.purchaseId),
+    );
+
+    if (duplicatePurchaseId) {
+      throw new AppError({
+        statusCode: 400,
+        code: "DUPLICATE_PAYMENT_ALLOCATION",
+        message: "Une facture ne peut etre allouee qu'une seule fois.",
+      });
+    }
+
+    const allocationTotal = sumDecimals(
+      allocations.map((allocation) => allocation.amountTnd),
+      3,
+    );
+
+    if (!allocationTotal.equals(params.amountTnd)) {
+      throw new AppError({
+        statusCode: 400,
+        code: "PAYMENT_ALLOCATION_TOTAL_MISMATCH",
+        message: "Les allocations doivent correspondre au montant paye.",
+      });
+    }
+
+    const purchases = await client.purchase.findMany({
+      where: {
+        id: {
+          in: allocations.map((allocation) => allocation.purchaseId),
+        },
+        supplierId: params.supplierId,
+        status: PurchaseStatus.POSTED,
+      },
+    });
+
+    if (purchases.length !== allocations.length) {
+      throw new AppError({
+        statusCode: 400,
+        code: "POSTED_PURCHASE_ALLOCATION_REQUIRED",
+        message:
+          "Chaque allocation doit viser un achat confirme du fournisseur.",
+      });
+    }
+
+    for (const allocation of allocations) {
+      const purchaseBalance = purchaseBalanceFromEntries(
+        allocation.purchaseId,
+        params.ledgerEntries,
+      );
+
+      if (allocation.amountTnd.greaterThan(purchaseBalance)) {
+        throw new AppError({
+          statusCode: 400,
+          code: "PAYMENT_ALLOCATION_EXCEEDS_PURCHASE_BALANCE",
+          message: "Une allocation depasse le solde de l'achat.",
+        });
+      }
+    }
+
+    return allocations;
+  }
+
   private async runIdempotentCommand<TResponse>(
     scope: string,
     key: string,
@@ -993,10 +1382,82 @@ function parseMoney(value: string): Prisma.Decimal {
   return new Prisma.Decimal(trimmed).toDecimalPlaces(3);
 }
 
+function parsePositiveMoney(value: string): Prisma.Decimal {
+  const amount = parseMoney(value);
+
+  if (!amount.greaterThan(0)) {
+    throw new AppError({
+      statusCode: 400,
+      code: "POSITIVE_PAYMENT_AMOUNT_REQUIRED",
+      message: "Le montant du paiement doit etre positif.",
+    });
+  }
+
+  return amount;
+}
+
 function sumDecimals(values: Prisma.Decimal[], decimalPlaces: number) {
   return values
     .reduce((total, value) => total.add(value), new Prisma.Decimal(0))
     .toDecimalPlaces(decimalPlaces);
+}
+
+function purchaseBalanceFromEntries(
+  purchaseId: string,
+  entries: Array<{ purchaseId: string | null; amountTnd: unknown }>,
+): Prisma.Decimal {
+  return sumDecimals(
+    entries
+      .filter((entry) => entry.purchaseId === purchaseId)
+      .map((entry) => new Prisma.Decimal(entry.amountTnd as string)),
+    3,
+  );
+}
+
+function derivePaymentState(
+  purchase: { totalTnd: unknown; dueDate: Date | null; status: PurchaseStatus },
+  balance: Prisma.Decimal,
+) {
+  if (purchase.status === PurchaseStatus.CANCELLED) {
+    return "CANCELLED";
+  }
+
+  if (balance.lessThanOrEqualTo(0)) {
+    return "PAID";
+  }
+
+  if (
+    purchase.dueDate &&
+    purchase.dueDate.getTime() < startOfToday().getTime()
+  ) {
+    return "OVERDUE";
+  }
+
+  if (balance.lessThan(new Prisma.Decimal(purchase.totalTnd as string))) {
+    return "PARTIALLY_PAID";
+  }
+
+  return "UNPAID";
+}
+
+function startOfToday(): Date {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+}
+
+function findDuplicate(values: string[]): string | null {
+  const seen = new Set<string>();
+
+  for (const value of values) {
+    if (seen.has(value)) {
+      return value;
+    }
+    seen.add(value);
+  }
+
+  return null;
 }
 
 function assertVersionUpdated(count: number): void {

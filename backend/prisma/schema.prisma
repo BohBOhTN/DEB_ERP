@@ -307,30 +307,31 @@ model Supplier {
 }
 
 model Purchase {
-  id                 String                @id @default(cuid())
-  supplierId         String                @map("supplier_id")
-  purchaseDate       DateTime              @map("purchase_date")
-  supplierReference  String?               @map("supplier_reference")
-  status             PurchaseStatus        @default(DRAFT)
-  paymentTerms       PurchasePaymentTerms  @map("payment_terms")
-  dueDate            DateTime?             @map("due_date")
-  totalTnd           Decimal               @default(0) @map("total_tnd") @db.Decimal(14, 3)
-  paidAmountTnd      Decimal               @default(0) @map("paid_amount_tnd") @db.Decimal(14, 3)
+  id                 String                      @id @default(cuid())
+  supplierId         String                      @map("supplier_id")
+  purchaseDate       DateTime                    @map("purchase_date")
+  supplierReference  String?                     @map("supplier_reference")
+  status             PurchaseStatus              @default(DRAFT)
+  paymentTerms       PurchasePaymentTerms        @map("payment_terms")
+  dueDate            DateTime?                   @map("due_date")
+  totalTnd           Decimal                     @default(0) @map("total_tnd") @db.Decimal(14, 3)
+  paidAmountTnd      Decimal                     @default(0) @map("paid_amount_tnd") @db.Decimal(14, 3)
   notes              String?
-  postedAt           DateTime?             @map("posted_at")
-  postedByUserId     String?               @map("posted_by_user_id")
-  cancelledAt        DateTime?             @map("cancelled_at")
-  cancelledByUserId  String?               @map("cancelled_by_user_id")
-  cancellationReason String?               @map("cancellation_reason")
-  correlationId      String?               @map("correlation_id")
-  createdByUserId    String                @map("created_by_user_id")
-  updatedByUserId    String                @map("updated_by_user_id")
-  createdAt          DateTime              @default(now()) @map("created_at")
-  updatedAt          DateTime              @updatedAt @map("updated_at")
-  supplier           Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  postedAt           DateTime?                   @map("posted_at")
+  postedByUserId     String?                     @map("posted_by_user_id")
+  cancelledAt        DateTime?                   @map("cancelled_at")
+  cancelledByUserId  String?                     @map("cancelled_by_user_id")
+  cancellationReason String?                     @map("cancellation_reason")
+  correlationId      String?                     @map("correlation_id")
+  createdByUserId    String                      @map("created_by_user_id")
+  updatedByUserId    String                      @map("updated_by_user_id")
+  createdAt          DateTime                    @default(now()) @map("created_at")
+  updatedAt          DateTime                    @updatedAt @map("updated_at")
+  supplier           Supplier                    @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   lines              PurchaseLine[]
   payments           SupplierPayment[]
   ledgerEntries      SupplierLedgerEntry[]
+  paymentAllocations SupplierPaymentAllocation[]
 
   @@index([supplierId])
   @@index([purchaseDate])
@@ -367,25 +368,40 @@ model PurchaseLine {
 }
 
 model SupplierPayment {
-  id            String                @id @default(cuid())
-  supplierId    String                @map("supplier_id")
-  purchaseId    String?               @map("purchase_id")
-  amountTnd     Decimal               @map("amount_tnd") @db.Decimal(14, 3)
-  method        SupplierPaymentMethod @default(CASH)
-  paidAt        DateTime              @map("paid_at")
+  id            String                      @id @default(cuid())
+  supplierId    String                      @map("supplier_id")
+  purchaseId    String?                     @map("purchase_id")
+  amountTnd     Decimal                     @map("amount_tnd") @db.Decimal(14, 3)
+  method        SupplierPaymentMethod       @default(CASH)
+  paidAt        DateTime                    @map("paid_at")
   reference     String?
   notes         String?
-  actorUserId   String                @map("actor_user_id")
-  correlationId String?               @map("correlation_id")
-  createdAt     DateTime              @default(now()) @map("created_at")
-  supplier      Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  purchase      Purchase?             @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  actorUserId   String                      @map("actor_user_id")
+  correlationId String?                     @map("correlation_id")
+  createdAt     DateTime                    @default(now()) @map("created_at")
+  supplier      Supplier                    @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchase      Purchase?                   @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
   ledgerEntries SupplierLedgerEntry[]
+  allocations   SupplierPaymentAllocation[]
 
   @@index([supplierId])
   @@index([purchaseId])
   @@index([paidAt])
   @@map("supplier_payments")
+}
+
+model SupplierPaymentAllocation {
+  id         String          @id @default(cuid())
+  paymentId  String          @map("payment_id")
+  purchaseId String          @map("purchase_id")
+  amountTnd  Decimal         @map("amount_tnd") @db.Decimal(14, 3)
+  createdAt  DateTime        @default(now()) @map("created_at")
+  payment    SupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  purchase   Purchase        @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, purchaseId])
+  @@index([purchaseId])
+  @@map("supplier_payment_allocations")
 }
 
 model SupplierLedgerEntry {

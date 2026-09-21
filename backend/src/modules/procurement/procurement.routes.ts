@@ -28,6 +28,18 @@ const purchaseListQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
 
+const supplierBalanceQuerySchema = z.object({
+  dueBefore: z.coerce.date().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
+const supplierPaymentListQuerySchema = z.object({
+  supplierId: z.string().trim().min(1).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
 const createSupplierSchema = z.object({
   name: z.string().trim().min(1),
   phone: z.string().optional(),
@@ -78,6 +90,22 @@ const createPurchaseSchema = z.object({
 
 const cancelPurchaseSchema = z.object({
   reason: z.string().trim().min(3),
+});
+
+const createSupplierPaymentSchema = z.object({
+  supplierId: z.string().trim().min(1),
+  paidAt: z.coerce.date(),
+  amountTnd: moneyTnd,
+  reference: z.string().optional(),
+  notes: z.string().optional(),
+  allocations: z
+    .array(
+      z.object({
+        purchaseId: z.string().trim().min(1),
+        amountTnd: moneyTnd,
+      }),
+    )
+    .default([]),
 });
 
 export function procurementRouter(params: {
@@ -203,6 +231,75 @@ export function procurementRouter(params: {
           {
             idempotencyKey: readIdempotencyKey(request.headers),
             reason: body.reason,
+          },
+          actorFromResponse(response),
+        );
+        response.status(201).json(ok(result, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/supplier-balances",
+    requirePermission("supplier_balances.view"),
+    async (request, response, next) => {
+      try {
+        const query = supplierBalanceQuerySchema.parse(request.query);
+        const result =
+          await params.procurementService.listSupplierBalances(query);
+        response.json(
+          ok({ supplierBalances: result }, getCorrelationId(response)),
+        );
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/suppliers/:supplierId/statement",
+    requirePermission("supplier_balances.view"),
+    async (request, response, next) => {
+      try {
+        const statement = await params.procurementService.getSupplierStatement(
+          parseRouteParam(request.params.supplierId),
+        );
+        response.json(ok({ statement }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/supplier-payments",
+    requirePermission("supplier_payments.view"),
+    async (request, response, next) => {
+      try {
+        const query = supplierPaymentListQuerySchema.parse(request.query);
+        const result =
+          await params.procurementService.listSupplierPayments(query);
+        response.json(
+          ok({ supplierPayments: result }, getCorrelationId(response)),
+        );
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/supplier-payments",
+    requirePermission("supplier_payments.create"),
+    async (request, response, next) => {
+      try {
+        const body = createSupplierPaymentSchema.parse(request.body);
+        const result = await params.procurementService.createSupplierPayment(
+          {
+            ...body,
+            idempotencyKey: readIdempotencyKey(request.headers),
           },
           actorFromResponse(response),
         );
