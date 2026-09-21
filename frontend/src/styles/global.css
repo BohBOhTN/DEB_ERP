@@ -257,6 +257,11 @@ button:disabled {
   gap: 20px;
 }
 
+.inventory-workspace {
+  display: grid;
+  gap: 20px;
+}
+
 .tab-row {
   display: flex;
   gap: 8px;
@@ -433,6 +438,20 @@ legend {
 
 .status-muted {
   color: var(--text-muted);
+}
+
+.status-danger {
+  color: var(--danger);
+}
+
+.warning-banner {
+  background: #fff4df;
+  border: 1px solid #e0a64b;
+  border-radius: 8px;
+  color: var(--warning);
+  font-weight: 800;
+  margin: 0;
+  padding: 12px 14px;
 }
 
 dl {

@@ -123,6 +123,7 @@ model Unit {
   products               Product[]
   rawMaterials           RawMaterial[]
   rawMaterialConversions RawMaterialUnitConversion[]
+  inventoryMovements     InventoryMovement[]
 
   @@index([isActive])
   @@map("units")
@@ -164,6 +165,7 @@ model Product {
   updatedAt       DateTime        @updatedAt @map("updated_at")
   category        ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   baseUnit        Unit            @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
+  inventoryMovements InventoryMovement[]
 
   @@index([categoryId])
   @@index([baseUnitId])
@@ -188,6 +190,7 @@ model RawMaterial {
   updatedAt       DateTime                    @updatedAt @map("updated_at")
   baseUnit        Unit                        @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
   conversions     RawMaterialUnitConversion[]
+  inventoryMovements InventoryMovement[]
 
   @@index([baseUnitId])
   @@index([isActive])
@@ -210,4 +213,83 @@ model RawMaterialUnitConversion {
   @@index([unitId])
   @@index([isActive])
   @@map("raw_material_unit_conversions")
+}
+
+model StockLocation {
+  id                 String              @id @default(cuid())
+  code               String              @unique
+  name               String
+  isMain             Boolean             @default(false) @map("is_main")
+  isActive           Boolean             @default(true) @map("is_active")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  inventoryMovements InventoryMovement[]
+
+  @@index([isActive])
+  @@map("stock_locations")
+}
+
+model InventoryMovement {
+  id               String                @id @default(cuid())
+  locationId       String                @map("location_id")
+  itemType         InventoryItemType     @map("item_type")
+  productId        String?               @map("product_id")
+  rawMaterialId    String?               @map("raw_material_id")
+  unitId           String                @map("unit_id")
+  movementType     InventoryMovementType @map("movement_type")
+  quantityDelta    Decimal               @map("quantity_delta") @db.Decimal(18, 6)
+  itemNameSnapshot String                @map("item_name_snapshot")
+  unitNameSnapshot String                @map("unit_name_snapshot")
+  sourceType       String                @map("source_type")
+  sourceId         String?               @map("source_id")
+  reason           String?
+  occurredAt       DateTime              @default(now()) @map("occurred_at")
+  actorUserId      String                @map("actor_user_id")
+  correlationId    String?               @map("correlation_id")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  location         StockLocation         @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  product          Product?              @relation(fields: [productId], references: [id], onDelete: Restrict)
+  rawMaterial      RawMaterial?          @relation(fields: [rawMaterialId], references: [id], onDelete: Restrict)
+  unit             Unit                  @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  @@index([locationId])
+  @@index([productId])
+  @@index([rawMaterialId])
+  @@index([unitId])
+  @@index([movementType])
+  @@index([occurredAt])
+  @@map("inventory_movements")
+}
+
+enum InventoryItemType {
+  PRODUCT
+  RAW_MATERIAL
+}
+
+enum InventoryMovementType {
+  OPENING_STOCK
+  PURCHASE_RECEIPT
+  POS_SALE
+  ORDER_SALE
+  DISTRIBUTOR_DIRECT_SALE
+  DISTRIBUTOR_DISPATCH_OUT
+  DISTRIBUTOR_RETURN_IN
+  DISTRIBUTOR_SETTLED_SALE
+  STOCK_ADJUSTMENT_INCREASE
+  STOCK_ADJUSTMENT_DECREASE
+  REVERSAL
+}
+
+model IdempotencyRecord {
+  id          String   @id @default(cuid())
+  scope       String
+  key         String
+  requestHash String   @map("request_hash")
+  response    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([scope, key])
+  @@index([createdAt])
+  @@map("idempotency_records")
 }

@@ -11,6 +11,8 @@ import { catalogRouter } from "./modules/catalog/catalog.routes.js";
 import type { CatalogService } from "./modules/catalog/catalog.service.js";
 import { healthRouter } from "./modules/health/health.routes.js";
 import type { HealthCheck } from "./modules/health/health.service.js";
+import { inventoryRouter } from "./modules/inventory/inventory.routes.js";
+import type { InventoryService } from "./modules/inventory/inventory.service.js";
 import { AppError } from "./shared/appError.js";
 import { correlationId } from "./shared/correlation.js";
 
@@ -30,6 +32,9 @@ export function createApp(params: {
   };
   catalog?: {
     catalogService: CatalogService;
+  };
+  inventory?: {
+    inventoryService: InventoryService;
   };
 }): express.Express {
   const app = express();
@@ -69,6 +74,17 @@ export function createApp(params: {
         authService: params.auth.authService,
         cookie: params.auth.cookie,
         catalogService: params.catalog.catalogService,
+      }),
+    );
+  }
+
+  if (params.auth && params.inventory) {
+    app.use(
+      "/api/inventory",
+      inventoryRouter({
+        authService: params.auth.authService,
+        cookie: params.auth.cookie,
+        inventoryService: params.inventory.inventoryService,
       }),
     );
   }
