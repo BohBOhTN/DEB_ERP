@@ -52,12 +52,14 @@ export function App() {
     <main className="auth-layout">
       <section className="login-panel" aria-labelledby="login-title">
         <div className="brand-lockup brand-lockup-centered">
-          <img
-            alt="Logo Dar El Barka"
-            className="brand-logo brand-logo-large"
-            src="/assets/dar-el-barka-logo.png"
-          />
-          <div>
+          <div className="login-logo-frame">
+            <img
+              alt="Logo Dar El Barka"
+              className="brand-logo brand-logo-large"
+              src="/assets/dar-el-barka-logo.png"
+            />
+          </div>
+          <div className="login-heading">
             <p className="eyebrow">Acces securise</p>
             <h1 id="login-title">Dar El Barka</h1>
           </div>
