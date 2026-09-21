@@ -37,8 +37,28 @@ export interface PurchaseLineInput {
   unitPriceTnd: string;
 }
 
+export type ProcurementTransactionStep =
+  | "idempotency_record_created"
+  | "purchase_status_updated"
+  | "purchase_stock_receipt_created"
+  | "supplier_payable_created"
+  | "supplier_payment_created"
+  | "supplier_payment_ledger_created"
+  | "purchase_post_audit_created"
+  | "idempotency_response_saved";
+
+export interface ProcurementTransactionHooks {
+  afterStep?: (
+    step: ProcurementTransactionStep,
+    context: { scope?: string; purchaseId?: string },
+  ) => Promise<void> | void;
+}
+
 export class ProcurementService {
-  public constructor(private readonly prisma: PrismaClient) {}
+  public constructor(
+    private readonly prisma: PrismaClient,
+    private readonly transactionHooks: ProcurementTransactionHooks = {},
+  ) {}
 
   public async listSuppliers(params: SupplierListParams) {
     const normalizedSearch = params.search
@@ -340,6 +360,9 @@ export class ProcurementService {
           },
           include: purchaseInclude,
         });
+        await this.afterTransactionStep("purchase_status_updated", {
+          purchaseId: purchase.id,
+        });
 
         await tx.inventoryMovement.createMany({
           data: purchase.lines.map((line) => ({
@@ -359,6 +382,9 @@ export class ProcurementService {
             correlationId: actor.correlationId,
           })),
         });
+        await this.afterTransactionStep("purchase_stock_receipt_created", {
+          purchaseId: purchase.id,
+        });
 
         await tx.supplierLedgerEntry.create({
           data: {
@@ -370,6 +396,9 @@ export class ProcurementService {
             actorUserId: actor.actorUserId,
             correlationId: actor.correlationId,
           },
+        });
+        await this.afterTransactionStep("supplier_payable_created", {
+          purchaseId: purchase.id,
         });
 
         let payment = null;
@@ -383,6 +412,9 @@ export class ProcurementService {
               actorUserId: actor.actorUserId,
               correlationId: actor.correlationId,
             },
+          });
+          await this.afterTransactionStep("supplier_payment_created", {
+            purchaseId: purchase.id,
           });
           await tx.supplierLedgerEntry.create({
             data: {
@@ -398,6 +430,9 @@ export class ProcurementService {
               correlationId: actor.correlationId,
             },
           });
+          await this.afterTransactionStep("supplier_payment_ledger_created", {
+            purchaseId: purchase.id,
+          });
         }
 
         await this.auditWithClient(tx, {
@@ -407,6 +442,9 @@ export class ProcurementService {
           targetId: purchase.id,
           before: purchase,
           after: updatedPurchase,
+        });
+        await this.afterTransactionStep("purchase_post_audit_created", {
+          purchaseId: purchase.id,
         });
 
         return {
@@ -883,6 +921,7 @@ export class ProcurementService {
           requestHash,
         },
       });
+      await this.afterTransactionStep("idempotency_record_created", { scope });
 
       const response = await action(tx);
       await tx.idempotencyRecord.update({
@@ -896,9 +935,17 @@ export class ProcurementService {
           response: toJsonValue(response),
         },
       });
+      await this.afterTransactionStep("idempotency_response_saved", { scope });
 
       return response;
     });
+  }
+
+  private async afterTransactionStep(
+    step: ProcurementTransactionStep,
+    context: { scope?: string; purchaseId?: string },
+  ): Promise<void> {
+    await this.transactionHooks.afterStep?.(step, context);
   }
 }
 
