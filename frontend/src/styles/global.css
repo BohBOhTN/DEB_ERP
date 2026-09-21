@@ -154,7 +154,9 @@ label {
   font-weight: 700;
 }
 
-input {
+input,
+select,
+textarea {
   border: 1px solid var(--border);
   border-radius: 8px;
   min-height: 48px;
@@ -162,7 +164,13 @@ input {
   width: 100%;
 }
 
-input:focus {
+textarea {
+  resize: vertical;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
   border-color: var(--brand-navy);
   box-shadow: 0 0 0 3px rgba(23, 63, 109, 0.14);
   outline: none;
@@ -272,10 +280,28 @@ button:disabled {
   gap: 20px;
 }
 
+.customers-workspace {
+  display: grid;
+  gap: 20px;
+}
+
 .pos-grid {
   align-items: start;
   display: grid;
   gap: 16px;
+}
+
+.customers-grid {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+}
+
+.credit-sale-box {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
 }
 
 .cart-lines {
@@ -389,6 +415,13 @@ button:disabled {
   gap: 8px;
   max-height: 360px;
   overflow: auto;
+}
+
+.customer-row {
+  align-items: stretch;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .list-button {
@@ -590,6 +623,17 @@ dd {
         320px,
         1fr
       );
+  }
+
+  .customers-grid {
+    grid-template-columns: minmax(280px, 0.85fr) minmax(320px, 1fr) minmax(
+        320px,
+        1fr
+      );
+  }
+
+  .customer-row {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .cart-line {
