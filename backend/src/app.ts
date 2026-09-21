@@ -7,6 +7,8 @@ import type { AccessService } from "./modules/access/access.service.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import type { AuthService } from "./modules/auth/auth.service.js";
 import type { SessionCookieConfig } from "./modules/auth/cookies.js";
+import { catalogRouter } from "./modules/catalog/catalog.routes.js";
+import type { CatalogService } from "./modules/catalog/catalog.service.js";
 import { healthRouter } from "./modules/health/health.routes.js";
 import type { HealthCheck } from "./modules/health/health.service.js";
 import { AppError } from "./shared/appError.js";
@@ -25,6 +27,9 @@ export function createApp(params: {
   };
   access?: {
     accessService: AccessService;
+  };
+  catalog?: {
+    catalogService: CatalogService;
   };
 }): express.Express {
   const app = express();
@@ -53,6 +58,17 @@ export function createApp(params: {
         authService: params.auth.authService,
         cookie: params.auth.cookie,
         accessService: params.access.accessService,
+      }),
+    );
+  }
+
+  if (params.auth && params.catalog) {
+    app.use(
+      "/api/catalog",
+      catalogRouter({
+        authService: params.auth.authService,
+        cookie: params.auth.cookie,
+        catalogService: params.catalog.catalogService,
       }),
     );
   }

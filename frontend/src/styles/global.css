@@ -252,6 +252,23 @@ button:disabled {
   gap: 20px;
 }
 
+.catalog-workspace {
+  display: grid;
+  gap: 20px;
+}
+
+.tab-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.catalog-grid {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+}
+
 .section-heading,
 .panel-heading,
 .button-row {
@@ -378,6 +395,46 @@ legend {
   gap: 10px;
 }
 
+.catalog-row {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 64px;
+  padding-bottom: 12px;
+}
+
+.catalog-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.catalog-row span,
+.catalog-row small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.catalog-row small {
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.status-active,
+.status-muted {
+  font-weight: 800;
+}
+
+.status-active {
+  color: var(--success);
+}
+
+.status-muted {
+  color: var(--text-muted);
+}
+
 dl {
   display: grid;
   gap: 12px;
@@ -433,5 +490,13 @@ dd {
         260px,
         1fr
       );
+  }
+
+  .catalog-grid {
+    grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.4fr);
+  }
+
+  .catalog-row {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }
