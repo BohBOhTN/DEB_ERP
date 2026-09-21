@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { AccessManagement } from "../access/AccessManagement";
 import { logout, type CurrentUser } from "../auth/authApi";
 import { CatalogManagement } from "../catalog/CatalogManagement";
+import { InventoryManagement } from "../inventory/InventoryManagement";
 
 interface ProtectedShellProps {
   user: CurrentUser;
@@ -55,7 +56,9 @@ export function ProtectedShell({ user, onLogout }: ProtectedShellProps) {
       </nav>
 
       <main className="workspace">
-        {activeModule === "catalog" ? (
+        {activeModule === "inventory" ? (
+          <InventoryManagement user={user} />
+        ) : activeModule === "catalog" ? (
           <CatalogManagement user={user} />
         ) : activeModule === "access" ? (
           <AccessManagement user={user} />
@@ -100,6 +103,13 @@ function buildNavigation(user: CurrentUser) {
     user.effectivePermissions.includes("units.view")
   ) {
     modules.push({ id: "catalog", label: "Catalogue" });
+  }
+
+  if (
+    user.effectivePermissions.includes("inventory.view") ||
+    user.effectivePermissions.includes("inventory.movements.view")
+  ) {
+    modules.push({ id: "inventory", label: "Stock" });
   }
 
   return modules;
