@@ -279,3 +279,17 @@ enum InventoryMovementType {
   STOCK_ADJUSTMENT_DECREASE
   REVERSAL
 }
+
+model IdempotencyRecord {
+  id          String   @id @default(cuid())
+  scope       String
+  key         String
+  requestHash String   @map("request_hash")
+  response    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([scope, key])
+  @@index([createdAt])
+  @@map("idempotency_records")
+}
