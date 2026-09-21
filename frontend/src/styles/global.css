@@ -267,6 +267,47 @@ button:disabled {
   gap: 20px;
 }
 
+.pos-workspace {
+  display: grid;
+  gap: 20px;
+}
+
+.pos-grid {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+}
+
+.cart-lines {
+  display: grid;
+  gap: 10px;
+}
+
+.cart-line {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+  padding-bottom: 10px;
+}
+
+.cart-line:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.cart-line small {
+  color: var(--text-muted);
+  display: block;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.cart-line input {
+  min-width: 0;
+}
+
 .tab-row {
   display: flex;
   gap: 8px;
@@ -542,5 +583,16 @@ dd {
 
   .catalog-row {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .pos-grid {
+    grid-template-columns: minmax(240px, 0.75fr) minmax(320px, 1fr) minmax(
+        320px,
+        1fr
+      );
+  }
+
+  .cart-line {
+    grid-template-columns: minmax(0, 1fr) 96px auto;
   }
 }

@@ -7,6 +7,7 @@ import { AuthService } from "./modules/auth/auth.service.js";
 import { CatalogService } from "./modules/catalog/catalog.service.js";
 import { createHealthCheck } from "./modules/health/health.service.js";
 import { InventoryService } from "./modules/inventory/inventory.service.js";
+import { PosService } from "./modules/pos/pos.service.js";
 import { ProcurementService } from "./modules/procurement/procurement.service.js";
 
 const prisma = new PrismaClient();
@@ -14,6 +15,7 @@ const accessService = new AccessService(prisma);
 const catalogService = new CatalogService(prisma);
 const inventoryService = new InventoryService(prisma);
 const procurementService = new ProcurementService(prisma);
+const posService = new PosService(prisma);
 const authService = new AuthService(
   new PrismaAuthRepository(prisma),
   env.SESSION_TTL_MINUTES,
@@ -22,6 +24,7 @@ const authService = new AuthService(
 await accessService.bootstrapSystemAccess();
 await catalogService.bootstrapCatalogData();
 await inventoryService.bootstrapInventoryData();
+await posService.bootstrapPosData();
 
 const app = createApp({
   allowedOrigins: env.CORS_ALLOWED_ORIGINS.split(",").map((origin) =>
@@ -54,6 +57,9 @@ const app = createApp({
   },
   procurement: {
     procurementService,
+  },
+  pos: {
+    posService,
   },
 });
 

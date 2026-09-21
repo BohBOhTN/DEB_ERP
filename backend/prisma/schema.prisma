@@ -126,6 +126,7 @@ model Unit {
   inventoryMovements     InventoryMovement[]
   purchaseLinesEntered   PurchaseLine[]              @relation("PurchaseLineEnteredUnit")
   purchaseLinesBase      PurchaseLine[]              @relation("PurchaseLineBaseUnit")
+  saleLines              SaleLine[]
 
   @@index([isActive])
   @@map("units")
@@ -168,6 +169,7 @@ model Product {
   category           ProductCategory     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   baseUnit           Unit                @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
   inventoryMovements InventoryMovement[]
+  saleLines          SaleLine[]
 
   @@index([categoryId])
   @@index([baseUnitId])
@@ -447,6 +449,128 @@ enum SupplierLedgerEntryType {
   PAYMENT
   PURCHASE_REVERSAL
   PAYMENT_REVERSAL
+}
+
+model PosTerminal {
+  id        String       @id @default(cuid())
+  code      String       @unique
+  name      String
+  isActive  Boolean      @default(true) @map("is_active")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+  sessions  PosSession[]
+
+  @@index([isActive])
+  @@map("pos_terminals")
+}
+
+model PosSession {
+  id                String           @id @default(cuid())
+  terminalId        String           @map("terminal_id")
+  status            PosSessionStatus @default(OPEN)
+  openedAt          DateTime         @map("opened_at")
+  openedByUserId    String           @map("opened_by_user_id")
+  openingCashTnd    Decimal          @map("opening_cash_tnd") @db.Decimal(14, 3)
+  closedAt          DateTime?        @map("closed_at")
+  closedByUserId    String?          @map("closed_by_user_id")
+  countedCashTnd    Decimal?         @map("counted_cash_tnd") @db.Decimal(14, 3)
+  expectedCashTnd   Decimal?         @map("expected_cash_tnd") @db.Decimal(14, 3)
+  cashDifferenceTnd Decimal?         @map("cash_difference_tnd") @db.Decimal(14, 3)
+  notes             String?
+  correlationId     String?          @map("correlation_id")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  terminal          PosTerminal      @relation(fields: [terminalId], references: [id], onDelete: Restrict)
+  sales             Sale[]
+  payments          SalePayment[]
+
+  @@index([terminalId])
+  @@index([status])
+  @@index([openedAt])
+  @@map("pos_sessions")
+}
+
+model Sale {
+  id             String           @id @default(cuid())
+  sessionId      String           @map("session_id")
+  status         SaleStatus       @default(POSTED)
+  paymentState   SalePaymentState @default(PAID) @map("payment_state")
+  soldAt         DateTime         @map("sold_at")
+  totalTnd       Decimal          @map("total_tnd") @db.Decimal(14, 3)
+  paidAmountTnd  Decimal          @map("paid_amount_tnd") @db.Decimal(14, 3)
+  postedAt       DateTime         @map("posted_at")
+  postedByUserId String           @map("posted_by_user_id")
+  correlationId  String?          @map("correlation_id")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  session        PosSession       @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  lines          SaleLine[]
+  payments       SalePayment[]
+
+  @@index([sessionId])
+  @@index([status])
+  @@index([soldAt])
+  @@map("sales")
+}
+
+model SaleLine {
+  id                  String   @id @default(cuid())
+  saleId              String   @map("sale_id")
+  productId           String   @map("product_id")
+  unitId              String   @map("unit_id")
+  quantity            Decimal  @db.Decimal(18, 6)
+  unitPriceTnd        Decimal  @map("unit_price_tnd") @db.Decimal(14, 3)
+  lineTotalTnd        Decimal  @map("line_total_tnd") @db.Decimal(14, 3)
+  productNameSnapshot String   @map("product_name_snapshot")
+  unitNameSnapshot    String   @map("unit_name_snapshot")
+  createdAt           DateTime @default(now()) @map("created_at")
+  sale                Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product             Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  unit                Unit     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
+  @@index([productId])
+  @@index([unitId])
+  @@map("sale_lines")
+}
+
+model SalePayment {
+  id            String            @id @default(cuid())
+  saleId        String            @map("sale_id")
+  sessionId     String            @map("session_id")
+  amountTnd     Decimal           @map("amount_tnd") @db.Decimal(14, 3)
+  method        SalePaymentMethod @default(CASH)
+  paidAt        DateTime          @map("paid_at")
+  actorUserId   String            @map("actor_user_id")
+  correlationId String?           @map("correlation_id")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  sale          Sale              @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  session       PosSession        @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
+  @@index([sessionId])
+  @@index([paidAt])
+  @@map("sale_payments")
+}
+
+enum PosSessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum SaleStatus {
+  POSTED
+  CANCELLED
+}
+
+enum SalePaymentState {
+  PAID
+  PARTIALLY_PAID
+  UNPAID
+}
+
+enum SalePaymentMethod {
+  CASH
 }
 
 model IdempotencyRecord {

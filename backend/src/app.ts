@@ -13,6 +13,8 @@ import { healthRouter } from "./modules/health/health.routes.js";
 import type { HealthCheck } from "./modules/health/health.service.js";
 import { inventoryRouter } from "./modules/inventory/inventory.routes.js";
 import type { InventoryService } from "./modules/inventory/inventory.service.js";
+import { posRouter } from "./modules/pos/pos.routes.js";
+import type { PosService } from "./modules/pos/pos.service.js";
 import { procurementRouter } from "./modules/procurement/procurement.routes.js";
 import type { ProcurementService } from "./modules/procurement/procurement.service.js";
 import { AppError } from "./shared/appError.js";
@@ -40,6 +42,9 @@ export function createApp(params: {
   };
   procurement?: {
     procurementService: ProcurementService;
+  };
+  pos?: {
+    posService: PosService;
   };
 }): express.Express {
   const app = express();
@@ -101,6 +106,17 @@ export function createApp(params: {
         authService: params.auth.authService,
         cookie: params.auth.cookie,
         procurementService: params.procurement.procurementService,
+      }),
+    );
+  }
+
+  if (params.auth && params.pos) {
+    app.use(
+      "/api/pos",
+      posRouter({
+        authService: params.auth.authService,
+        cookie: params.auth.cookie,
+        posService: params.pos.posService,
       }),
     );
   }
