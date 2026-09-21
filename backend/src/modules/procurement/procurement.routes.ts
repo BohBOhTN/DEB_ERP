@@ -1,4 +1,6 @@
+import { PurchasePaymentTerms, PurchaseStatus } from "@prisma/client";
 import { Router, type Response } from "express";
+import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
 import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
@@ -19,6 +21,13 @@ const listQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
 
+const purchaseListQuerySchema = z.object({
+  supplierId: z.string().trim().min(1).optional(),
+  status: z.nativeEnum(PurchaseStatus).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
 const createSupplierSchema = z.object({
   name: z.string().trim().min(1),
   phone: z.string().optional(),
@@ -35,6 +44,40 @@ const updateSupplierSchema = z.object({
   taxIdentifier: z.string().optional(),
   notes: z.string().optional(),
   isActive: z.boolean().optional(),
+});
+
+const decimalQuantity = z
+  .string()
+  .trim()
+  .regex(/^\d+(\.\d{1,6})?$/);
+
+const moneyTnd = z
+  .string()
+  .trim()
+  .regex(/^\d+(\.\d{1,3})?$/);
+
+const createPurchaseSchema = z.object({
+  supplierId: z.string().trim().min(1),
+  purchaseDate: z.coerce.date(),
+  supplierReference: z.string().optional(),
+  paymentTerms: z.nativeEnum(PurchasePaymentTerms),
+  paidAmountTnd: moneyTnd.default("0"),
+  dueDate: z.coerce.date().optional(),
+  notes: z.string().optional(),
+  lines: z
+    .array(
+      z.object({
+        rawMaterialId: z.string().trim().min(1),
+        enteredUnitId: z.string().trim().min(1),
+        enteredQuantity: decimalQuantity,
+        unitPriceTnd: moneyTnd,
+      }),
+    )
+    .min(1),
+});
+
+const cancelPurchaseSchema = z.object({
+  reason: z.string().trim().min(3),
 });
 
 export function procurementRouter(params: {
@@ -99,6 +142,77 @@ export function procurementRouter(params: {
     },
   );
 
+  router.get(
+    "/purchases",
+    requirePermission("purchases.view"),
+    async (request, response, next) => {
+      try {
+        const query = purchaseListQuerySchema.parse(request.query);
+        const result = await params.procurementService.listPurchases(query);
+        response.json(ok({ purchases: result }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/purchases",
+    requirePermission("purchases.create"),
+    async (request, response, next) => {
+      try {
+        const body = createPurchaseSchema.parse(request.body);
+        const purchase = await params.procurementService.createPurchase(
+          body,
+          actorFromResponse(response),
+        );
+        response.status(201).json(ok({ purchase }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/purchases/:purchaseId/post",
+    requirePermission("purchases.post"),
+    async (request, response, next) => {
+      try {
+        const result = await params.procurementService.postPurchase(
+          parseRouteParam(request.params.purchaseId),
+          {
+            idempotencyKey: readIdempotencyKey(request.headers),
+          },
+          actorFromResponse(response),
+        );
+        response.status(201).json(ok(result, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/purchases/:purchaseId/cancel",
+    requirePermission("purchases.cancel"),
+    async (request, response, next) => {
+      try {
+        const body = cancelPurchaseSchema.parse(request.body);
+        const result = await params.procurementService.cancelPurchase(
+          parseRouteParam(request.params.purchaseId),
+          {
+            idempotencyKey: readIdempotencyKey(request.headers),
+            reason: body.reason,
+          },
+          actorFromResponse(response),
+        );
+        response.status(201).json(ok(result, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   return router;
 }
 
@@ -117,6 +231,24 @@ function parseRouteParam(value: string | string[] | undefined): string {
       statusCode: 400,
       code: "VALIDATION_ERROR",
       message: "Les donnees saisies sont invalides.",
+    });
+  }
+
+  return value;
+}
+
+function readIdempotencyKey(headers: IncomingHttpHeaders): string {
+  const value = headers["idempotency-key"];
+
+  if (Array.isArray(value)) {
+    return value[0] ?? "";
+  }
+
+  if (!value) {
+    throw new AppError({
+      statusCode: 400,
+      code: "IDEMPOTENCY_KEY_REQUIRED",
+      message: "Une cle d'idempotence est requise.",
     });
   }
 

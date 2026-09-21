@@ -120,6 +120,36 @@ async function createTestApp(permissionKeys: string[]) {
       isActive: false,
       version: 2,
     }),
+    listPurchases: vi.fn().mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 25,
+      total: 0,
+      pageCount: 0,
+    }),
+    createPurchase: vi.fn().mockResolvedValue({
+      id: "purchase-1",
+      supplierId: "supplier-1",
+      status: "DRAFT",
+      totalTnd: "250.000",
+      paidAmountTnd: "100.000",
+    }),
+    postPurchase: vi.fn().mockResolvedValue({
+      purchase: {
+        id: "purchase-1",
+        status: "POSTED",
+      },
+      payment: {
+        id: "payment-1",
+        amountTnd: "100.000",
+      },
+    }),
+    cancelPurchase: vi.fn().mockResolvedValue({
+      purchase: {
+        id: "purchase-1",
+        status: "CANCELLED",
+      },
+    }),
   };
 
   const app = createApp({
@@ -264,6 +294,95 @@ describe("procurement routes", () => {
       {
         version: 1,
         isActive: false,
+      },
+      expect.objectContaining({
+        actorUserId: "user-1",
+      }),
+    );
+  });
+
+  it("creates purchase drafts when the user has purchases.create", async () => {
+    const { app, cookie, procurementService } = await createTestApp([
+      "purchases.create",
+    ]);
+
+    const response = await request(app)
+      .post("/api/procurement/purchases")
+      .set("Cookie", cookie)
+      .send({
+        supplierId: "supplier-1",
+        purchaseDate: "2026-09-21T08:00:00.000Z",
+        paymentTerms: "PARTIAL",
+        paidAmountTnd: "100.000",
+        dueDate: "2026-09-30T08:00:00.000Z",
+        lines: [
+          {
+            rawMaterialId: "raw-material-1",
+            enteredUnitId: "unit-bag",
+            enteredQuantity: "4",
+            unitPriceTnd: "2.500",
+          },
+        ],
+      })
+      .expect(201);
+
+    expect(response.body.data.purchase).toMatchObject({
+      id: "purchase-1",
+      status: "DRAFT",
+    });
+    expect(procurementService.createPurchase).toHaveBeenCalledWith(
+      expect.objectContaining({
+        supplierId: "supplier-1",
+        paymentTerms: "PARTIAL",
+        paidAmountTnd: "100.000",
+        lines: [
+          {
+            rawMaterialId: "raw-material-1",
+            enteredUnitId: "unit-bag",
+            enteredQuantity: "4",
+            unitPriceTnd: "2.500",
+          },
+        ],
+      }),
+      expect.objectContaining({
+        actorUserId: "user-1",
+      }),
+    );
+  });
+
+  it("requires an idempotency key to post purchases", async () => {
+    const { app, cookie, procurementService } = await createTestApp([
+      "purchases.post",
+    ]);
+
+    const response = await request(app)
+      .post("/api/procurement/purchases/purchase-1/post")
+      .set("Cookie", cookie)
+      .expect(400);
+
+    expect(response.body.error.code).toBe("IDEMPOTENCY_KEY_REQUIRED");
+    expect(procurementService.postPurchase).not.toHaveBeenCalled();
+  });
+
+  it("posts purchases when the user has purchases.post", async () => {
+    const { app, cookie, procurementService } = await createTestApp([
+      "purchases.post",
+    ]);
+
+    const response = await request(app)
+      .post("/api/procurement/purchases/purchase-1/post")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "post-purchase-1")
+      .expect(201);
+
+    expect(response.body.data.purchase).toMatchObject({
+      id: "purchase-1",
+      status: "POSTED",
+    });
+    expect(procurementService.postPurchase).toHaveBeenCalledWith(
+      "purchase-1",
+      {
+        idempotencyKey: "post-purchase-1",
       },
       expect.objectContaining({
         actorUserId: "user-1",
