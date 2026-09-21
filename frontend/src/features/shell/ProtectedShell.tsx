@@ -3,6 +3,7 @@ import { AccessManagement } from "../access/AccessManagement";
 import { logout, type CurrentUser } from "../auth/authApi";
 import { CatalogManagement } from "../catalog/CatalogManagement";
 import { InventoryManagement } from "../inventory/InventoryManagement";
+import { ProcurementManagement } from "../procurement/ProcurementManagement";
 
 interface ProtectedShellProps {
   user: CurrentUser;
@@ -58,6 +59,8 @@ export function ProtectedShell({ user, onLogout }: ProtectedShellProps) {
       <main className="workspace">
         {activeModule === "inventory" ? (
           <InventoryManagement user={user} />
+        ) : activeModule === "procurement" ? (
+          <ProcurementManagement user={user} />
         ) : activeModule === "catalog" ? (
           <CatalogManagement user={user} />
         ) : activeModule === "access" ? (
@@ -110,6 +113,18 @@ function buildNavigation(user: CurrentUser) {
     user.effectivePermissions.includes("inventory.movements.view")
   ) {
     modules.push({ id: "inventory", label: "Stock" });
+  }
+
+  if (
+    user.effectivePermissions.includes("suppliers.view") ||
+    user.effectivePermissions.includes("suppliers.create") ||
+    user.effectivePermissions.includes("suppliers.update") ||
+    user.effectivePermissions.includes("purchases.view") ||
+    user.effectivePermissions.includes("purchases.create") ||
+    user.effectivePermissions.includes("purchases.post") ||
+    user.effectivePermissions.includes("purchases.cancel")
+  ) {
+    modules.push({ id: "procurement", label: "Achats" });
   }
 
   return modules;

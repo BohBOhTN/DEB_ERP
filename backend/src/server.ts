@@ -7,11 +7,13 @@ import { AuthService } from "./modules/auth/auth.service.js";
 import { CatalogService } from "./modules/catalog/catalog.service.js";
 import { createHealthCheck } from "./modules/health/health.service.js";
 import { InventoryService } from "./modules/inventory/inventory.service.js";
+import { ProcurementService } from "./modules/procurement/procurement.service.js";
 
 const prisma = new PrismaClient();
 const accessService = new AccessService(prisma);
 const catalogService = new CatalogService(prisma);
 const inventoryService = new InventoryService(prisma);
+const procurementService = new ProcurementService(prisma);
 const authService = new AuthService(
   new PrismaAuthRepository(prisma),
   env.SESSION_TTL_MINUTES,
@@ -49,6 +51,9 @@ const app = createApp({
   },
   inventory: {
     inventoryService,
+  },
+  procurement: {
+    procurementService,
   },
 });
 
