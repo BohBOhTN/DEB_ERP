@@ -14,7 +14,7 @@ export interface ApiError {
   };
 }
 
-interface ApiEnvelope<TData> {
+export interface ApiEnvelope<TData> {
   data: TData;
   meta: {
     correlationId: string;
@@ -65,7 +65,7 @@ export async function logout(): Promise<void> {
   });
 }
 
-async function readApiError(response: Response): Promise<ApiError> {
+export async function readApiError(response: Response): Promise<ApiError> {
   try {
     return (await response.json()) as ApiError;
   } catch {

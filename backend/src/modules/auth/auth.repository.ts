@@ -16,6 +16,30 @@ export class PrismaAuthRepository implements AuthRepository {
     });
   }
 
+  public async findEffectivePermissionKeys(userId: string): Promise<string[]> {
+    const grants = await this.prisma.rolePermission.findMany({
+      where: {
+        role: {
+          isActive: true,
+          users: {
+            some: {
+              userId,
+            },
+          },
+        },
+      },
+      select: {
+        permissionKey: true,
+      },
+      distinct: ["permissionKey"],
+      orderBy: {
+        permissionKey: "asc",
+      },
+    });
+
+    return grants.map((grant) => grant.permissionKey);
+  }
+
   public async createSession(params: {
     userId: string;
     tokenHash: string;

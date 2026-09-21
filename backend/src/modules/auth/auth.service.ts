@@ -46,7 +46,7 @@ export class AuthService {
     });
 
     return {
-      user: toAuthenticatedUser(user),
+      user: await this.toAuthenticatedUser(user),
       sessionToken,
       expiresAt,
     };
@@ -74,7 +74,7 @@ export class AuthService {
 
     await this.repository.touchSession(session.id);
 
-    return toAuthenticatedUser(session.user);
+    return this.toAuthenticatedUser(session.user);
   }
 
   public async logout(sessionToken: string | undefined): Promise<void> {
@@ -96,21 +96,25 @@ export class AuthService {
       passwordHash: await hashPassword(params.password),
     });
 
-    return toAuthenticatedUser(user);
+    return this.toAuthenticatedUser(user);
+  }
+
+  private async toAuthenticatedUser(
+    user: StoredUser,
+  ): Promise<AuthenticatedUser> {
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      effectivePermissions: await this.repository.findEffectivePermissionKeys(
+        user.id,
+      ),
+    };
   }
 }
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
-}
-
-export function toAuthenticatedUser(user: StoredUser): AuthenticatedUser {
-  return {
-    id: user.id,
-    email: user.email,
-    displayName: user.displayName,
-    effectivePermissions: [],
-  };
 }
 
 export function authenticationRequired(): AppError {

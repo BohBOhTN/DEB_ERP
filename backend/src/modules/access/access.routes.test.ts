@@ -1,13 +1,13 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../app.js";
-import { AuthService } from "./auth.service.js";
+import { AuthService } from "../auth/auth.service.js";
 import type {
   AuthRepository,
   StoredSession,
   StoredUser,
-} from "./auth.types.js";
-import { hashPassword } from "./password.service.js";
+} from "../auth/auth.types.js";
+import { hashPassword } from "../auth/password.service.js";
 
 class InMemoryAuthRepository implements AuthRepository {
   public users = new Map<string, StoredUser>();
@@ -16,6 +16,10 @@ class InMemoryAuthRepository implements AuthRepository {
 
   public async findUserByEmail(email: string): Promise<StoredUser | null> {
     return this.users.get(email) ?? null;
+  }
+
+  public async findEffectivePermissionKeys(userId: string): Promise<string[]> {
+    return this.permissions.get(userId) ?? [];
   }
 
   public async createSession(params: {
@@ -39,10 +43,6 @@ class InMemoryAuthRepository implements AuthRepository {
       revokedAt: null,
       user,
     });
-  }
-
-  public async findEffectivePermissionKeys(userId: string): Promise<string[]> {
-    return this.permissions.get(userId) ?? [];
   }
 
   public async findSessionByTokenHash(
@@ -81,14 +81,37 @@ class InMemoryAuthRepository implements AuthRepository {
   }
 }
 
-async function createTestApp() {
+async function createTestApp(permissionKeys: string[]) {
   const repository = new InMemoryAuthRepository();
   const authService = new AuthService(repository, 30);
-  await repository.createUser({
+  const user = await repository.createUser({
     email: "admin@example.com",
     displayName: "Admin",
     passwordHash: await hashPassword("correct-password"),
   });
+  repository.permissions.set(user.id, permissionKeys);
+
+  const accessService = {
+    listPermissions: async () => [
+      {
+        key: "roles.view",
+        module: "Roles",
+        labelFr: "roles.view",
+        descriptionFr: "Voir les roles",
+      },
+    ],
+    listRoles: async () => [
+      {
+        id: "role-1",
+        name: "Gestion",
+        description: null,
+        isActive: true,
+        isSystem: false,
+        systemKey: null,
+        permissions: [{ permissionKey: "roles.view" }],
+      },
+    ],
+  };
 
   const app = createApp({
     allowedOrigins: ["http://localhost:5173"],
@@ -112,95 +135,73 @@ async function createTestApp() {
         windowMs: 60_000,
       },
     },
+    access: {
+      accessService: accessService as never,
+    },
   });
 
-  return { app, repository };
+  const login = await request(app)
+    .post("/api/auth/login")
+    .send({
+      email: "admin@example.com",
+      password: "correct-password",
+    })
+    .expect(200);
+
+  return {
+    app,
+    cookie: login.headers["set-cookie"],
+    login,
+  };
 }
 
-describe("auth routes", () => {
-  it("logs in, reads current user, and logs out", async () => {
-    const { app } = await createTestApp();
+describe("access routes", () => {
+  it("rejects anonymous access before permission checks", async () => {
+    const { app } = await createTestApp(["roles.view"]);
 
-    const login = await request(app)
-      .post("/api/auth/login")
-      .send({
-        email: "admin@example.com",
-        password: "correct-password",
-      })
-      .expect(200);
-
-    const cookie = login.headers["set-cookie"];
-    expect(cookie[0]).toContain("HttpOnly");
-    expect(login.body.data.user).toMatchObject({
-      email: "admin@example.com",
-      displayName: "Admin",
-      effectivePermissions: [],
-    });
-
-    const me = await request(app)
-      .get("/api/auth/me")
-      .set("Cookie", cookie)
-      .expect(200);
-
-    expect(me.body.data.user.email).toBe("admin@example.com");
-
-    await request(app)
-      .post("/api/auth/logout")
-      .set("Cookie", cookie)
-      .expect(200);
-
-    await request(app).get("/api/auth/me").set("Cookie", cookie).expect(401);
-  });
-
-  it("rejects anonymous protected requests", async () => {
-    const { app } = await createTestApp();
-
-    const response = await request(app).get("/api/auth/me").expect(401);
+    const response = await request(app).get("/api/access/roles").expect(401);
 
     expect(response.body.error).toMatchObject({
       code: "AUTHENTICATION_REQUIRED",
-      message: "Votre session n'est plus valide.",
     });
   });
 
-  it("uses a generic French login error for invalid credentials", async () => {
-    const { app } = await createTestApp();
+  it("rejects direct API access when the user lacks the action permission", async () => {
+    const { app, cookie, login } = await createTestApp([]);
+
+    expect(login.body.data.user.effectivePermissions).toEqual([]);
 
     const response = await request(app)
-      .post("/api/auth/login")
-      .send({
-        email: "missing@example.com",
-        password: "wrong-password",
-      })
-      .expect(401);
+      .get("/api/access/roles")
+      .set("Cookie", cookie)
+      .expect(403);
 
     expect(response.body.error).toMatchObject({
-      code: "AUTHENTICATION_REQUIRED",
-      message: "Identifiants invalides.",
+      code: "PERMISSION_DENIED",
+      message: "Vous n'avez pas l'autorisation necessaire.",
     });
   });
 
-  it("rejects an existing session after the user is deactivated", async () => {
-    const { app, repository } = await createTestApp();
-    const login = await request(app)
-      .post("/api/auth/login")
-      .send({
-        email: "admin@example.com",
-        password: "correct-password",
-      })
+  it("allows role listing when the user has the exact permission", async () => {
+    const { app, cookie, login } = await createTestApp(["roles.view"]);
+
+    expect(login.body.data.user.effectivePermissions).toEqual(["roles.view"]);
+
+    const response = await request(app)
+      .get("/api/access/roles")
+      .set("Cookie", cookie)
       .expect(200);
 
-    const user = repository.users.get("admin@example.com");
-
-    if (!user) {
-      throw new Error("missing user");
-    }
-
-    user.isActive = false;
-
-    await request(app)
-      .get("/api/auth/me")
-      .set("Cookie", login.headers["set-cookie"])
-      .expect(401);
+    expect(response.body.data.roles).toEqual([
+      {
+        id: "role-1",
+        name: "Gestion",
+        description: null,
+        isActive: true,
+        isSystem: false,
+        systemKey: null,
+        permissionKeys: ["roles.view"],
+      },
+    ]);
   });
 });

@@ -17,6 +17,8 @@ model User {
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
   sessions      AuthSession[]
+  roles         UserRole[]
+  auditEvents   AuditEvent[]  @relation("AuditActor")
 
   @@index([isActive])
   @@map("users")
@@ -35,4 +37,76 @@ model AuthSession {
   @@index([userId])
   @@index([expiresAt])
   @@map("auth_sessions")
+}
+
+model Permission {
+  key           String           @id
+  module        String
+  labelFr       String           @map("label_fr")
+  descriptionFr String           @map("description_fr")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+  roles         RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String
+  description String?
+  isActive    Boolean          @default(true) @map("is_active")
+  isSystem    Boolean          @default(false) @map("is_system")
+  systemKey   String?          @unique @map("system_key")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@index([isActive])
+  @@map("roles")
+}
+
+model RolePermission {
+  roleId        String     @map("role_id")
+  permissionKey String     @map("permission_key")
+  role          Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission    Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  @@id([roleId, permissionKey])
+  @@index([permissionKey])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId    String   @map("user_id")
+  roleId    String   @map("role_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model AuditEvent {
+  id            String   @id @default(cuid())
+  actorUserId   String?  @map("actor_user_id")
+  action        String
+  entity        String
+  targetId      String?  @map("target_id")
+  correlationId String?  @map("correlation_id")
+  reason        String?
+  before        Json?
+  after         Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+  actor         User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId])
+  @@index([entity, targetId])
+  @@index([createdAt])
+  @@map("audit_events")
 }

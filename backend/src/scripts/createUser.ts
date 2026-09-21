@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { env } from "../config/env.js";
+import { AccessService } from "../modules/access/access.service.js";
 import { PrismaAuthRepository } from "../modules/auth/auth.repository.js";
 import { AuthService } from "../modules/auth/auth.service.js";
 
@@ -13,17 +14,22 @@ if (!email || !displayName || !password) {
 }
 
 const prisma = new PrismaClient();
+const accessService = new AccessService(prisma);
 const authService = new AuthService(
   new PrismaAuthRepository(prisma),
   env.SESSION_TTL_MINUTES,
 );
 
 try {
+  await accessService.bootstrapSystemAccess();
+
   const user = await authService.createUser({
     email,
     displayName,
     password,
   });
+
+  await accessService.bootstrapSystemAccess();
 
   console.log(`Created user ${user.email}`);
 } finally {

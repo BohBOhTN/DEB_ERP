@@ -24,6 +24,7 @@ export interface StoredSession {
 
 export interface AuthRepository {
   findUserByEmail(email: string): Promise<StoredUser | null>;
+  findEffectivePermissionKeys(userId: string): Promise<string[]>;
   createSession(params: {
     userId: string;
     tokenHash: string;

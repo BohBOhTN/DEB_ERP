@@ -10,6 +10,7 @@ import { hashPassword } from "./password.service.js";
 class InMemoryAuthRepository implements AuthRepository {
   public users = new Map<string, StoredUser>();
   public sessions = new Map<string, StoredSession>();
+  public permissions = new Map<string, string[]>();
 
   public async findUserByEmail(email: string): Promise<StoredUser | null> {
     return this.users.get(email) ?? null;
@@ -36,6 +37,10 @@ class InMemoryAuthRepository implements AuthRepository {
       revokedAt: null,
       user,
     });
+  }
+
+  public async findEffectivePermissionKeys(userId: string): Promise<string[]> {
+    return this.permissions.get(userId) ?? [];
   }
 
   public async findSessionByTokenHash(
