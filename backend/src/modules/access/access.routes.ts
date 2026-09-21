@@ -1,9 +1,4 @@
-import {
-  Router,
-  type NextFunction,
-  type Request,
-  type Response,
-} from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { ok } from "../../shared/apiResponse.js";
 import { AppError } from "../../shared/appError.js";
@@ -12,6 +7,7 @@ import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import type { AccessService } from "./access.service.js";
+import { requirePermission } from "./permission.middleware.js";
 
 const createRoleSchema = z.object({
   name: z.string().trim().min(1),
@@ -235,26 +231,6 @@ export function accessRouter(params: {
   );
 
   return router;
-}
-
-function requirePermission(permissionKey: string) {
-  return (_request: Request, response: Response, next: NextFunction) => {
-    const user = response.locals.currentUser as
-      { id: string; effectivePermissions: string[] } | undefined;
-
-    if (!user?.effectivePermissions.includes(permissionKey)) {
-      next(
-        new AppError({
-          statusCode: 403,
-          code: "PERMISSION_DENIED",
-          message: "Vous n'avez pas l'autorisation necessaire.",
-        }),
-      );
-      return;
-    }
-
-    next();
-  };
 }
 
 function actorFromResponse(response: Response) {
