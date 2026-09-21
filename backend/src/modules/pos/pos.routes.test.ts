@@ -311,6 +311,66 @@ describe("pos routes", () => {
     );
   });
 
+  it("rejects partial sales without pos.credit_sale", async () => {
+    const { app, cookie, posService } = await createTestApp(["pos.sell"]);
+
+    const response = await request(app)
+      .post("/api/pos/sales")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "sale-credit-1")
+      .send({
+        sessionId: "session-1",
+        customerId: "customer-1",
+        paidAmountTnd: "2.000",
+        lines: [
+          {
+            productId: "product-1",
+            quantity: "2",
+          },
+        ],
+      })
+      .expect(403);
+
+    expect(response.body.error.code).toBe("PERMISSION_DENIED");
+    expect(posService.postPaidSale).not.toHaveBeenCalled();
+  });
+
+  it("posts partial sales when the user has pos.credit_sale", async () => {
+    const { app, cookie, posService } = await createTestApp([
+      "pos.sell",
+      "pos.credit_sale",
+    ]);
+
+    await request(app)
+      .post("/api/pos/sales")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "sale-credit-1")
+      .send({
+        sessionId: "session-1",
+        customerId: "customer-1",
+        paidAmountTnd: "2.000",
+        lines: [
+          {
+            productId: "product-1",
+            quantity: "2",
+          },
+        ],
+      })
+      .expect(201);
+
+    expect(posService.postPaidSale).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: "sale-credit-1",
+        sessionId: "session-1",
+        customerId: "customer-1",
+        paidAmountTnd: "2.000",
+      }),
+      expect.objectContaining({
+        actorUserId: "user-1",
+      }),
+    );
+  });
+
   it("closes a session when the user has pos.close_session", async () => {
     const { app, cookie, posService } = await createTestApp([
       "pos.close_session",

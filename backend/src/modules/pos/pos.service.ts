@@ -1,6 +1,7 @@
 import {
   InventoryItemType,
   InventoryMovementType,
+  CustomerLedgerEntryType,
   PosSessionStatus,
   Prisma,
   SalePaymentState,
@@ -272,7 +273,9 @@ export class PosService {
     params: {
       idempotencyKey: string;
       sessionId?: string;
+      customerId?: string;
       soldAt: Date;
+      paidAmountTnd?: string;
       lines: SaleLineInput[];
     },
     actor: PosActor,
@@ -298,6 +301,7 @@ export class PosService {
       params.idempotencyKey,
       {
         ...params,
+        paidAmountTnd: params.paidAmountTnd,
         lines: lines.map((line) => ({
           productId: line.productId,
           quantity: line.quantity.toFixed(6),
@@ -381,15 +385,66 @@ export class PosService {
             message: "Le total de la vente doit etre superieur a zero.",
           });
         }
+        const paidAmountTnd =
+          params.paidAmountTnd === undefined
+            ? totalTnd
+            : parseNonNegativeMoney(params.paidAmountTnd);
+        const remainingDueTnd = totalTnd
+          .minus(paidAmountTnd)
+          .toDecimalPlaces(3, Prisma.Decimal.ROUND_HALF_UP);
+
+        if (paidAmountTnd.greaterThan(totalTnd)) {
+          throw new AppError({
+            statusCode: 400,
+            code: "SALE_OVERPAYMENT_REJECTED",
+            message: "Le paiement ne peut pas depasser le total de la vente.",
+          });
+        }
+
+        const paymentState = derivePaymentState(totalTnd, paidAmountTnd);
+        let customer:
+          Awaited<ReturnType<typeof tx.customer.findUnique>> | undefined;
+
+        if (remainingDueTnd.greaterThan(0)) {
+          if (!params.customerId) {
+            throw new AppError({
+              statusCode: 400,
+              code: "CUSTOMER_REQUIRED_FOR_CREDIT",
+              message: "Un client est obligatoire pour une vente a credit.",
+            });
+          }
+
+          customer = await tx.customer.findUnique({
+            where: {
+              id: params.customerId,
+            },
+          });
+
+          if (!customer || !customer.isActive) {
+            throw new AppError({
+              statusCode: 400,
+              code: "ACTIVE_CUSTOMER_REQUIRED",
+              message: "Un client actif est obligatoire pour cette vente.",
+            });
+          }
+        } else if (params.customerId) {
+          customer = await tx.customer.findUnique({
+            where: {
+              id: params.customerId,
+            },
+          });
+        }
 
         const sale = await tx.sale.create({
           data: {
             sessionId: session.id,
+            customerId: customer?.id,
             status: SaleStatus.POSTED,
-            paymentState: SalePaymentState.PAID,
+            paymentState,
             soldAt: params.soldAt,
             totalTnd: totalTnd.toFixed(3),
-            paidAmountTnd: totalTnd.toFixed(3),
+            paidAmountTnd: paidAmountTnd.toFixed(3),
+            remainingDueTnd: remainingDueTnd.toFixed(3),
             postedAt: params.soldAt,
             postedByUserId: actor.actorUserId,
             correlationId: actor.correlationId,
@@ -413,16 +468,32 @@ export class PosService {
           },
         });
 
-        await tx.salePayment.create({
-          data: {
-            saleId: sale.id,
-            sessionId: session.id,
-            amountTnd: totalTnd.toFixed(3),
-            paidAt: params.soldAt,
-            actorUserId: actor.actorUserId,
-            correlationId: actor.correlationId,
-          },
-        });
+        if (paidAmountTnd.greaterThan(0)) {
+          await tx.salePayment.create({
+            data: {
+              saleId: sale.id,
+              sessionId: session.id,
+              amountTnd: paidAmountTnd.toFixed(3),
+              paidAt: params.soldAt,
+              actorUserId: actor.actorUserId,
+              correlationId: actor.correlationId,
+            },
+          });
+        }
+
+        if (customer && remainingDueTnd.greaterThan(0)) {
+          await tx.customerLedgerEntry.create({
+            data: {
+              customerId: customer.id,
+              saleId: sale.id,
+              entryType: CustomerLedgerEntryType.SALE_RECEIVABLE,
+              amountTnd: remainingDueTnd.toFixed(3),
+              occurredAt: params.soldAt,
+              actorUserId: actor.actorUserId,
+              correlationId: actor.correlationId,
+            },
+          });
+        }
 
         const mainLocation = await this.findMainLocation(tx);
         const stockableRows = lineRows.filter(
@@ -624,6 +695,21 @@ function parseNonNegativeMoney(value: string): Prisma.Decimal {
   }
 
   return decimal.toDecimalPlaces(3, Prisma.Decimal.ROUND_HALF_UP);
+}
+
+function derivePaymentState(
+  totalTnd: Prisma.Decimal,
+  paidAmountTnd: Prisma.Decimal,
+): SalePaymentState {
+  if (paidAmountTnd.equals(totalTnd)) {
+    return SalePaymentState.PAID;
+  }
+
+  if (paidAmountTnd.equals(0)) {
+    return SalePaymentState.UNPAID;
+  }
+
+  return SalePaymentState.PARTIALLY_PAID;
 }
 
 function sumDecimals(values: Prisma.Decimal[], scale: number): Prisma.Decimal {

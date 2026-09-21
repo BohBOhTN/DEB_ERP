@@ -113,6 +113,90 @@ describe("PosService", () => {
     );
   });
 
+  it("posts a partial customer sale with receivable and actual cash only", async () => {
+    const prisma = new PosPrismaDouble();
+    const service = new PosService(prisma as unknown as PrismaClient);
+    await service.openSession(
+      {
+        idempotencyKey: "open-1",
+        openingCashTnd: "20.000",
+        openedAt: new Date("2026-09-21T08:00:00.000Z"),
+      },
+      { actorUserId: "user-1" },
+    );
+
+    const result = await service.postPaidSale(
+      {
+        idempotencyKey: "sale-credit-1",
+        sessionId: "session-1",
+        customerId: "customer-1",
+        soldAt: new Date("2026-09-21T08:10:00.000Z"),
+        paidAmountTnd: "2.000",
+        lines: [
+          {
+            productId: "product-1",
+            quantity: "2",
+          },
+        ],
+      },
+      { actorUserId: "user-1" },
+    );
+
+    expect(result.sale).toMatchObject({
+      totalTnd: "5.000",
+      paidAmountTnd: "2.000",
+      remainingDueTnd: "3.000",
+      paymentState: "PARTIALLY_PAID",
+      customerId: "customer-1",
+    });
+    expect(prisma.store.salePayments).toEqual([
+      expect.objectContaining({
+        amountTnd: "2.000",
+      }),
+    ]);
+    expect(prisma.store.customerLedgerEntries).toEqual([
+      expect.objectContaining({
+        customerId: "customer-1",
+        saleId: "sale-1",
+        entryType: "SALE_RECEIVABLE",
+        amountTnd: "3.000",
+      }),
+    ]);
+  });
+
+  it("rejects anonymous customer credit", async () => {
+    const prisma = new PosPrismaDouble();
+    const service = new PosService(prisma as unknown as PrismaClient);
+    await service.openSession(
+      {
+        idempotencyKey: "open-1",
+        openingCashTnd: "20.000",
+        openedAt: new Date("2026-09-21T08:00:00.000Z"),
+      },
+      { actorUserId: "user-1" },
+    );
+
+    await expect(
+      service.postPaidSale(
+        {
+          idempotencyKey: "sale-credit-1",
+          sessionId: "session-1",
+          soldAt: new Date("2026-09-21T08:10:00.000Z"),
+          paidAmountTnd: "2.000",
+          lines: [
+            {
+              productId: "product-1",
+              quantity: "2",
+            },
+          ],
+        },
+        { actorUserId: "user-1" },
+      ),
+    ).rejects.toMatchObject({
+      code: "CUSTOMER_REQUIRED_FOR_CREDIT",
+    });
+  });
+
   it("rejects reusing a sale idempotency key with different cart content", async () => {
     const prisma = new PosPrismaDouble();
     const service = new PosService(prisma as unknown as PrismaClient);
@@ -212,6 +296,7 @@ interface PosStore {
     name: string;
     isActive: boolean;
   }>;
+  customers: Array<{ id: string; isActive: boolean; name: string }>;
   posSessions: Array<Record<string, unknown>>;
   products: Array<{
     id: string;
@@ -226,6 +311,7 @@ interface PosStore {
   sales: Array<Record<string, unknown>>;
   saleLines: Array<Record<string, unknown>>;
   salePayments: Array<Record<string, unknown>>;
+  customerLedgerEntries: Array<Record<string, unknown>>;
   inventoryMovements: Array<Record<string, unknown>>;
   auditEvents: Array<Record<string, unknown>>;
   idempotencyRecords: Array<{
@@ -270,6 +356,7 @@ function createStore(): PosStore {
         isActive: true,
       },
     ],
+    customers: [{ id: "customer-1", isActive: true, name: "Client Test" }],
     posSessions: [],
     products: [
       {
@@ -289,6 +376,7 @@ function createStore(): PosStore {
     sales: [],
     saleLines: [],
     salePayments: [],
+    customerLedgerEntries: [],
     inventoryMovements: [],
     auditEvents: [],
     idempotencyRecords: [],
@@ -385,6 +473,11 @@ function makeTransactionClient(store: PosStore) {
           args.where.id.in.includes(product.id),
         ),
     },
+    customer: {
+      findUnique: async (args: { where: { id: string } }) =>
+        store.customers.find((customer) => customer.id === args.where.id) ??
+        null,
+    },
     sale: {
       create: async (args: {
         data: Record<string, unknown> & {
@@ -432,6 +525,14 @@ function makeTransactionClient(store: PosStore) {
     inventoryMovement: {
       createMany: async (args: { data: Array<Record<string, unknown>> }) => {
         store.inventoryMovements.push(...args.data);
+      },
+    },
+    customerLedgerEntry: {
+      create: async (args: { data: Record<string, unknown> }) => {
+        store.customerLedgerEntries.push({
+          id: `customer-ledger-${store.customerLedgerEntries.length + 1}`,
+          ...args.data,
+        });
       },
     },
     auditEvent: {
