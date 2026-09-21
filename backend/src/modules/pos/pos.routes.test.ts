@@ -105,6 +105,19 @@ async function createTestApp(permissionKeys: string[]) {
       total: 1,
       pageCount: 1,
     }),
+    listCustomers: vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "customer-1",
+          name: "Maison Ahmed",
+          isActive: true,
+        },
+      ],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+      pageCount: 1,
+    }),
     getCurrentSession: vi.fn().mockResolvedValue({
       id: "session-1",
       status: "OPEN",
@@ -221,6 +234,41 @@ describe("pos routes", () => {
     });
   });
 
+  it("lists active customers when the user can create credit sales", async () => {
+    const { app, cookie, posService } = await createTestApp([
+      "pos.credit_sale",
+    ]);
+
+    const response = await request(app)
+      .get("/api/pos/customers?search=ahmed")
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(response.body.data.customers.items).toEqual([
+      expect.objectContaining({
+        id: "customer-1",
+        name: "Maison Ahmed",
+      }),
+    ]);
+    expect(posService.listCustomers).toHaveBeenCalledWith({
+      search: "ahmed",
+      page: 1,
+      pageSize: 25,
+    });
+  });
+
+  it("rejects POS customer lookup without credit sale permission", async () => {
+    const { app, cookie, posService } = await createTestApp(["pos.access"]);
+
+    const response = await request(app)
+      .get("/api/pos/customers")
+      .set("Cookie", cookie)
+      .expect(403);
+
+    expect(response.body.error.code).toBe("PERMISSION_DENIED");
+    expect(posService.listCustomers).not.toHaveBeenCalled();
+  });
+
   it("opens a session when the user has pos.open_session", async () => {
     const { app, cookie, posService } = await createTestApp([
       "pos.open_session",
@@ -304,6 +352,66 @@ describe("pos routes", () => {
             quantity: "2",
           },
         ],
+      }),
+      expect.objectContaining({
+        actorUserId: "user-1",
+      }),
+    );
+  });
+
+  it("rejects partial sales without pos.credit_sale", async () => {
+    const { app, cookie, posService } = await createTestApp(["pos.sell"]);
+
+    const response = await request(app)
+      .post("/api/pos/sales")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "sale-credit-1")
+      .send({
+        sessionId: "session-1",
+        customerId: "customer-1",
+        paidAmountTnd: "2.000",
+        lines: [
+          {
+            productId: "product-1",
+            quantity: "2",
+          },
+        ],
+      })
+      .expect(403);
+
+    expect(response.body.error.code).toBe("PERMISSION_DENIED");
+    expect(posService.postPaidSale).not.toHaveBeenCalled();
+  });
+
+  it("posts partial sales when the user has pos.credit_sale", async () => {
+    const { app, cookie, posService } = await createTestApp([
+      "pos.sell",
+      "pos.credit_sale",
+    ]);
+
+    await request(app)
+      .post("/api/pos/sales")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "sale-credit-1")
+      .send({
+        sessionId: "session-1",
+        customerId: "customer-1",
+        paidAmountTnd: "2.000",
+        lines: [
+          {
+            productId: "product-1",
+            quantity: "2",
+          },
+        ],
+      })
+      .expect(201);
+
+    expect(posService.postPaidSale).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: "sale-credit-1",
+        sessionId: "session-1",
+        customerId: "customer-1",
+        paidAmountTnd: "2.000",
       }),
       expect.objectContaining({
         actorUserId: "user-1",

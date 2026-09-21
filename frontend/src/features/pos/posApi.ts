@@ -1,5 +1,6 @@
 import { readApiError, type ApiEnvelope } from "../auth/authApi";
 import type { Category, Page, Unit } from "../catalog/catalogApi";
+import type { Customer } from "../customers/customersApi";
 
 const apiBaseUrl =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000/api";
@@ -41,9 +42,11 @@ export interface Sale {
   id: string;
   status: "POSTED" | "CANCELLED";
   paymentState: "PAID" | "PARTIALLY_PAID" | "UNPAID";
+  customerId: string | null;
   soldAt: string;
   totalTnd: string;
   paidAmountTnd: string;
+  remainingDueTnd: string;
   lines: SaleLine[];
 }
 
@@ -52,6 +55,13 @@ export async function getPosProducts(
 ): Promise<Page<PosProduct>> {
   const query = search ? `?search=${encodeURIComponent(search)}` : "";
   return getPage(`/pos/products${query}`, "products");
+}
+
+export async function getPosCustomers(
+  search?: string,
+): Promise<Page<Customer>> {
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  return getPage(`/pos/customers${query}`, "customers");
 }
 
 export async function getCurrentPosSession(): Promise<PosSession | null> {
@@ -84,6 +94,8 @@ export async function closePosSession(
 
 export async function postPaidSale(params: {
   sessionId: string;
+  customerId?: string;
+  paidAmountTnd?: string;
   lines: Array<{ productId: string; quantity: string }>;
 }): Promise<Sale> {
   return postCommand("/pos/sales", params, "sale");

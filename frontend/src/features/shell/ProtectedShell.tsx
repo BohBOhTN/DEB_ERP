@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { AccessManagement } from "../access/AccessManagement";
 import { logout, type CurrentUser } from "../auth/authApi";
 import { CatalogManagement } from "../catalog/CatalogManagement";
+import { CustomerManagement } from "../customers/CustomerManagement";
 import { InventoryManagement } from "../inventory/InventoryManagement";
 import { PosManagement } from "../pos/PosManagement";
 import { ProcurementManagement } from "../procurement/ProcurementManagement";
@@ -60,6 +61,8 @@ export function ProtectedShell({ user, onLogout }: ProtectedShellProps) {
       <main className="workspace">
         {activeModule === "inventory" ? (
           <InventoryManagement user={user} />
+        ) : activeModule === "customers" ? (
+          <CustomerManagement user={user} />
         ) : activeModule === "pos" ? (
           <PosManagement user={user} />
         ) : activeModule === "procurement" ? (
@@ -125,6 +128,17 @@ function buildNavigation(user: CurrentUser) {
     user.effectivePermissions.includes("pos.close_session")
   ) {
     modules.push({ id: "pos", label: "Caisse" });
+  }
+
+  if (
+    user.effectivePermissions.includes("customers.view") ||
+    user.effectivePermissions.includes("customers.create") ||
+    user.effectivePermissions.includes("customers.update") ||
+    user.effectivePermissions.includes("customer_balances.view") ||
+    user.effectivePermissions.includes("customer_payments.view") ||
+    user.effectivePermissions.includes("customer_payments.create")
+  ) {
+    modules.push({ id: "customers", label: "Clients" });
   }
 
   if (

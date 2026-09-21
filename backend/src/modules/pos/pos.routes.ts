@@ -40,6 +40,8 @@ const closeSessionSchema = z.object({
 
 const postSaleSchema = z.object({
   sessionId: z.string().trim().min(1).optional(),
+  customerId: z.string().trim().min(1).optional(),
+  paidAmountTnd: moneyTnd.optional(),
   soldAt: z.coerce.date().default(() => new Date()),
   lines: z
     .array(
@@ -72,6 +74,20 @@ export function posRouter(params: {
         const query = listQuerySchema.parse(request.query);
         const products = await params.posService.listProducts(query);
         response.json(ok({ products }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/customers",
+    requirePermission("pos.credit_sale"),
+    async (request, response, next) => {
+      try {
+        const query = listQuerySchema.parse(request.query);
+        const customers = await params.posService.listCustomers(query);
+        response.json(ok({ customers }, getCorrelationId(response)));
       } catch (error) {
         next(error);
       }
@@ -138,6 +154,7 @@ export function posRouter(params: {
     async (request, response, next) => {
       try {
         const body = postSaleSchema.parse(request.body);
+        assertCreditSalePermission(body.paidAmountTnd, response);
         const result = await params.posService.postPaidSale(
           {
             ...body,
@@ -180,4 +197,25 @@ function readIdempotencyKey(headers: IncomingHttpHeaders): string {
   }
 
   return value;
+}
+
+function assertCreditSalePermission(
+  paidAmountTnd: string | undefined,
+  response: Response,
+) {
+  if (paidAmountTnd === undefined) {
+    return;
+  }
+
+  const user = response.locals.currentUser as {
+    effectivePermissions: string[];
+  };
+
+  if (!user.effectivePermissions.includes("pos.credit_sale")) {
+    throw new AppError({
+      statusCode: 403,
+      code: "PERMISSION_DENIED",
+      message: "Vous n'avez pas l'autorisation necessaire.",
+    });
+  }
 }

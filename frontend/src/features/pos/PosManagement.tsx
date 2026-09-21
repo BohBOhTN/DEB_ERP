@@ -3,12 +3,14 @@ import type { CurrentUser } from "../auth/authApi";
 import {
   closePosSession,
   getCurrentPosSession,
+  getPosCustomers,
   getPosProducts,
   openPosSession,
   postPaidSale,
   type PosProduct,
   type PosSession,
 } from "./posApi";
+import type { Customer } from "../customers/customersApi";
 
 interface PosManagementProps {
   user: CurrentUser;
@@ -28,10 +30,15 @@ export function PosManagement({ user }: PosManagementProps) {
   const canOpenSession = permissions.has("pos.open_session");
   const canCloseSession = permissions.has("pos.close_session");
   const canSell = permissions.has("pos.sell");
+  const canCreditSale = permissions.has("pos.credit_sale");
   const [session, setSession] = useState<PosSession | null>(null);
   const [products, setProducts] = useState<PosProduct[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [search, setSearch] = useState("");
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [paidAmountTnd, setPaidAmountTnd] = useState("");
   const [openingCashTnd, setOpeningCashTnd] = useState("0.000");
   const [countedCashTnd, setCountedCashTnd] = useState("");
   const [status, setStatus] = useState("");
@@ -48,17 +55,33 @@ export function PosManagement({ user }: PosManagementProps) {
 
   async function refreshWorkspace(nextSearch = search) {
     setError("");
-    const [nextSession, productPage] = await Promise.all([
+    const [nextSession, productPage, customerPage] = await Promise.all([
       getCurrentPosSession(),
       getPosProducts(nextSearch),
+      canCreditSale
+        ? getPosCustomers(customerSearch)
+        : Promise.resolve(emptyPage<Customer>()),
     ]);
     setSession(nextSession);
     setProducts(productPage.items);
+    setCustomers(customerPage.items);
   }
 
   async function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await refreshWorkspace(search);
+  }
+
+  async function handleCustomerSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+
+    try {
+      const customerPage = await getPosCustomers(customerSearch);
+      setCustomers(customerPage.items);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
   }
 
   async function handleOpenSession(event: FormEvent<HTMLFormElement>) {
@@ -104,6 +127,16 @@ export function PosManagement({ user }: PosManagementProps) {
       return;
     }
 
+    const requestedPaidAmountTnd = paidAmountTnd.trim();
+    const willCreateCredit =
+      requestedPaidAmountTnd !== "" &&
+      Number(requestedPaidAmountTnd) < Number(totalTnd);
+
+    if (willCreateCredit && !selectedCustomerId) {
+      setError("Un client est obligatoire pour une vente a credit.");
+      return;
+    }
+
     setIsSubmitting(true);
     setError("");
     setStatus("");
@@ -111,13 +144,20 @@ export function PosManagement({ user }: PosManagementProps) {
     try {
       const sale = await postPaidSale({
         sessionId: session.id,
+        customerId: selectedCustomerId || undefined,
+        paidAmountTnd: requestedPaidAmountTnd || undefined,
         lines: cart.map((line) => ({
           productId: line.product.id,
           quantity: line.quantity,
         })),
       });
       setCart([]);
-      setStatus(`Vente encaissee: ${formatTnd(sale.totalTnd)}.`);
+      setPaidAmountTnd("");
+      setStatus(
+        sale.remainingDueTnd === "0.000"
+          ? `Vente encaissee: ${formatTnd(sale.totalTnd)}.`
+          : `Vente enregistree: ${formatTnd(sale.remainingDueTnd)} restant.`,
+      );
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -165,6 +205,17 @@ export function PosManagement({ user }: PosManagementProps) {
       0,
     )
     .toFixed(3);
+  const remainingDueTnd = Math.max(
+    0,
+    Number(totalTnd) -
+      Number(paidAmountTnd.trim() === "" ? totalTnd : paidAmountTnd),
+  ).toFixed(3);
+  const paymentExceedsTotal =
+    paidAmountTnd.trim() !== "" && Number(paidAmountTnd) > Number(totalTnd);
+  const creditRequiresCustomer =
+    paidAmountTnd.trim() !== "" &&
+    Number(paidAmountTnd) < Number(totalTnd) &&
+    !selectedCustomerId;
 
   if (!canAccess) {
     return (
@@ -347,13 +398,73 @@ export function PosManagement({ user }: PosManagementProps) {
             <span>Total</span>
             <strong>{formatTnd(totalTnd)}</strong>
           </div>
+          {canCreditSale ? (
+            <div className="credit-sale-box">
+              <form className="inline-form" onSubmit={handleCustomerSearch}>
+                <label className="field">
+                  Client
+                  <input
+                    onChange={(event) => setCustomerSearch(event.target.value)}
+                    placeholder="Nom ou telephone"
+                    type="search"
+                    value={customerSearch}
+                  />
+                </label>
+                <button className="secondary-button" type="submit">
+                  Chercher
+                </button>
+              </form>
+              <label className="field">
+                Client enregistre
+                <select
+                  onChange={(event) =>
+                    setSelectedCustomerId(event.target.value)
+                  }
+                  value={selectedCustomerId}
+                >
+                  <option value="">Vente anonyme</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Montant encaisse
+                <input
+                  inputMode="decimal"
+                  min="0"
+                  onChange={(event) => setPaidAmountTnd(event.target.value)}
+                  placeholder={totalTnd}
+                  step="0.001"
+                  type="number"
+                  value={paidAmountTnd}
+                />
+              </label>
+              <div className="metric-row">
+                <span>Reste a payer</span>
+                <strong>{formatTnd(remainingDueTnd)}</strong>
+              </div>
+              {creditRequiresCustomer ? (
+                <p role="alert">
+                  Selectionnez un client pour garder un reste a payer.
+                </p>
+              ) : null}
+              {paymentExceedsTotal ? (
+                <p role="alert">Le paiement ne peut pas depasser le total.</p>
+              ) : null}
+            </div>
+          ) : null}
           <button
             disabled={
               isSubmitting ||
               !session ||
               session.status !== "OPEN" ||
               !canSell ||
-              cart.length === 0
+              cart.length === 0 ||
+              paymentExceedsTotal ||
+              creditRequiresCustomer
             }
             onClick={handlePostSale}
             type="button"
@@ -386,4 +497,14 @@ function formatDateTime(value: string): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Operation impossible.";
+}
+
+function emptyPage<TItem>() {
+  return {
+    items: [] as TItem[],
+    page: 1,
+    pageSize: 25,
+    total: 0,
+    pageCount: 0,
+  };
 }
