@@ -92,6 +92,19 @@ async function createTestApp(permissionKeys: string[]) {
   repository.permissions.set(user.id, permissionKeys);
 
   const posService = {
+    listProducts: vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "product-1",
+          name: "Baguette",
+          salePriceTnd: "2.500",
+        },
+      ],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+      pageCount: 1,
+    }),
     getCurrentSession: vi.fn().mockResolvedValue({
       id: "session-1",
       status: "OPEN",
@@ -185,6 +198,27 @@ describe("pos routes", () => {
 
     expect(response.body.error.code).toBe("PERMISSION_DENIED");
     expect(posService.getCurrentSession).not.toHaveBeenCalled();
+  });
+
+  it("lists POS products when the user has pos.access", async () => {
+    const { app, cookie, posService } = await createTestApp(["pos.access"]);
+
+    const response = await request(app)
+      .get("/api/pos/products?search=baguette")
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(response.body.data.products.items).toEqual([
+      expect.objectContaining({
+        id: "product-1",
+        name: "Baguette",
+      }),
+    ]);
+    expect(posService.listProducts).toHaveBeenCalledWith({
+      search: "baguette",
+      page: 1,
+      pageSize: 25,
+    });
   });
 
   it("opens a session when the user has pos.open_session", async () => {

@@ -23,6 +23,12 @@ export interface SaleLineInput {
   quantity: string;
 }
 
+export interface PosProductListParams {
+  search?: string;
+  page: number;
+  pageSize: number;
+}
+
 export class PosService {
   public constructor(private readonly prisma: PrismaClient) {}
 
@@ -58,6 +64,53 @@ export class PosService {
         openedAt: "desc",
       },
     });
+  }
+
+  public async listProducts(params: PosProductListParams) {
+    const search = params.search?.trim();
+    const where = {
+      isActive: true,
+      ...(search
+        ? {
+            OR: [
+              {
+                name: {
+                  contains: search,
+                  mode: "insensitive" as const,
+                },
+              },
+              {
+                code: {
+                  contains: search,
+                  mode: "insensitive" as const,
+                },
+              },
+              {
+                barcode: {
+                  contains: search,
+                  mode: "insensitive" as const,
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.product.findMany({
+        where,
+        include: {
+          baseUnit: true,
+          category: true,
+        },
+        orderBy: [{ name: "asc" }],
+        skip: (params.page - 1) * params.pageSize,
+        take: params.pageSize,
+      }),
+      this.prisma.product.count({ where }),
+    ]);
+
+    return paginated(items, total, params);
   }
 
   public async openSession(
@@ -606,6 +659,20 @@ function findDuplicate(values: string[]): string | undefined {
   }
 
   return undefined;
+}
+
+function paginated<TItem>(
+  items: TItem[],
+  total: number,
+  params: { page: number; pageSize: number },
+) {
+  return {
+    items,
+    page: params.page,
+    pageSize: params.pageSize,
+    total,
+    pageCount: Math.ceil(total / params.pageSize),
+  };
 }
 
 function isUniqueConstraintError(error: unknown): boolean {

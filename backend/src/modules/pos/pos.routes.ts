@@ -20,6 +20,12 @@ const quantity = z
   .trim()
   .regex(/^\d+(\.\d{1,6})?$/);
 
+const listQuerySchema = z.object({
+  search: z.string().trim().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
 const openSessionSchema = z.object({
   openingCashTnd: moneyTnd,
   openedAt: z.coerce.date().default(() => new Date()),
@@ -56,6 +62,20 @@ export function posRouter(params: {
       authService: params.authService,
       cookieName: params.cookie.name,
     }),
+  );
+
+  router.get(
+    "/products",
+    requirePermission("pos.access"),
+    async (request, response, next) => {
+      try {
+        const query = listQuerySchema.parse(request.query);
+        const products = await params.posService.listProducts(query);
+        response.json(ok({ products }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
   );
 
   router.get(
