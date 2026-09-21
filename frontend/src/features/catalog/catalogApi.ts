@@ -53,6 +53,16 @@ export interface RawMaterial {
   notes: string | null;
   version: number;
   baseUnit: Unit;
+  conversions: RawMaterialConversion[];
+}
+
+export interface RawMaterialConversion {
+  id: string;
+  rawMaterialId: string;
+  unitId: string;
+  factorToBase: string;
+  isActive: boolean;
+  unit: Unit;
 }
 
 export async function getCatalogWorkspace(): Promise<{
