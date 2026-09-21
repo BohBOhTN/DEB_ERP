@@ -1,15 +1,15 @@
 # Dar El Barka Bakery Management System
 
-Dar El Barka is a French-only, mobile-first bakery management web application. This repository is currently in Release R0, Sprint 1: authentication and protected application shell.
+Dar El Barka is a French-only, mobile-first bakery management web application. This repository is currently closing Release R2: procurement, supplier balances, and supplier payments.
 
 ## Scope Status
 
 Current sprint:
 
-- Release: R0 Engineering Foundation
-- Sprint: 1 Authentication and protected application shell
-- Scope: authentication persistence, password hashing, session cookies, protected API middleware, French login shell, quality gates, CI
-- Not in scope yet: dynamic RBAC, products, inventory, suppliers, POS, orders, distributors, expenses, or simulation
+- Release: R2 Procurement
+- Sprint: 6 Supplier balances and payments
+- Scope: dynamic RBAC, catalog, units, inventory foundation, suppliers, purchase posting, supplier payable balances, and supplier payments
+- Not in scope yet: POS, customers, orders, distributors, expenses, product-cost simulation, supplier opening balances, supplier returns, or supplier exchanges
 
 ## Repository Shape
 
@@ -102,7 +102,7 @@ The response uses the project response envelope and includes a correlation ID.
 
 ## Authentication
 
-Sprint 1 adds email/password authentication with bcrypt password hashes and opaque server-side sessions stored in an HTTP-only cookie.
+Authentication uses email/password credentials with bcrypt password hashes and opaque server-side sessions stored in an HTTP-only cookie.
 
 Available endpoints:
 
@@ -118,7 +118,29 @@ Create a local user after applying migrations:
 npm run users:create --workspace backend -- <email> <displayName> <password>
 ```
 
-The current-user response includes an empty `effectivePermissions` array. Dynamic permissions are implemented in R1 Sprint 2.
+The current-user response includes the user's effective permission keys.
+
+## Procurement API
+
+R2 exposes procurement endpoints under `/api/procurement`. All endpoints require authentication and the matching permission key.
+
+```text
+GET    /api/procurement/suppliers
+POST   /api/procurement/suppliers
+PATCH  /api/procurement/suppliers/:supplierId
+
+GET    /api/procurement/purchases
+POST   /api/procurement/purchases
+POST   /api/procurement/purchases/:purchaseId/post
+POST   /api/procurement/purchases/:purchaseId/cancel
+
+GET    /api/procurement/supplier-balances
+GET    /api/procurement/suppliers/:supplierId/statement
+GET    /api/procurement/supplier-payments
+POST   /api/procurement/supplier-payments
+```
+
+Posting commands require an `Idempotency-Key` header. Supplier balances and statements are derived from ledger entries; supplier payments do not change stock and supplier opening balances are not implemented.
 
 ## Prisma Workflow
 
@@ -145,7 +167,7 @@ npm run prisma:migrate:deploy --workspace backend
 
 - `main`: protected release baseline
 - `dev`: integration branch
-- `feature/r0-sprint-1-auth-shell`: current Sprint 1 implementation branch
+- `feature/r2-sprint-6-supplier-payments`: current Sprint 6 implementation branch
 
 ## Documentation Authority
 
