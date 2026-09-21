@@ -113,6 +113,53 @@ describe("PosService", () => {
     );
   });
 
+  it("rejects reusing a sale idempotency key with different cart content", async () => {
+    const prisma = new PosPrismaDouble();
+    const service = new PosService(prisma as unknown as PrismaClient);
+    await service.openSession(
+      {
+        idempotencyKey: "open-1",
+        openingCashTnd: "20.000",
+        openedAt: new Date("2026-09-21T08:00:00.000Z"),
+      },
+      { actorUserId: "user-1" },
+    );
+
+    await service.postPaidSale(
+      {
+        idempotencyKey: "sale-1",
+        sessionId: "session-1",
+        soldAt: new Date("2026-09-21T08:10:00.000Z"),
+        lines: [
+          {
+            productId: "product-1",
+            quantity: "2",
+          },
+        ],
+      },
+      { actorUserId: "user-1" },
+    );
+
+    await expect(
+      service.postPaidSale(
+        {
+          idempotencyKey: "sale-1",
+          sessionId: "session-1",
+          soldAt: new Date("2026-09-21T08:10:00.000Z"),
+          lines: [
+            {
+              productId: "product-1",
+              quantity: "3",
+            },
+          ],
+        },
+        { actorUserId: "user-1" },
+      ),
+    ).rejects.toMatchObject({
+      code: "IDEMPOTENCY_CONFLICT",
+    });
+  });
+
   it("closes a POS session with expected cash and difference", async () => {
     const prisma = new PosPrismaDouble();
     const service = new PosService(prisma as unknown as PrismaClient);

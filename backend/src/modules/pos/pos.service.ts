@@ -642,9 +642,26 @@ function toJson(value: unknown): Prisma.InputJsonValue {
 }
 
 function hashPayload(payload: unknown): string {
-  return createHash("sha256")
-    .update(JSON.stringify(payload, Object.keys(payload as object).sort()))
-    .digest("hex");
+  return createHash("sha256").update(stableStringify(payload)).digest("hex");
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+
+  if (value instanceof Date) {
+    return JSON.stringify(value.toISOString());
+  }
+
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
 }
 
 function findDuplicate(values: string[]): string | undefined {
