@@ -10,6 +10,7 @@ import {
 } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { AppError } from "../../shared/appError.js";
+import { normalizeName } from "../catalog/catalog.service.js";
 
 const mainTerminalCode = "main";
 const mainLocationCode = "main";
@@ -109,6 +110,44 @@ export class PosService {
         take: params.pageSize,
       }),
       this.prisma.product.count({ where }),
+    ]);
+
+    return paginated(items, total, params);
+  }
+
+  public async listCustomers(params: PosProductListParams) {
+    const search = params.search?.trim();
+    const normalizedSearch = search ? normalizeName(search) : undefined;
+    const where = {
+      isActive: true,
+      ...(normalizedSearch
+        ? {
+            OR: [
+              {
+                normalizedName: {
+                  contains: normalizedSearch,
+                  mode: "insensitive" as const,
+                },
+              },
+              {
+                phone: {
+                  contains: search,
+                  mode: "insensitive" as const,
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.customer.findMany({
+        where,
+        orderBy: [{ name: "asc" }],
+        skip: (params.page - 1) * params.pageSize,
+        take: params.pageSize,
+      }),
+      this.prisma.customer.count({ where }),
     ]);
 
     return paginated(items, total, params);

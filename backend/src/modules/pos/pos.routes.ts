@@ -81,6 +81,20 @@ export function posRouter(params: {
   );
 
   router.get(
+    "/customers",
+    requirePermission("pos.credit_sale"),
+    async (request, response, next) => {
+      try {
+        const query = listQuerySchema.parse(request.query);
+        const customers = await params.posService.listCustomers(query);
+        response.json(ok({ customers }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
     "/sessions/current",
     requirePermission("pos.access"),
     async (_request, response, next) => {
