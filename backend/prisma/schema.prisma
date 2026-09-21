@@ -110,3 +110,104 @@ model AuditEvent {
   @@index([createdAt])
   @@map("audit_events")
 }
+
+model Unit {
+  id                     String                      @id @default(cuid())
+  code                   String                      @unique
+  name                   String
+  symbol                 String
+  precision              Int                         @default(3)
+  isActive               Boolean                     @default(true) @map("is_active")
+  createdAt              DateTime                    @default(now()) @map("created_at")
+  updatedAt              DateTime                    @updatedAt @map("updated_at")
+  products               Product[]
+  rawMaterials           RawMaterial[]
+  rawMaterialConversions RawMaterialUnitConversion[]
+
+  @@index([isActive])
+  @@map("units")
+}
+
+model ProductCategory {
+  id             String    @id @default(cuid())
+  name           String
+  normalizedName String    @map("normalized_name")
+  description    String?
+  isActive       Boolean   @default(true) @map("is_active")
+  createdByUserId String   @map("created_by_user_id")
+  updatedByUserId String   @map("updated_by_user_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  products       Product[]
+
+  @@index([isActive])
+  @@index([normalizedName])
+  @@map("product_categories")
+}
+
+model Product {
+  id              String          @id @default(cuid())
+  code            String?
+  barcode         String?
+  name            String
+  normalizedName  String          @map("normalized_name")
+  categoryId      String          @map("category_id")
+  baseUnitId      String          @map("base_unit_id")
+  salePriceTnd    Decimal         @map("sale_price_tnd") @db.Decimal(12, 3)
+  isStockable     Boolean         @default(true) @map("is_stockable")
+  isActive        Boolean         @default(true) @map("is_active")
+  notes           String?
+  version         Int             @default(1)
+  createdByUserId String          @map("created_by_user_id")
+  updatedByUserId String          @map("updated_by_user_id")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  category        ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  baseUnit        Unit            @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
+
+  @@index([categoryId])
+  @@index([baseUnitId])
+  @@index([isActive])
+  @@index([normalizedName])
+  @@map("products")
+}
+
+model RawMaterial {
+  id              String                      @id @default(cuid())
+  code            String?
+  name            String
+  normalizedName  String                      @map("normalized_name")
+  category        String?
+  baseUnitId      String                      @map("base_unit_id")
+  isActive        Boolean                     @default(true) @map("is_active")
+  notes           String?
+  version         Int                         @default(1)
+  createdByUserId String                      @map("created_by_user_id")
+  updatedByUserId String                      @map("updated_by_user_id")
+  createdAt       DateTime                    @default(now()) @map("created_at")
+  updatedAt       DateTime                    @updatedAt @map("updated_at")
+  baseUnit        Unit                        @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
+  conversions     RawMaterialUnitConversion[]
+
+  @@index([baseUnitId])
+  @@index([isActive])
+  @@index([normalizedName])
+  @@map("raw_materials")
+}
+
+model RawMaterialUnitConversion {
+  id            String      @id @default(cuid())
+  rawMaterialId String      @map("raw_material_id")
+  unitId        String      @map("unit_id")
+  factorToBase  Decimal     @map("factor_to_base") @db.Decimal(18, 6)
+  isActive      Boolean     @default(true) @map("is_active")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  rawMaterial   RawMaterial @relation(fields: [rawMaterialId], references: [id], onDelete: Cascade)
+  unit          Unit        @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  @@unique([rawMaterialId, unitId])
+  @@index([unitId])
+  @@index([isActive])
+  @@map("raw_material_unit_conversions")
+}
