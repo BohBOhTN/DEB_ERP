@@ -2,6 +2,8 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { accessRouter } from "./modules/access/access.routes.js";
+import type { AccessService } from "./modules/access/access.service.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import type { AuthService } from "./modules/auth/auth.service.js";
 import type { SessionCookieConfig } from "./modules/auth/cookies.js";
@@ -21,6 +23,9 @@ export function createApp(params: {
       windowMs: number;
     };
   };
+  access?: {
+    accessService: AccessService;
+  };
 }): express.Express {
   const app = express();
 
@@ -39,6 +44,17 @@ export function createApp(params: {
 
   if (params.auth) {
     app.use("/api/auth", authRouter(params.auth));
+  }
+
+  if (params.auth && params.access) {
+    app.use(
+      "/api/access",
+      accessRouter({
+        authService: params.auth.authService,
+        cookie: params.auth.cookie,
+        accessService: params.access.accessService,
+      }),
+    );
   }
 
   app.use((_request, _response, next) => {

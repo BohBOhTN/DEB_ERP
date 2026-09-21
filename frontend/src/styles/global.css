@@ -182,11 +182,164 @@ button:disabled {
   padding: 24px;
 }
 
+.module-nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 8px 24px;
+}
+
+.module-button {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.module-button[aria-pressed="true"] {
+  background: var(--brand-navy);
+  color: #ffffff;
+}
+
 .status-panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 20px;
+}
+
+.access-workspace {
+  display: grid;
+  gap: 20px;
+}
+
+.section-heading,
+.panel-heading,
+.button-row {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.section-heading {
+  align-items: flex-start;
+}
+
+.section-heading h2,
+.panel-heading h3 {
+  margin: 0;
+}
+
+.permission-count,
+.panel-heading span {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.access-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.inline-form {
+  display: grid;
+  gap: 12px;
+}
+
+.item-list {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.list-button {
+  align-items: center;
+  background: #f8f2e4;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 52px;
+  text-align: left;
+  width: 100%;
+}
+
+.list-button[aria-pressed="true"] {
+  background: var(--brand-navy);
+  border-color: var(--brand-navy);
+  color: #ffffff;
+}
+
+.list-button small,
+.check-row small {
+  color: inherit;
+  display: block;
+  font-weight: 600;
+  opacity: 0.78;
+}
+
+.permission-groups {
+  display: grid;
+  gap: 12px;
+  max-height: 560px;
+  overflow: auto;
+}
+
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+  padding: 12px;
+}
+
+legend {
+  color: var(--brand-navy);
+  font-weight: 800;
+  padding: 0 6px;
+}
+
+.check-row {
+  align-items: flex-start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  min-height: 44px;
+}
+
+.check-row input {
+  height: 20px;
+  margin: 2px 0 0;
+  min-height: 20px;
+  width: 20px;
+}
+
+.check-row strong,
+.check-row span {
+  overflow-wrap: anywhere;
+}
+
+.assignment-panel {
+  display: grid;
+  gap: 10px;
 }
 
 dl {
@@ -228,5 +381,17 @@ dd {
 
   .status-panel {
     max-width: 720px;
+  }
+
+  .module-nav {
+    padding-inline: 48px;
+  }
+
+  .access-grid {
+    align-items: start;
+    grid-template-columns: minmax(220px, 0.8fr) minmax(360px, 1.6fr) minmax(
+        260px,
+        1fr
+      );
   }
 }

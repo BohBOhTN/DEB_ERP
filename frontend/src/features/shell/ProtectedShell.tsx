@@ -1,3 +1,5 @@
+import { useMemo, useState } from "react";
+import { AccessManagement } from "../access/AccessManagement";
 import { logout, type CurrentUser } from "../auth/authApi";
 
 interface ProtectedShellProps {
@@ -6,6 +8,9 @@ interface ProtectedShellProps {
 }
 
 export function ProtectedShell({ user, onLogout }: ProtectedShellProps) {
+  const modules = useMemo(() => buildNavigation(user), [user]);
+  const [activeModule, setActiveModule] = useState(modules[0]?.id ?? "home");
+
   async function handleLogout() {
     await logout();
     onLogout();
@@ -34,25 +39,56 @@ export function ProtectedShell({ user, onLogout }: ProtectedShellProps) {
         </button>
       </header>
 
+      <nav className="module-nav" aria-label="Modules">
+        {modules.map((module) => (
+          <button
+            aria-pressed={activeModule === module.id}
+            className="module-button"
+            key={module.id}
+            onClick={() => setActiveModule(module.id)}
+            type="button"
+          >
+            {module.label}
+          </button>
+        ))}
+      </nav>
+
       <main className="workspace">
-        <section className="status-panel" aria-labelledby="dashboard-title">
-          <h2 id="dashboard-title">Tableau de bord</h2>
-          <dl>
-            <div>
-              <dt>Utilisateur</dt>
-              <dd>{user.displayName}</dd>
-            </div>
-            <div>
-              <dt>E-mail</dt>
-              <dd>{user.email}</dd>
-            </div>
-            <div>
-              <dt>Autorisations</dt>
-              <dd>{user.effectivePermissions.length}</dd>
-            </div>
-          </dl>
-        </section>
+        {activeModule === "access" ? (
+          <AccessManagement user={user} />
+        ) : (
+          <section className="status-panel" aria-labelledby="dashboard-title">
+            <h2 id="dashboard-title">Tableau de bord</h2>
+            <dl>
+              <div>
+                <dt>Utilisateur</dt>
+                <dd>{user.displayName}</dd>
+              </div>
+              <div>
+                <dt>E-mail</dt>
+                <dd>{user.email}</dd>
+              </div>
+              <div>
+                <dt>Autorisations</dt>
+                <dd>{user.effectivePermissions.length}</dd>
+              </div>
+            </dl>
+          </section>
+        )}
       </main>
     </div>
   );
+}
+
+function buildNavigation(user: CurrentUser) {
+  const modules = [{ id: "home", label: "Tableau de bord" }];
+
+  if (
+    user.effectivePermissions.includes("roles.view") ||
+    user.effectivePermissions.includes("users.view")
+  ) {
+    modules.push({ id: "access", label: "Acces" });
+  }
+
+  return modules;
 }
