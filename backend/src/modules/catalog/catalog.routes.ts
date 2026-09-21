@@ -44,6 +44,81 @@ const updateCategorySchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+const decimalString = z
+  .string()
+  .trim()
+  .regex(/^\d+(\.\d{1,6})?$/);
+
+const createRawMaterialSchema = z.object({
+  code: z.string().optional(),
+  name: z.string().trim().min(1),
+  category: z.string().optional(),
+  baseUnitId: z.string().trim().min(1),
+  notes: z.string().optional(),
+  conversions: z
+    .array(
+      z.object({
+        unitId: z.string().trim().min(1),
+        factorToBase: decimalString,
+      }),
+    )
+    .default([]),
+});
+
+const updateRawMaterialSchema = z.object({
+  version: z.number().int().positive(),
+  code: z.string().optional(),
+  name: z.string().trim().min(1).optional(),
+  category: z.string().optional(),
+  baseUnitId: z.string().trim().min(1).optional(),
+  notes: z.string().optional(),
+});
+
+const replaceRawMaterialConversionsSchema = z.object({
+  version: z.number().int().positive(),
+  conversions: z.array(
+    z.object({
+      unitId: z.string().trim().min(1),
+      factorToBase: decimalString,
+    }),
+  ),
+});
+
+const activationSchema = z.object({
+  version: z.number().int().positive(),
+  isActive: z.boolean(),
+});
+
+const createProductSchema = z.object({
+  code: z.string().optional(),
+  barcode: z.string().optional(),
+  name: z.string().trim().min(1),
+  categoryId: z.string().trim().min(1),
+  baseUnitId: z.string().trim().min(1),
+  salePriceTnd: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d{1,3})?$/),
+  isStockable: z.boolean(),
+  notes: z.string().optional(),
+});
+
+const updateProductSchema = z.object({
+  version: z.number().int().positive(),
+  code: z.string().optional(),
+  barcode: z.string().optional(),
+  name: z.string().trim().min(1).optional(),
+  categoryId: z.string().trim().min(1).optional(),
+  baseUnitId: z.string().trim().min(1).optional(),
+  salePriceTnd: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d{1,3})?$/)
+    .optional(),
+  isStockable: z.boolean().optional(),
+  notes: z.string().optional(),
+});
+
 export function catalogRouter(params: {
   authService: AuthService;
   cookie: SessionCookieConfig;
@@ -149,6 +224,162 @@ export function catalogRouter(params: {
           actorFromResponse(response),
         );
         response.json(ok({ category }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/raw-materials",
+    requirePermission("raw_materials.view"),
+    async (request, response, next) => {
+      try {
+        const query = listQuerySchema.parse(request.query);
+        const result = await params.catalogService.listRawMaterials(query);
+        response.json(ok({ rawMaterials: result }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/raw-materials",
+    requirePermission("raw_materials.create"),
+    async (request, response, next) => {
+      try {
+        const body = createRawMaterialSchema.parse(request.body);
+        const rawMaterial = await params.catalogService.createRawMaterial(
+          body,
+          actorFromResponse(response),
+        );
+        response
+          .status(201)
+          .json(ok({ rawMaterial }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.patch(
+    "/raw-materials/:rawMaterialId",
+    requirePermission("raw_materials.update"),
+    async (request, response, next) => {
+      try {
+        const body = updateRawMaterialSchema.parse(request.body);
+        const rawMaterial = await params.catalogService.updateRawMaterial(
+          parseRouteParam(request.params.rawMaterialId),
+          body,
+          actorFromResponse(response),
+        );
+        response.json(ok({ rawMaterial }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.patch(
+    "/raw-materials/:rawMaterialId/activation",
+    requirePermission("raw_materials.activate"),
+    async (request, response, next) => {
+      try {
+        const body = activationSchema.parse(request.body);
+        const rawMaterial =
+          await params.catalogService.setRawMaterialActivation(
+            parseRouteParam(request.params.rawMaterialId),
+            body,
+            actorFromResponse(response),
+          );
+        response.json(ok({ rawMaterial }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.put(
+    "/raw-materials/:rawMaterialId/conversions",
+    requirePermission("raw_materials.update"),
+    async (request, response, next) => {
+      try {
+        const body = replaceRawMaterialConversionsSchema.parse(request.body);
+        const rawMaterial =
+          await params.catalogService.replaceRawMaterialConversions(
+            parseRouteParam(request.params.rawMaterialId),
+            body,
+            actorFromResponse(response),
+          );
+        response.json(ok({ rawMaterial }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/products",
+    requirePermission("products.view"),
+    async (request, response, next) => {
+      try {
+        const query = listQuerySchema.parse(request.query);
+        const result = await params.catalogService.listProducts(query);
+        response.json(ok({ products: result }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/products",
+    requirePermission("products.create"),
+    async (request, response, next) => {
+      try {
+        const body = createProductSchema.parse(request.body);
+        const product = await params.catalogService.createProduct(
+          body,
+          actorFromResponse(response),
+        );
+        response.status(201).json(ok({ product }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.patch(
+    "/products/:productId",
+    requirePermission("products.update"),
+    async (request, response, next) => {
+      try {
+        const body = updateProductSchema.parse(request.body);
+        const product = await params.catalogService.updateProduct(
+          parseRouteParam(request.params.productId),
+          body,
+          actorFromResponse(response),
+        );
+        response.json(ok({ product }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.patch(
+    "/products/:productId/activation",
+    requirePermission("products.activate"),
+    async (request, response, next) => {
+      try {
+        const body = activationSchema.parse(request.body);
+        const product = await params.catalogService.setProductActivation(
+          parseRouteParam(request.params.productId),
+          body,
+          actorFromResponse(response),
+        );
+        response.json(ok({ product }, getCorrelationId(response)));
       } catch (error) {
         next(error);
       }

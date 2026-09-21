@@ -115,6 +115,27 @@ async function createTestApp(permissionKeys: string[]) {
       description: null,
       isActive: true,
     }),
+    listProducts: vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "product-1",
+          name: "Baguette",
+          salePriceTnd: "0.500",
+          isStockable: true,
+          isActive: true,
+        },
+      ],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+      pageCount: 1,
+    }),
+    createRawMaterial: vi.fn().mockResolvedValue({
+      id: "raw-material-1",
+      name: "Farine",
+      isActive: true,
+      version: 1,
+    }),
   };
 
   const app = createApp({
@@ -222,6 +243,58 @@ describe("catalog routes", () => {
     expect(catalogService.createCategory).toHaveBeenCalledWith(
       {
         name: "Pains",
+      },
+      expect.objectContaining({
+        actorUserId: "user-1",
+      }),
+    );
+  });
+
+  it("lists products when the user has products.view", async () => {
+    const { app, cookie, catalogService } = await createTestApp([
+      "products.view",
+    ]);
+
+    const response = await request(app)
+      .get("/api/catalog/products")
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(response.body.data.products.items).toEqual([
+      expect.objectContaining({
+        id: "product-1",
+        name: "Baguette",
+      }),
+    ]);
+    expect(catalogService.listProducts).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 25,
+    });
+  });
+
+  it("creates raw materials when the user has raw_materials.create", async () => {
+    const { app, cookie, catalogService } = await createTestApp([
+      "raw_materials.create",
+    ]);
+
+    const response = await request(app)
+      .post("/api/catalog/raw-materials")
+      .set("Cookie", cookie)
+      .send({
+        name: "Farine",
+        baseUnitId: "unit-1",
+      })
+      .expect(201);
+
+    expect(response.body.data.rawMaterial).toMatchObject({
+      id: "raw-material-1",
+      name: "Farine",
+    });
+    expect(catalogService.createRawMaterial).toHaveBeenCalledWith(
+      {
+        name: "Farine",
+        baseUnitId: "unit-1",
+        conversions: [],
       },
       expect.objectContaining({
         actorUserId: "user-1",
