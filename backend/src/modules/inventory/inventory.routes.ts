@@ -6,7 +6,7 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok } from "../../shared/apiResponse.js";
+import { ok, sendCommandResult } from "../../shared/apiResponse.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { InventoryService } from "./inventory.service.js";
@@ -89,7 +89,7 @@ export function inventoryRouter(params: {
           },
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        sendCommandResult(response, 201, result);
       } catch (error) {
         next(error);
       }
@@ -109,7 +109,7 @@ export function inventoryRouter(params: {
           },
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        sendCommandResult(response, 201, result);
       } catch (error) {
         next(error);
       }

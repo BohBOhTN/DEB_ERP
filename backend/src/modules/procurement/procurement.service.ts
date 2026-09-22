@@ -7,8 +7,8 @@ import {
   SupplierLedgerEntryType,
   type PrismaClient,
 } from "@prisma/client";
-import { createHash } from "node:crypto";
 import { AppError } from "../../shared/appError.js";
+import { runIdempotentCommand } from "../../shared/idempotency.js";
 import { normalizeName } from "../catalog/catalog.service.js";
 
 export interface ProcurementActor {
@@ -1296,69 +1296,24 @@ export class ProcurementService {
     return allocations;
   }
 
-  private async runIdempotentCommand<TResponse>(
+  private runIdempotentCommand<TResponse>(
     scope: string,
     key: string,
     payload: unknown,
-    action: (tx: Prisma.TransactionClient) => Promise<TResponse>,
+    execute: (tx: Prisma.TransactionClient) => Promise<TResponse>,
   ): Promise<TResponse> {
-    if (!key.trim()) {
-      throw new AppError({
-        statusCode: 400,
-        code: "IDEMPOTENCY_KEY_REQUIRED",
-        message: "Une cle d'idempotence est requise.",
-      });
-    }
-
-    const requestHash = hashPayload(payload);
-    const existing = await this.prisma.idempotencyRecord.findUnique({
-      where: {
-        scope_key: {
-          scope,
-          key,
-        },
+    return runIdempotentCommand({
+      prisma: this.prisma,
+      scope,
+      key,
+      payload,
+      execute,
+      hooks: {
+        afterRecordCreated: () =>
+          this.afterTransactionStep("idempotency_record_created", { scope }),
+        afterResponseSaved: () =>
+          this.afterTransactionStep("idempotency_response_saved", { scope }),
       },
-    });
-
-    if (existing) {
-      if (existing.requestHash !== requestHash) {
-        throw new AppError({
-          statusCode: 409,
-          code: "IDEMPOTENCY_CONFLICT",
-          message: "Cette cle a deja ete utilisee pour une autre demande.",
-        });
-      }
-
-      if (existing.response) {
-        return existing.response as TResponse;
-      }
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.idempotencyRecord.create({
-        data: {
-          scope,
-          key,
-          requestHash,
-        },
-      });
-      await this.afterTransactionStep("idempotency_record_created", { scope });
-
-      const response = await action(tx);
-      await tx.idempotencyRecord.update({
-        where: {
-          scope_key: {
-            scope,
-            key,
-          },
-        },
-        data: {
-          response: toJsonValue(response),
-        },
-      });
-      await this.afterTransactionStep("idempotency_response_saved", { scope });
-
-      return response;
     });
   }
 
@@ -1514,14 +1469,6 @@ function requireReason(value: string): string {
   }
 
   return reason;
-}
-
-function hashPayload(payload: unknown): string {
-  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
-}
-
-function toJsonValue(value: unknown): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
 function emptyToNull(value: string | undefined): string | null | undefined {
