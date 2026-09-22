@@ -13,6 +13,7 @@ import { InventoryService } from "./modules/inventory/inventory.service.js";
 import { OrdersService } from "./modules/orders/orders.service.js";
 import { PosService } from "./modules/pos/pos.service.js";
 import { ProcurementService } from "./modules/procurement/procurement.service.js";
+import { SimulationService } from "./modules/simulation/simulation.service.js";
 
 const prisma = new PrismaClient();
 const accessService = new AccessService(prisma);
@@ -24,6 +25,7 @@ const inventoryService = new InventoryService(prisma);
 const ordersService = new OrdersService(prisma);
 const procurementService = new ProcurementService(prisma);
 const posService = new PosService(prisma);
+const simulationService = new SimulationService(prisma);
 const authService = new AuthService(
   new PrismaAuthRepository(prisma),
   env.SESSION_TTL_MINUTES,
@@ -81,6 +83,9 @@ const app = createApp({
   },
   pos: {
     posService,
+  },
+  simulation: {
+    simulationService,
   },
 });
 

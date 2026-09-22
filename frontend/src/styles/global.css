@@ -306,12 +306,14 @@ button:disabled {
 
 .orders-workspace,
 .distribution-workspace,
+.simulation-workspace,
 .expenses-workspace {
   display: grid;
   gap: 20px;
 }
 
 .distribution-grid,
+.simulation-grid,
 .expenses-grid {
   align-items: start;
   display: grid;
@@ -384,8 +386,8 @@ button:disabled {
 }
 
 .chip-button[aria-pressed="true"] {
-  background: var(--brand-deep);
-  border-color: var(--brand-deep);
+  background: var(--brand-navy);
+  border-color: var(--brand-navy);
   color: var(--surface);
 }
 
@@ -412,7 +414,7 @@ button:disabled {
 }
 
 .record-button[aria-pressed="true"] {
-  border-color: var(--brand-deep);
+  border-color: var(--brand-navy);
 }
 
 .record-title {
@@ -755,6 +757,7 @@ dd {
 
   .orders-grid,
   .distribution-grid,
+  .simulation-grid,
   .expenses-grid {
     grid-template-columns: minmax(280px, 0.85fr) minmax(320px, 1fr) minmax(
         320px,

@@ -1,0 +1,179 @@
+import { Router, type Response } from "express";
+import { z } from "zod";
+import { requirePermission } from "../access/permission.middleware.js";
+import { requireAuthentication } from "../auth/auth.middleware.js";
+import type { AuthService } from "../auth/auth.service.js";
+import type { SessionCookieConfig } from "../auth/cookies.js";
+import { ok } from "../../shared/apiResponse.js";
+import { getCorrelationId } from "../../shared/correlation.js";
+import type { SimulationService } from "./simulation.service.js";
+
+const moneyTnd = z
+  .string()
+  .trim()
+  .regex(/^\d+(\.\d{1,3})?$/);
+
+const quantity = z
+  .string()
+  .trim()
+  .regex(/^\d+(\.\d{1,6})?$/);
+
+const ingredientSchema = z.object({
+  rawMaterialId: z.string().trim().min(1).optional(),
+  ingredientName: z.string().trim().min(1).optional(),
+  enteredQuantity: quantity,
+  enteredUnitId: z.string().trim().min(1),
+  unitPriceTnd: moneyTnd,
+  priceBasisUnitId: z.string().trim().min(1),
+  conversionFactorToBase: quantity.optional(),
+});
+
+const simulationBodySchema = z.object({
+  name: z.string().trim().min(1),
+  targetProductId: z.string().trim().min(1).optional(),
+  outputQuantity: quantity,
+  outputUnitId: z.string().trim().min(1),
+  notes: z.string().optional(),
+  ingredients: z.array(ingredientSchema).min(1),
+});
+
+const updateSimulationSchema = simulationBodySchema.extend({
+  version: z.number().int().positive(),
+});
+
+const duplicateSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+});
+
+const pageQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
+export function simulationRouter(params: {
+  authService: AuthService;
+  cookie: SessionCookieConfig;
+  simulationService: SimulationService;
+}): Router {
+  const router = Router();
+  router.use(
+    requireAuthentication({
+      authService: params.authService,
+      cookieName: params.cookie.name,
+    }),
+  );
+
+  router.get(
+    "/cost-simulations",
+    requirePermission("simulations.view"),
+    async (request, response, next) => {
+      try {
+        const query = pageQuerySchema.parse(request.query);
+        const simulations =
+          await params.simulationService.listSimulations(query);
+        response.json(ok({ simulations }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/cost-simulations/:simulationId",
+    requirePermission("simulations.view"),
+    async (request, response, next) => {
+      try {
+        const simulation = await params.simulationService.getSimulation(
+          parseRouteParam(request.params.simulationId),
+        );
+        response.json(ok({ simulation }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/cost-simulations",
+    requirePermission("simulations.create"),
+    async (request, response, next) => {
+      try {
+        const body = simulationBodySchema.parse(request.body);
+        const result = await params.simulationService.createSimulation(
+          body,
+          actorFromResponse(response),
+        );
+        response.status(201).json(ok(result, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/cost-simulations/:simulationId/duplicate",
+    requirePermission("simulations.create"),
+    async (request, response, next) => {
+      try {
+        const body = duplicateSchema.parse(request.body ?? {});
+        const result = await params.simulationService.duplicateSimulation(
+          parseRouteParam(request.params.simulationId),
+          body,
+          actorFromResponse(response),
+        );
+        response.status(201).json(ok(result, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.patch(
+    "/cost-simulations/:simulationId",
+    requirePermission("simulations.update"),
+    async (request, response, next) => {
+      try {
+        const body = updateSimulationSchema.parse(request.body);
+        const result = await params.simulationService.updateSimulation(
+          parseRouteParam(request.params.simulationId),
+          body,
+          actorFromResponse(response),
+        );
+        response.json(ok(result, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.delete(
+    "/cost-simulations/:simulationId",
+    requirePermission("simulations.delete"),
+    async (request, response, next) => {
+      try {
+        const result = await params.simulationService.deleteSimulation(
+          parseRouteParam(request.params.simulationId),
+          actorFromResponse(response),
+        );
+        response.json(ok(result, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  return router;
+}
+
+function actorFromResponse(response: Response) {
+  const user = response.locals.currentUser as { id: string };
+
+  return {
+    actorUserId: user.id,
+    correlationId: getCorrelationId(response),
+  };
+}
+
+function parseRouteParam(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+}
