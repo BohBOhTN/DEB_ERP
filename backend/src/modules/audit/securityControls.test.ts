@@ -34,7 +34,7 @@ describe("login rate limiting", () => {
 
     expect(blocked.body.error).toMatchObject({
       code: "RATE_LIMITED",
-      message: "Trop de tentatives. Veuillez reessayer plus tard.",
+      message: "Trop de tentatives. Veuillez réessayer plus tard.",
     });
   });
 

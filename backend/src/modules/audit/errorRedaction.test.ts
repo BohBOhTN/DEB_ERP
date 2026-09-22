@@ -57,7 +57,7 @@ describe("error redaction", () => {
 
     expect(response.body.error).toMatchObject({
       code: "RETRYABLE_SERVER_ERROR",
-      message: "Une erreur est survenue. Veuillez reessayer.",
+      message: "Une erreur est survenue. Veuillez réessayer.",
     });
     expect(body).not.toContain("ECONNREFUSED");
     expect(body).not.toContain("10.0.0.5");
