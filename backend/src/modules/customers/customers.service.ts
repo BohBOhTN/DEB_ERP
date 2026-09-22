@@ -8,6 +8,14 @@ import {
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
+import {
+  balanceOf,
+  balancesByKey,
+  money,
+  pageWithCursor,
+  statementDefaults,
+  sumOrZero,
+} from "../../shared/ledger.js";
 import { normalizeName } from "../../shared/text.js";
 
 export interface CustomerActor {
@@ -20,6 +28,25 @@ export interface CustomerListParams {
   isActive?: boolean;
   page: number;
   pageSize: number;
+}
+
+export interface CustomerBalanceListParams {
+  search?: string;
+  /// `name` is the directory order; `balance` puts the biggest debtors first
+  /// and only lists customers that have ledger activity.
+  sort?: "name" | "balance";
+  /// Only customers owing at least this amount (decimal string).
+  minBalance?: string;
+  page: number;
+  pageSize: number;
+}
+
+export interface CustomerStatementParams {
+  /// Ledger entry id to continue from (exclusive).
+  cursor?: string;
+  limit?: number;
+  from?: Date;
+  to?: Date;
 }
 
 export interface CustomerPaymentListParams {
@@ -182,61 +209,131 @@ export class CustomersService {
     return customer;
   }
 
-  public async listCustomerBalances(params: {
-    page: number;
-    pageSize: number;
-  }) {
-    const customers = await this.prisma.customer.findMany({
-      orderBy: [{ isActive: "desc" }, { name: "asc" }],
-      skip: (params.page - 1) * params.pageSize,
-      take: params.pageSize,
-    });
+  /// Balances are summed by the database. The page is chosen either from the
+  /// customer directory (name order) or from the ledger aggregate (balance
+  /// order), and only the page's customers are then enriched.
+  public async listCustomerBalances(params: CustomerBalanceListParams) {
+    const searchWhere = customerSearchWhere(params.search);
+    const minBalance =
+      params.minBalance === undefined
+        ? undefined
+        : new Prisma.Decimal(params.minBalance);
+    const byBalance = params.sort === "balance" || minBalance !== undefined;
+
+    let customers: Awaited<ReturnType<typeof this.prisma.customer.findMany>>;
+    let total: number;
+
+    if (byBalance) {
+      // One group per customer with receivable activity, largest debtor
+      // first. Customers with no ledger entry owe nothing and are omitted.
+      const groups = await this.prisma.customerLedgerEntry.groupBy({
+        by: ["customerId"],
+        where: {
+          balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+          ...(searchWhere ? { customer: searchWhere } : {}),
+        },
+        _sum: { amountTnd: true },
+        ...(minBalance !== undefined
+          ? { having: { amountTnd: { _sum: { gte: minBalance } } } }
+          : {}),
+        orderBy: { _sum: { amountTnd: "desc" } },
+      });
+      total = groups.length;
+      const pageIds = groups
+        .slice(
+          (params.page - 1) * params.pageSize,
+          params.page * params.pageSize,
+        )
+        .map((group) => group.customerId);
+      const rows = await this.prisma.customer.findMany({
+        where: { id: { in: pageIds } },
+      });
+      // findMany does not preserve the requested order.
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      customers = pageIds
+        .map((id) => byId.get(id))
+        .filter((row): row is NonNullable<typeof row> => row !== undefined);
+    } else {
+      const where = searchWhere ?? {};
+      [customers, total] = await this.prisma.$transaction([
+        this.prisma.customer.findMany({
+          where,
+          orderBy: [{ isActive: "desc" }, { name: "asc" }],
+          skip: (params.page - 1) * params.pageSize,
+          take: params.pageSize,
+        }),
+        this.prisma.customer.count({ where }),
+      ]);
+    }
+
     const customerIds = customers.map((customer) => customer.id);
-    const [total, ledgerEntries, sales] = await this.prisma.$transaction([
-      this.prisma.customer.count(),
-      this.prisma.customerLedgerEntry.findMany({
-        where: {
-          customerId: {
-            in: customerIds,
-          },
-        },
+    // groupBy is typed per call, so these run as parallel reads rather than a
+    // batch transaction; balances are append-only sums, so a snapshot is not
+    // required.
+    const [kindTotals, saleTotals] = await Promise.all([
+      this.prisma.customerLedgerEntry.groupBy({
+        by: ["customerId", "balanceKind"],
+        where: { customerId: { in: customerIds } },
+        _sum: { amountTnd: true },
       }),
-      this.prisma.sale.findMany({
+      this.prisma.customerLedgerEntry.groupBy({
+        by: ["saleId", "customerId"],
         where: {
-          customerId: {
-            in: customerIds,
-          },
-          status: SaleStatus.POSTED,
+          customerId: { in: customerIds },
+          balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+          saleId: { not: null },
         },
+        _sum: { amountTnd: true },
       }),
     ]);
+    const openSaleTotals = saleTotals.filter((row) =>
+      sumOrZero(row._sum.amountTnd).greaterThan(0),
+    );
+    const openSales = await this.prisma.sale.findMany({
+      where: {
+        id: { in: openSaleTotals.map((row) => row.saleId as string) },
+        status: SaleStatus.POSTED,
+      },
+      select: { id: true, customerId: true, soldAt: true, paymentState: true },
+      orderBy: [{ soldAt: "desc" }, { id: "desc" }],
+    });
+    const saleBalance = balancesByKey(
+      openSaleTotals,
+      (row) => row.saleId,
+      (row) => row._sum.amountTnd,
+    );
+    const kindBalance = new Map(
+      kindTotals.map((row) => [
+        `${row.customerId}:${row.balanceKind}`,
+        sumOrZero(row._sum.amountTnd),
+      ]),
+    );
 
     return paginated(
       customers.map((customer) => {
-        const customerEntries = ledgerEntries.filter(
-          (entry) => entry.customerId === customer.id,
-        );
-        const balance = sumEntryAmounts(receivableEntries(customerEntries));
-        const advanceBalance = sumEntryAmounts(advanceEntries(customerEntries));
-        const openSales = sales
+        const customerOpenSales = openSales
           .filter((sale) => sale.customerId === customer.id)
-          .map((sale) => {
-            const saleBalance = saleBalanceFromEntries(sale.id, ledgerEntries);
-            return {
-              saleId: sale.id,
-              soldAt: sale.soldAt,
-              balanceTnd: saleBalance.toFixed(3),
-              paymentState: sale.paymentState,
-            };
-          })
-          .filter((sale) => new Prisma.Decimal(sale.balanceTnd).gt(0));
+          .map((sale) => ({
+            saleId: sale.id,
+            soldAt: sale.soldAt,
+            balanceTnd: balanceOf(saleBalance, sale.id).toFixed(3),
+            paymentState: sale.paymentState,
+          }));
 
         return {
           customer,
-          balanceTnd: balance.toFixed(3),
-          advanceBalanceTnd: advanceBalance.toFixed(3),
-          openSaleCount: openSales.length,
-          openSales,
+          balanceTnd: money(
+            kindBalance.get(
+              `${customer.id}:${CustomerLedgerBalanceKind.RECEIVABLE}`,
+            ),
+          ),
+          advanceBalanceTnd: money(
+            kindBalance.get(
+              `${customer.id}:${CustomerLedgerBalanceKind.ADVANCE}`,
+            ),
+          ),
+          openSaleCount: customerOpenSales.length,
+          openSales: customerOpenSales,
         };
       }),
       total,
@@ -244,66 +341,121 @@ export class CustomersService {
     );
   }
 
-  public async getCustomerStatement(customerId: string) {
+  /// NFR-007: a statement states its range and how its figures are derived.
+  /// Ledger entries page by cursor; the sale, order and payment sections show
+  /// the most recent `limit` documents and flag when more exist.
+  public async getCustomerStatement(
+    customerId: string,
+    params: CustomerStatementParams = {},
+  ) {
     const customer = await this.findCustomerOrThrow(customerId);
-    const [ledgerEntries, payments, sales, orders] =
+    const limit = Math.min(
+      params.limit ?? statementDefaults.limit,
+      statementDefaults.maxLimit,
+    );
+    const range = {
+      ...(params.from ? { gte: params.from } : {}),
+      ...(params.to ? { lte: params.to } : {}),
+    };
+    const inRange = params.from || params.to ? { occurredAt: range } : {};
+
+    const kindTotals = await this.prisma.customerLedgerEntry.groupBy({
+      by: ["balanceKind"],
+      where: {
+        customerId,
+        ...(params.to ? { occurredAt: { lte: params.to } } : {}),
+      },
+      _sum: { amountTnd: true },
+    });
+    const [openingTotal, ledgerPage, payments, sales, orders] =
       await this.prisma.$transaction([
-        this.prisma.customerLedgerEntry.findMany({
+        this.prisma.customerLedgerEntry.aggregate({
           where: {
             customerId,
+            balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+            ...(params.from ? { occurredAt: { lt: params.from } } : {}),
           },
-          include: {
-            sale: true,
-            payment: true,
-            order: true,
-          },
-          orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
+          _sum: { amountTnd: true },
+        }),
+        this.prisma.customerLedgerEntry.findMany({
+          where: { customerId, ...inRange },
+          include: { sale: true, payment: true, order: true },
+          orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+          take: limit + 1,
+          ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
         }),
         this.prisma.customerPayment.findMany({
-          where: {
-            customerId,
-          },
-          include: {
-            allocations: true,
-          },
+          where: { customerId },
+          include: { allocations: true },
           orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+          take: limit + 1,
         }),
         this.prisma.sale.findMany({
-          where: {
-            customerId,
-            status: SaleStatus.POSTED,
-          },
-          include: {
-            lines: true,
-            payments: true,
-          },
+          where: { customerId, status: SaleStatus.POSTED },
+          include: { lines: true, payments: true },
           orderBy: [{ soldAt: "desc" }, { createdAt: "desc" }],
+          take: limit + 1,
         }),
         this.prisma.customerOrder.findMany({
-          where: {
-            customerId,
-          },
-          include: {
-            lines: true,
-            advances: true,
-          },
+          where: { customerId },
+          include: { lines: true, advances: true },
           orderBy: [{ requestedFulfillmentAt: "desc" }, { createdAt: "desc" }],
+          take: limit + 1,
         }),
       ]);
-    const balance = sumEntryAmounts(receivableEntries(ledgerEntries));
-    const advanceBalance = sumEntryAmounts(advanceEntries(ledgerEntries));
+
+    const ledger = pageWithCursor(ledgerPage, limit);
+    const salesPage = sales.slice(0, limit);
+    const saleTotals = await this.prisma.customerLedgerEntry.groupBy({
+      by: ["saleId"],
+      where: {
+        customerId,
+        balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+        saleId: { in: salesPage.map((sale) => sale.id) },
+      },
+      _sum: { amountTnd: true },
+    });
+    const saleBalance = balancesByKey(
+      saleTotals,
+      (row) => row.saleId,
+      (row) => row._sum.amountTnd,
+    );
+    const kindBalance = new Map(
+      kindTotals.map((row) => [row.balanceKind, sumOrZero(row._sum.amountTnd)]),
+    );
+    const openingBalance = params.from
+      ? sumOrZero(openingTotal._sum.amountTnd)
+      : new Prisma.Decimal(0);
+    const closingBalance = sumOrZero(
+      kindBalance.get(CustomerLedgerBalanceKind.RECEIVABLE),
+    );
 
     return {
       customer,
-      balanceTnd: balance.toFixed(3),
-      advanceBalanceTnd: advanceBalance.toFixed(3),
-      sales: sales.map((sale) => ({
+      balanceTnd: closingBalance.toFixed(3),
+      advanceBalanceTnd: money(
+        kindBalance.get(CustomerLedgerBalanceKind.ADVANCE),
+      ),
+      sales: salesPage.map((sale) => ({
         ...sale,
-        balanceTnd: saleBalanceFromEntries(sale.id, ledgerEntries).toFixed(3),
+        balanceTnd: balanceOf(saleBalance, sale.id).toFixed(3),
       })),
-      orders,
-      ledgerEntries,
-      payments,
+      orders: orders.slice(0, limit),
+      ledgerEntries: ledger.items,
+      payments: payments.slice(0, limit),
+      meta: {
+        limit,
+        from: params.from ?? null,
+        to: params.to ?? null,
+        openingBalanceTnd: openingBalance.toFixed(3),
+        closingBalanceTnd: closingBalance.toFixed(3),
+        nextCursor: ledger.nextCursor,
+        hasMoreSales: sales.length > limit,
+        hasMoreOrders: orders.length > limit,
+        hasMorePayments: payments.length > limit,
+        basis:
+          "Solde = somme des écritures du grand livre client (créances) jusqu'à la date de fin ; les avances sont suivies séparément.",
+      },
     };
   }
 
@@ -372,13 +524,14 @@ export class CustomersService {
           });
         }
 
-        const ledgerEntries = await tx.customerLedgerEntry.findMany({
+        const receivable = await tx.customerLedgerEntry.aggregate({
           where: {
             customerId: params.customerId,
             balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
           },
+          _sum: { amountTnd: true },
         });
-        const currentBalance = sumEntryAmounts(ledgerEntries);
+        const currentBalance = sumOrZero(receivable._sum.amountTnd);
 
         if (!currentBalance.greaterThan(0)) {
           throw new AppError({
@@ -401,7 +554,6 @@ export class CustomersService {
             customerId: params.customerId,
             amountTnd,
             allocations,
-            ledgerEntries,
           },
           tx,
         );
@@ -483,7 +635,6 @@ export class CustomersService {
       customerId: string;
       amountTnd: Prisma.Decimal;
       allocations: CustomerPaymentAllocationInput[];
-      ledgerEntries: LedgerEntrySlice[];
     },
     client: Prisma.TransactionClient,
   ) {
@@ -538,13 +689,30 @@ export class CustomersService {
       });
     }
 
-    for (const allocation of allocations) {
-      const saleBalance = saleBalanceFromEntries(
-        allocation.saleId,
-        params.ledgerEntries,
-      );
+    // Only receivable entries move a sale balance. An applied order advance
+    // is recorded against the same sale but belongs to the advance balance,
+    // so it must not reduce what the customer still owes on that sale twice.
+    const saleTotals = await client.customerLedgerEntry.groupBy({
+      by: ["saleId"],
+      where: {
+        customerId: params.customerId,
+        balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+        saleId: { in: allocations.map((allocation) => allocation.saleId) },
+      },
+      _sum: { amountTnd: true },
+    });
+    const saleBalance = balancesByKey(
+      saleTotals,
+      (row) => row.saleId,
+      (row) => row._sum.amountTnd,
+    );
 
-      if (allocation.amountTnd.greaterThan(saleBalance)) {
+    for (const allocation of allocations) {
+      if (
+        allocation.amountTnd.greaterThan(
+          balanceOf(saleBalance, allocation.saleId),
+        )
+      ) {
         throw new AppError({
           statusCode: 400,
           code: "PAYMENT_ALLOCATION_EXCEEDS_SALE_BALANCE",
@@ -646,18 +814,6 @@ export class CustomersService {
   }
 }
 
-/// Only receivable entries move a sale balance. An applied order advance is
-/// recorded against the same sale but belongs to the advance balance, so it
-/// must not reduce what the customer still owes on that sale twice.
-function saleBalanceFromEntries(saleId: string, entries: LedgerEntrySlice[]) {
-  return sumDecimals(
-    receivableEntries(entries)
-      .filter((entry) => entry.saleId === saleId)
-      .map((entry) => new Prisma.Decimal(entry.amountTnd as string)),
-    3,
-  );
-}
-
 /// Only one POS session may be open at a time, so the open one is the till that
 /// received the money.
 async function requireOpenPosSession(client: Prisma.TransactionClient) {
@@ -677,31 +833,6 @@ async function requireOpenPosSession(client: Prisma.TransactionClient) {
   }
 
   return session;
-}
-
-function receivableEntries<TEntry extends LedgerEntrySlice>(entries: TEntry[]) {
-  return entries.filter(
-    (entry) => entry.balanceKind === CustomerLedgerBalanceKind.RECEIVABLE,
-  );
-}
-
-function advanceEntries<TEntry extends LedgerEntrySlice>(entries: TEntry[]) {
-  return entries.filter(
-    (entry) => entry.balanceKind === CustomerLedgerBalanceKind.ADVANCE,
-  );
-}
-
-function sumEntryAmounts(entries: LedgerEntrySlice[]) {
-  return sumDecimals(
-    entries.map((entry) => new Prisma.Decimal(entry.amountTnd as string)),
-    3,
-  );
-}
-
-interface LedgerEntrySlice {
-  saleId?: string | null;
-  balanceKind: CustomerLedgerBalanceKind;
-  amountTnd: unknown;
 }
 
 function parsePositiveMoney(value: string): Prisma.Decimal {
@@ -768,5 +899,21 @@ function paginated<TItem>(
     pageSize: params.pageSize,
     total,
     pageCount: Math.ceil(total / params.pageSize),
+  };
+}
+
+function customerSearchWhere(
+  search: string | undefined,
+): Prisma.CustomerWhereInput | undefined {
+  const trimmed = search?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return {
+    OR: [
+      { normalizedName: { contains: normalizeName(trimmed) } },
+      { phone: { contains: trimmed, mode: "insensitive" } },
+    ],
   };
 }

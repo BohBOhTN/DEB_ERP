@@ -34,6 +34,19 @@ const moneyTnd = z
   .trim()
   .regex(/^\d+(\.\d{1,3})?$/);
 
+const balanceListQuerySchema = pageQuerySchema.extend({
+  search: z.string().trim().optional(),
+  sort: z.enum(["name", "balance"]).optional(),
+  minBalance: moneyTnd.optional(),
+});
+
+const statementQuerySchema = z.object({
+  cursor: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});
+
 const createCustomerSchema = z.object({
   name: z.string().trim().min(1),
   phone: z.string().optional(),
@@ -136,7 +149,7 @@ export function customersRouter(params: {
     requirePermission("customer_balances.view"),
     async (request, response, next) => {
       try {
-        const query = pageQuerySchema.parse(request.query);
+        const query = balanceListQuerySchema.parse(request.query);
         const customerBalances =
           await params.customersService.listCustomerBalances(query);
         response.json(ok({ customerBalances }, getCorrelationId(response)));
@@ -153,6 +166,7 @@ export function customersRouter(params: {
       try {
         const statement = await params.customersService.getCustomerStatement(
           parseRouteParam(request.params.customerId),
+          statementQuerySchema.parse(request.query),
         );
         response.json(ok({ statement }, getCorrelationId(response)));
       } catch (error) {

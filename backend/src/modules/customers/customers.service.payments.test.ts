@@ -1,4 +1,4 @@
-import { SaleStatus, type PrismaClient } from "@prisma/client";
+import { Prisma, SaleStatus, type PrismaClient } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import { CustomersService } from "./customers.service.js";
 
@@ -294,6 +294,56 @@ function makeCustomerPaymentTransactionClient(store: CustomerPaymentStore) {
             (args.where.balanceKind === undefined ||
               entry.balanceKind === args.where.balanceKind),
         ),
+      // The service now sums in SQL; the double mirrors the two shapes it
+      // uses: a plain sum, and a sum per sale id.
+      aggregate: async (args: {
+        where: { customerId: string; balanceKind?: string };
+      }) => ({
+        _sum: {
+          amountTnd: store.customerLedgerEntries
+            .filter(
+              (entry) =>
+                entry.customerId === args.where.customerId &&
+                (args.where.balanceKind === undefined ||
+                  entry.balanceKind === args.where.balanceKind),
+            )
+            .reduce(
+              (sum, entry) => sum.plus(entry.amountTnd),
+              new Prisma.Decimal(0),
+            ),
+        },
+      }),
+      groupBy: async (args: {
+        by: string[];
+        where: {
+          customerId: string;
+          balanceKind?: string;
+          saleId?: { in: string[] };
+        };
+      }) => {
+        const groups = new Map<string, Prisma.Decimal>();
+        for (const entry of store.customerLedgerEntries) {
+          if (
+            entry.customerId !== args.where.customerId ||
+            (args.where.balanceKind !== undefined &&
+              entry.balanceKind !== args.where.balanceKind) ||
+            (args.where.saleId !== undefined &&
+              (entry.saleId === null ||
+                !args.where.saleId.in.includes(entry.saleId)))
+          ) {
+            continue;
+          }
+          const key = entry.saleId ?? "";
+          groups.set(
+            key,
+            (groups.get(key) ?? new Prisma.Decimal(0)).plus(entry.amountTnd),
+          );
+        }
+        return [...groups.entries()].map(([saleId, amountTnd]) => ({
+          saleId: saleId || null,
+          _sum: { amountTnd },
+        }));
+      },
       create: async (args: { data: LedgerEntryInput }) => {
         const entry = withDefaultBalanceKind(
           args.data,
