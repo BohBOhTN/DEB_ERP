@@ -4,7 +4,13 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
-Release R6 platform hardening, targeting `v1.1.0`.
+Release R7 design system and application shell, targeting `v1.2.0`.
+
+## [1.1.0] - 2026-09-22
+
+Release R6 platform hardening and API contract (Sprints 15 to 17). Backend
+only; the V1 frontend keeps working on the `/api` prefix. See
+`RELEASE_v1.1.0.md` for the evidence and the gate status.
 
 ### Added
 
