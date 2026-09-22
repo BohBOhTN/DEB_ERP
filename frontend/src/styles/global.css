@@ -304,6 +304,7 @@ button:disabled {
   padding-top: 14px;
 }
 
+.audit-workspace,
 .orders-workspace,
 .distribution-workspace,
 .simulation-workspace,
