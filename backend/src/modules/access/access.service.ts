@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { postingTransactionOptions } from "../../shared/idempotency.js";
 import {
   permissionCatalog,
   permissionKeys,
@@ -244,7 +245,7 @@ export class AccessService {
           permissions: true,
         },
       });
-    });
+    }, postingTransactionOptions);
 
     await this.audit({
       actor,
@@ -395,7 +396,7 @@ export class AccessService {
           },
         },
       });
-    });
+    }, postingTransactionOptions);
 
     await this.audit({
       actor,
@@ -486,7 +487,7 @@ export class AccessService {
               },
         },
       });
-    });
+    }, postingTransactionOptions);
 
     await this.audit({
       actor,

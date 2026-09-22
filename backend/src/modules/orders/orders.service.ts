@@ -13,7 +13,10 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
-import { runIdempotentCommand } from "../../shared/idempotency.js";
+import {
+  runIdempotentCommand,
+  postingTransactionOptions,
+} from "../../shared/idempotency.js";
 
 const mainTerminalCode = "main";
 const mainLocationCode = "main";
@@ -341,7 +344,7 @@ export class OrdersService {
       });
 
       return { order };
-    });
+    }, postingTransactionOptions);
   }
 
   public async changeOrderStatus(
@@ -397,7 +400,7 @@ export class OrdersService {
       });
 
       return { order };
-    });
+    }, postingTransactionOptions);
   }
 
   /// ORD-009: money received before fulfilment is a customer advance. It is

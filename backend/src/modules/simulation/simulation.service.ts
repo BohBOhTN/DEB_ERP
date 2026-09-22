@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { postingTransactionOptions } from "../../shared/idempotency.js";
 
 export interface SimulationActor {
   actorUserId: string;
@@ -114,7 +115,7 @@ export class SimulationService {
       });
 
       return { simulation };
-    });
+    }, postingTransactionOptions);
   }
 
   /// SIM-005: rename and update. Recalculates from the values submitted now,
@@ -199,7 +200,7 @@ export class SimulationService {
       });
 
       return { simulation };
-    });
+    }, postingTransactionOptions);
   }
 
   /// SIM-005 and SIM-006: a duplicate copies the snapshotted values as they
@@ -276,7 +277,7 @@ export class SimulationService {
       });
 
       return { simulation };
-    });
+    }, postingTransactionOptions);
   }
 
   /// SIM-005: a simulation is a draft with no operational effect, so unlike a
@@ -313,7 +314,7 @@ export class SimulationService {
       });
 
       return { deleted: true };
-    });
+    }, postingTransactionOptions);
   }
 }
 

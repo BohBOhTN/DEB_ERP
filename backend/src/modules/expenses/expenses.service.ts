@@ -1,5 +1,6 @@
 import { ExpenseStatus, Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { postingTransactionOptions } from "../../shared/idempotency.js";
 import { normalizeName } from "../catalog/catalog.service.js";
 
 /// EXP-001: categories are dynamic. These are the examples the source of truth
@@ -307,7 +308,7 @@ export class ExpensesService {
       });
 
       return { expense };
-    });
+    }, postingTransactionOptions);
   }
 
   public async updateExpense(
@@ -401,7 +402,7 @@ export class ExpensesService {
       });
 
       return { expense };
-    });
+    }, postingTransactionOptions);
   }
 
   /// EXP-007: posting is what makes an expense count. A posted expense is
@@ -460,7 +461,7 @@ export class ExpensesService {
       });
 
       return { expense };
-    });
+    }, postingTransactionOptions);
   }
 
   /// EXP-008 and AS-017: a cancelled expense stays in history with a mandatory
@@ -532,7 +533,7 @@ export class ExpensesService {
       });
 
       return { expense };
-    });
+    }, postingTransactionOptions);
   }
 
   private async findCategoryOrThrow(categoryId: string) {

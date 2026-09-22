@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { postingTransactionOptions } from "../../shared/idempotency.js";
 
 export interface CatalogActor {
   actorUserId: string;
@@ -565,7 +566,7 @@ export class CatalogService {
           },
         },
       });
-    });
+    }, postingTransactionOptions);
 
     await this.audit({
       actor,
