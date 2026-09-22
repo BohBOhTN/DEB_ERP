@@ -1,4 +1,5 @@
 import {
+  DistributorDispatchStatus,
   DistributorLedgerEntryType,
   InventoryItemType,
   InventoryMovementType,
@@ -366,6 +367,211 @@ export class DistributionService {
     );
   }
 
+  public async listDispatches(params: {
+    distributorId?: string;
+    status?: DistributorDispatchStatus;
+    page: number;
+    pageSize: number;
+  }) {
+    const where = {
+      ...(params.distributorId ? { distributorId: params.distributorId } : {}),
+      ...(params.status ? { status: params.status } : {}),
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.distributorDispatch.findMany({
+        where,
+        include: {
+          distributor: true,
+          lines: true,
+        },
+        orderBy: [{ dispatchedAt: "desc" }, { createdAt: "desc" }],
+        skip: (params.page - 1) * params.pageSize,
+        take: params.pageSize,
+      }),
+      this.prisma.distributorDispatch.count({ where }),
+    ]);
+
+    return paginated(
+      items.map((dispatch) => ({
+        ...dispatch,
+        lines: dispatch.lines.map(withCustody),
+      })),
+      total,
+      params,
+    );
+  }
+
+  public async getDispatch(dispatchId: string) {
+    const dispatch = await this.prisma.distributorDispatch.findUnique({
+      where: {
+        id: dispatchId,
+      },
+      include: {
+        distributor: true,
+        lines: true,
+        settlements: {
+          include: {
+            lines: true,
+          },
+          orderBy: [{ settledAt: "asc" }],
+        },
+      },
+    });
+
+    if (!dispatch) {
+      throw new AppError({
+        statusCode: 404,
+        code: "DISPATCH_NOT_FOUND",
+        message: "Bon de livraison introuvable.",
+      });
+    }
+
+    return {
+      ...dispatch,
+      lines: dispatch.lines.map(withCustody),
+    };
+  }
+
+  /// DST-011 to DST-015. Dispatch transfers custody only: goods stay
+  /// bakery-owned, so this writes no sale, receivable, or payment. Main stock
+  /// decreases and the quantity stays held until a settlement classifies it.
+  public async dispatchConsignment(
+    params: {
+      idempotencyKey: string;
+      distributorId: string;
+      dispatchedAt: Date;
+      notes?: string;
+      lines: Array<{ productId: string; quantity: string }>;
+    },
+    actor: DistributionActor,
+  ) {
+    const lines = normalizeDispatchLines(params.lines);
+
+    return this.runIdempotentCommand(
+      `distributor_dispatch.post.${params.distributorId}`,
+      params.idempotencyKey,
+      {
+        ...params,
+        lines: lines.map((line) => ({
+          productId: line.productId,
+          quantity: line.quantity.toFixed(6),
+        })),
+      },
+      async (tx) => {
+        const distributor = await requireActiveDistributor(
+          tx,
+          params.distributorId,
+        );
+        const lineRows = await buildDispatchLines(tx, lines);
+        const dispatch = await tx.distributorDispatch.create({
+          data: {
+            reference: await nextReference(
+              tx,
+              "distributor_dispatch_reference_seq",
+              "BL",
+            ),
+            distributorId: distributor.id,
+            status: DistributorDispatchStatus.OPEN,
+            dispatchedAt: params.dispatchedAt,
+            notes: emptyToNull(params.notes),
+            postedByUserId: actor.actorUserId,
+            correlationId: actor.correlationId,
+            lines: {
+              createMany: {
+                data: lineRows.map((line) => ({
+                  productId: line.productId,
+                  unitId: line.unitId,
+                  dispatchedQuantity: line.quantity.toFixed(6),
+                  productNameSnapshot: line.productNameSnapshot,
+                  unitNameSnapshot: line.unitNameSnapshot,
+                })),
+              },
+            },
+          },
+        });
+
+        await writeStockMovements(tx, {
+          rows: lineRows.filter((line) => line.isStockable),
+          movementType: InventoryMovementType.DISTRIBUTOR_DISPATCH_OUT,
+          sourceType: "DISTRIBUTOR_DISPATCH",
+          sourceId: dispatch.id,
+          reason: `Depot consignation ${dispatch.reference}`,
+          occurredAt: params.dispatchedAt,
+          signedQuantity: (quantity) => quantity.negated(),
+          actor,
+        });
+
+        const result = await tx.distributorDispatch.findUniqueOrThrow({
+          where: {
+            id: dispatch.id,
+          },
+          include: {
+            distributor: true,
+            lines: true,
+          },
+        });
+
+        await auditWithClient(tx, {
+          actor,
+          action: "distributor_dispatch.post",
+          entity: "distributor_dispatch",
+          targetId: result.id,
+          after: result,
+        });
+
+        return {
+          dispatch: {
+            ...result,
+            lines: result.lines.map(withCustody),
+          },
+        };
+      },
+    );
+  }
+
+  /// DST-014 and DST-021. Still-held quantity is what the distributor still
+  /// has; unaccounted quantity stays visible as a discrepancy for manual
+  /// follow-up and never becomes automatic debt.
+  public async listCustody(params: { distributorId?: string }) {
+    const lines = await this.prisma.distributorDispatchLine.findMany({
+      where: {
+        dispatch: {
+          ...(params.distributorId
+            ? { distributorId: params.distributorId }
+            : {}),
+        },
+      },
+      include: {
+        dispatch: {
+          include: {
+            distributor: true,
+          },
+        },
+      },
+      orderBy: [{ createdAt: "asc" }],
+    });
+    const held = lines
+      .map((line) => ({
+        ...withCustody(line),
+        dispatchReference: line.dispatch.reference,
+        dispatchedAt: line.dispatch.dispatchedAt,
+        distributorId: line.dispatch.distributorId,
+        distributorName: line.dispatch.distributor.name,
+      }))
+      .filter(
+        (line) =>
+          new Prisma.Decimal(line.stillHeldQuantity).greaterThan(0) ||
+          new Prisma.Decimal(line.unaccountedQuantity).greaterThan(0),
+      );
+
+    return {
+      items: held,
+      discrepancies: held.filter((line) =>
+        new Prisma.Decimal(line.unaccountedQuantity).greaterThan(0),
+      ),
+    };
+  }
+
   private async runIdempotentCommand<TResponse>(
     scope: string,
     key: string,
@@ -575,6 +781,99 @@ async function buildSaleLines(
       isStockable: product.isStockable,
     };
   });
+}
+
+function normalizeDispatchLines(
+  lines: Array<{ productId: string; quantity: string }>,
+) {
+  if (lines.length === 0) {
+    throw new AppError({
+      statusCode: 400,
+      code: "DISPATCH_LINES_REQUIRED",
+      message: "Ajoutez au moins une ligne au bon de livraison.",
+    });
+  }
+
+  const normalized = lines.map((line) => ({
+    productId: line.productId,
+    quantity: parsePositiveQuantity(line.quantity),
+  }));
+
+  if (findDuplicate(normalized.map((line) => line.productId))) {
+    throw new AppError({
+      statusCode: 400,
+      code: "DUPLICATE_DISPATCH_LINE",
+      message: "Un produit ne peut apparaitre qu'une seule fois.",
+    });
+  }
+
+  return normalized;
+}
+
+async function buildDispatchLines(
+  client: Prisma.TransactionClient,
+  lines: Array<{ productId: string; quantity: Prisma.Decimal }>,
+) {
+  const products = await client.product.findMany({
+    where: {
+      id: {
+        in: lines.map((line) => line.productId),
+      },
+    },
+    include: {
+      baseUnit: true,
+    },
+  });
+
+  return lines.map((line) => {
+    const product = products.find((item) => item.id === line.productId);
+
+    if (!product || !product.isActive) {
+      throw new AppError({
+        statusCode: 400,
+        code: "DISTRIBUTOR_PRODUCT_REQUIRED",
+        message: "Chaque ligne doit viser un produit actif.",
+      });
+    }
+
+    return {
+      productId: product.id,
+      unitId: product.baseUnitId,
+      quantity: line.quantity,
+      productNameSnapshot: product.name,
+      unitNameSnapshot: product.baseUnit.name,
+      isStockable: product.isStockable,
+    };
+  });
+}
+
+/// Still-held quantity is always derived, never stored, so custody cannot
+/// drift from what was dispatched and classified.
+function withCustody<
+  TLine extends {
+    dispatchedQuantity: Prisma.Decimal;
+    settledSoldQuantity: Prisma.Decimal;
+    returnedQuantity: Prisma.Decimal;
+    unaccountedQuantity: Prisma.Decimal;
+  },
+>(line: TLine) {
+  return {
+    ...line,
+    stillHeldQuantity: stillHeldQuantity(line).toFixed(6),
+  };
+}
+
+function stillHeldQuantity(line: {
+  dispatchedQuantity: Prisma.Decimal;
+  settledSoldQuantity: Prisma.Decimal;
+  returnedQuantity: Prisma.Decimal;
+  unaccountedQuantity: Prisma.Decimal;
+}): Prisma.Decimal {
+  return new Prisma.Decimal(line.dispatchedQuantity)
+    .minus(line.settledSoldQuantity)
+    .minus(line.returnedQuantity)
+    .minus(line.unaccountedQuantity)
+    .toDecimalPlaces(6, Prisma.Decimal.ROUND_HALF_UP);
 }
 
 async function writeStockMovements(

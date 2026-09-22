@@ -1,3 +1,4 @@
+import { DistributorDispatchStatus } from "@prisma/client";
 import { Router, type Response } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
@@ -49,6 +50,31 @@ const directSaleSchema = z.object({
         productId: z.string().trim().min(1),
         quantity,
         unitPriceTnd: moneyTnd,
+      }),
+    )
+    .min(1),
+});
+
+const dispatchListQuerySchema = z.object({
+  distributorId: z.string().trim().min(1).optional(),
+  status: z.nativeEnum(DistributorDispatchStatus).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
+const custodyQuerySchema = z.object({
+  distributorId: z.string().trim().min(1).optional(),
+});
+
+const dispatchSchema = z.object({
+  distributorId: z.string().trim().min(1),
+  dispatchedAt: z.coerce.date(),
+  notes: z.string().optional(),
+  lines: z
+    .array(
+      z.object({
+        productId: z.string().trim().min(1),
+        quantity,
       }),
     )
     .min(1),
@@ -143,6 +169,70 @@ export function distributionRouter(params: {
           actorFromResponse(response),
         );
         response.status(201).json(ok(result, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/distributor-dispatches",
+    requirePermission("distribution.custody.view"),
+    async (request, response, next) => {
+      try {
+        const query = dispatchListQuerySchema.parse(request.query);
+        const dispatches =
+          await params.distributionService.listDispatches(query);
+        response.json(ok({ dispatches }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/distributor-dispatches/:dispatchId",
+    requirePermission("distribution.custody.view"),
+    async (request, response, next) => {
+      try {
+        const dispatch = await params.distributionService.getDispatch(
+          parseRouteParam(request.params.dispatchId),
+        );
+        response.json(ok({ dispatch }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/distributor-dispatches",
+    requirePermission("distribution.dispatch"),
+    async (request, response, next) => {
+      try {
+        const body = dispatchSchema.parse(request.body);
+        const result = await params.distributionService.dispatchConsignment(
+          {
+            ...body,
+            idempotencyKey: readIdempotencyKey(request.headers),
+          },
+          actorFromResponse(response),
+        );
+        response.status(201).json(ok(result, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/distributor-custody",
+    requirePermission("distribution.custody.view"),
+    async (request, response, next) => {
+      try {
+        const query = custodyQuerySchema.parse(request.query);
+        const custody = await params.distributionService.listCustody(query);
+        response.json(ok({ custody }, getCorrelationId(response)));
       } catch (error) {
         next(error);
       }
