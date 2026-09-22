@@ -8,7 +8,7 @@ import {
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
-import { normalizeName } from "../catalog/catalog.service.js";
+import { normalizeName } from "../../shared/text.js";
 
 export interface CustomerActor {
   actorUserId: string;

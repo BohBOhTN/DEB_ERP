@@ -12,7 +12,7 @@ import {
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
-import { normalizeName } from "../catalog/catalog.service.js";
+import { normalizeName } from "../../shared/text.js";
 
 const mainTerminalCode = "main";
 const mainLocationCode = "main";
@@ -72,15 +72,16 @@ export class PosService {
 
   public async listProducts(params: PosProductListParams) {
     const search = params.search?.trim();
+    // Names are matched on their accent-stripped form so "the" finds
+    // "Thé à la menthe" at the till, exactly as in the back office.
     const where = {
       isActive: true,
       ...(search
         ? {
             OR: [
               {
-                name: {
-                  contains: search,
-                  mode: "insensitive" as const,
+                normalizedName: {
+                  contains: normalizeName(search),
                 },
               },
               {

@@ -1,7 +1,7 @@
 import { ExpenseStatus, Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
 import { postingTransactionOptions } from "../../shared/idempotency.js";
-import { normalizeName } from "../catalog/catalog.service.js";
+import { normalizeName } from "../../shared/text.js";
 
 /// EXP-001: categories are dynamic. These are the examples the source of truth
 /// lists, seeded only when the table is still empty so the business can rename
