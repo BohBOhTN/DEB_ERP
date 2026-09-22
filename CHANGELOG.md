@@ -8,6 +8,30 @@ Release R6 platform hardening, targeting `v1.1.0`.
 
 ### Added
 
+- `/api/v1` prefix for every route, with a version-aware envelope: on
+  `/api/v1` a collection is `data: { items, page, pageSize, total, pageCount }`;
+  the legacy `/api` prefix keeps its shapes and answers with
+  `Deprecation: true`.
+- One list contract: `q` (alias of `search`), `sort=field:asc|desc` from a
+  per-list whitelist, and `from`/`to` read as business days in
+  `Africa/Tunis`.
+- Detail endpoints for customers, suppliers, purchases, distributors,
+  expenses, products, raw materials, users, roles and POS sales; POS session
+  history with per-session totals.
+- `GET /api/v1/home/summary`: an operational summary computed by the database
+  with one block per permission held.
+- Document references: sales are numbered `VT-000001` and posted purchases
+  `AC-000001` from database sequences.
+- Stock movement filters by item, movement type, source and date range.
+- French labels and target module on audit events and labelled filter options.
+- Access API: permission catalogue grouped by module with French labels,
+  paginated and filterable users, role permission and user counts, user
+  display-name and e-mail update under optimistic concurrency, and an
+  administrator password reset that ends the sessions of the target.
+- OpenAPI 3.0 document generated from the Zod route schemas, committed as
+  `backend/openapi.json`, served at `/api/v1/openapi.json` outside
+  production, and checked for staleness in CI; generated frontend types in
+  `frontend/src/lib/api/types.gen.ts`.
 - Query and trigram indexes for the predicates the lists actually use, with a
   CI drift guard for the database objects Prisma cannot express.
 - Balance lists accept `search`, `sort=name|balance` and `minBalance`;
@@ -26,6 +50,10 @@ Release R6 platform hardening, targeting `v1.1.0`.
 
 ### Changed
 
+- The stock movement source is the closed enum `InventorySourceType`, and
+  the five payment-method enums are one `PaymentMethod`.
+- The permission catalogue carries accented module names and short French
+  labels; `users.reset_password` is a new key held by the Super Admin.
 - Customer, supplier and distributor balances, statements, custody, POS
   session close and expense totals are aggregated by the database instead of
   summing ledger rows in JavaScript.
