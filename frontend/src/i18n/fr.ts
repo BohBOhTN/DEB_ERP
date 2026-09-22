@@ -28,6 +28,7 @@ export const fr = {
   customers: "Clients",
   customerPayment: "Règlement client",
   amountDue: "Reste à payer",
+  amountOwed: "Montant dû",
   distributors: "Distributeurs",
   consignmentDispatch: "Sortie en dépôt-vente",
   consignment: "Dépôt-vente",
