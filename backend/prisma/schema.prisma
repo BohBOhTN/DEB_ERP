@@ -1,3 +1,14 @@
+// PROTECTED OBJECTS
+// Some invariants live only in hand-written migration SQL because Prisma cannot
+// express them: partial unique indexes (one active name per catalogue entry,
+// one main stock location, unique product code/barcode when present), the
+// document-number sequences, and the pg_trgm extension. They are listed in
+// prisma/protected-objects.json and guarded in CI. Never let `prisma migrate
+// dev` drop them; review every generated migration for DROP statements.
+//
+// Identifier strategy (ADR-V2-001): existing tables keep cuid() primary keys;
+// every table added from Sprint 17 on uses uuid(7) with @db.Uuid.
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -108,6 +119,9 @@ model AuditEvent {
   @@index([actorUserId])
   @@index([entity, targetId])
   @@index([createdAt])
+  @@index([action])
+  @@index([correlationId])
+  @@index([targetId])
   @@map("audit_events")
 }
 
@@ -187,6 +201,10 @@ model Product {
   @@index([baseUnitId])
   @@index([isActive])
   @@index([normalizedName])
+  @@index([name])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin, map: "products_normalized_name_trgm_idx")
+  @@index([code(ops: raw("gin_trgm_ops"))], type: Gin, map: "products_code_trgm_idx")
+  @@index([barcode(ops: raw("gin_trgm_ops"))], type: Gin, map: "products_barcode_trgm_idx")
   @@map("products")
 }
 
@@ -213,6 +231,7 @@ model RawMaterial {
   @@index([baseUnitId])
   @@index([isActive])
   @@index([normalizedName])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin, map: "raw_materials_normalized_name_trgm_idx")
   @@map("raw_materials")
 }
 
@@ -318,6 +337,7 @@ model Supplier {
 
   @@index([isActive])
   @@index([normalizedName])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin, map: "suppliers_normalized_name_trgm_idx")
   @@map("suppliers")
 }
 
@@ -352,6 +372,8 @@ model Purchase {
   @@index([purchaseDate])
   @@index([status])
   @@index([dueDate])
+  @@index([paymentTerms])
+  @@index([status, dueDate])
   @@map("purchases")
 }
 
@@ -499,6 +521,8 @@ model Customer {
 
   @@index([isActive])
   @@index([normalizedName])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin, map: "customers_normalized_name_trgm_idx")
+  @@index([phone(ops: raw("gin_trgm_ops"))], type: Gin, map: "customers_phone_trgm_idx")
   @@map("customers")
 }
 
@@ -557,6 +581,9 @@ model Sale {
   @@index([customerId])
   @@index([status])
   @@index([soldAt])
+  @@index([paymentState])
+  @@index([postedByUserId])
+  @@index([sessionId, postedAt])
   @@map("sales")
 }
 
@@ -664,6 +691,7 @@ model CustomerLedgerEntry {
   @@index([orderId])
   @@index([balanceKind])
   @@index([occurredAt])
+  @@index([customerId, balanceKind])
   @@map("customer_ledger_entries")
 }
 
@@ -701,6 +729,7 @@ model CustomerOrder {
   @@index([customerId])
   @@index([status])
   @@index([requestedFulfillmentAt])
+  @@index([status, requestedFulfillmentAt])
   @@map("customer_orders")
 }
 
@@ -836,6 +865,7 @@ model Distributor {
 
   @@index([isActive])
   @@index([normalizedName])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin, map: "distributors_normalized_name_trgm_idx")
   @@map("distributors")
 }
 
@@ -1193,6 +1223,7 @@ model Expense {
   @@index([categoryId])
   @@index([status])
   @@index([expenseDate])
+  @@index([status, expenseDate])
   @@map("expenses")
 }
 
