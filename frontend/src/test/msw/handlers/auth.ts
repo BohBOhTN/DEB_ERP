@@ -14,7 +14,13 @@ export function authHandlers(user: SessionUserFixture = makeUser()) {
       };
 
       if (body.password === "wrong-password") {
-        return apiError(401, "INVALID_CREDENTIALS", "Identifiants invalides.");
+        // The real API answers a wrong password with the generic 401 so an
+        // attacker cannot tell which part was wrong.
+        return apiError(
+          401,
+          "AUTHENTICATION_REQUIRED",
+          "Identifiants invalides.",
+        );
       }
 
       return ok({ user: { ...user, email: body.email ?? user.email } });
