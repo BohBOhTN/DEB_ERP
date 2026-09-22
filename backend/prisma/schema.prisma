@@ -131,6 +131,9 @@ model Unit {
   distributorSaleLines   DistributorSaleLine[]
   dispatchLines          DistributorDispatchLine[]
   settlementLines        DistributorSettlementLine[]
+  simulationOutputs      CostSimulation[]            @relation("CostSimulationOutputUnit")
+  simulationEnteredUnits CostSimulationIngredient[]  @relation("CostSimulationEnteredUnit")
+  simulationPriceUnits   CostSimulationIngredient[]  @relation("CostSimulationPriceBasisUnit")
 
   @@index([isActive])
   @@map("units")
@@ -178,6 +181,7 @@ model Product {
   distributorSaleLines DistributorSaleLine[]
   dispatchLines        DistributorDispatchLine[]
   settlementLines      DistributorSettlementLine[]
+  costSimulations      CostSimulation[]
 
   @@index([categoryId])
   @@index([baseUnitId])
@@ -204,6 +208,7 @@ model RawMaterial {
   conversions        RawMaterialUnitConversion[]
   inventoryMovements InventoryMovement[]
   purchaseLines      PurchaseLine[]
+  simulationLines    CostSimulationIngredient[]
 
   @@index([baseUnitId])
   @@index([isActive])
@@ -1074,6 +1079,67 @@ enum DistributorLedgerEntryType {
   PAYMENT
   SALE_REVERSAL
   PAYMENT_REVERSAL
+}
+
+/// A planning-only scenario. SIM-003: it has no inventory, supplier, customer,
+/// revenue, payment, or expense effect, and nothing here is ever posted.
+model CostSimulation {
+  id                        String                     @id @default(cuid())
+  name                      String
+  targetProductId           String?                    @map("target_product_id")
+  outputQuantity            Decimal                    @map("output_quantity") @db.Decimal(18, 6)
+  outputUnitId              String                     @map("output_unit_id")
+  notes                     String?
+  /// Stored results of the documented formulas so a saved scenario reads back
+  /// exactly as it was calculated.
+  totalIngredientCostTnd    Decimal                    @default(0) @map("total_ingredient_cost_tnd") @db.Decimal(14, 3)
+  costPerOutputUnitTnd      Decimal                    @default(0) @map("cost_per_output_unit_tnd") @db.Decimal(14, 3)
+  outputUnitNameSnapshot    String                     @map("output_unit_name_snapshot")
+  targetProductNameSnapshot String?                    @map("target_product_name_snapshot")
+  version                   Int                        @default(1)
+  createdByUserId           String                     @map("created_by_user_id")
+  updatedByUserId           String                     @map("updated_by_user_id")
+  createdAt                 DateTime                   @default(now()) @map("created_at")
+  updatedAt                 DateTime                   @updatedAt @map("updated_at")
+  targetProduct             Product?                   @relation(fields: [targetProductId], references: [id], onDelete: Restrict)
+  outputUnit                Unit                       @relation("CostSimulationOutputUnit", fields: [outputUnitId], references: [id], onDelete: Restrict)
+  ingredients               CostSimulationIngredient[]
+
+  @@index([targetProductId])
+  @@index([outputUnitId])
+  @@index([name])
+  @@map("cost_simulations")
+}
+
+/// SIM-004: an ingredient may point at a raw material or be free text.
+/// SIM-006: every entered value is snapshotted, so a later price or unit change
+/// never rewrites a saved scenario.
+model CostSimulationIngredient {
+  id                         String         @id @default(cuid())
+  simulationId               String         @map("simulation_id")
+  rawMaterialId              String?        @map("raw_material_id")
+  ingredientName             String         @map("ingredient_name")
+  enteredQuantity            Decimal        @map("entered_quantity") @db.Decimal(18, 6)
+  enteredUnitId              String         @map("entered_unit_id")
+  conversionFactorToBase     Decimal        @default(1) @map("conversion_factor_to_base") @db.Decimal(18, 6)
+  baseQuantity               Decimal        @map("base_quantity") @db.Decimal(18, 6)
+  unitPriceTnd               Decimal        @map("unit_price_tnd") @db.Decimal(14, 3)
+  priceBasisUnitId           String         @map("price_basis_unit_id")
+  lineCostTnd                Decimal        @map("line_cost_tnd") @db.Decimal(14, 3)
+  enteredUnitNameSnapshot    String         @map("entered_unit_name_snapshot")
+  priceBasisUnitNameSnapshot String         @map("price_basis_unit_name_snapshot")
+  position                   Int
+  createdAt                  DateTime       @default(now()) @map("created_at")
+  simulation                 CostSimulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  rawMaterial                RawMaterial?   @relation(fields: [rawMaterialId], references: [id], onDelete: Restrict)
+  enteredUnit                Unit           @relation("CostSimulationEnteredUnit", fields: [enteredUnitId], references: [id], onDelete: Restrict)
+  priceBasisUnit             Unit           @relation("CostSimulationPriceBasisUnit", fields: [priceBasisUnitId], references: [id], onDelete: Restrict)
+
+  @@index([simulationId])
+  @@index([rawMaterialId])
+  @@index([enteredUnitId])
+  @@index([priceBasisUnitId])
+  @@map("cost_simulation_ingredients")
 }
 
 model IdempotencyRecord {
