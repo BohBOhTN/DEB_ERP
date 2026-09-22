@@ -331,6 +331,36 @@ export function procurementRouter(params: {
     },
   );
 
+  router.get(
+    "/suppliers/:supplierId",
+    requirePermission("suppliers.view"),
+    async (request, response, next) => {
+      try {
+        const supplier = await params.procurementService.getSupplier(
+          parseRouteParam(request.params.supplierId),
+        );
+        response.json(okFor(response, { supplier }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/purchases/:purchaseId",
+    requirePermission("purchases.view"),
+    async (request, response, next) => {
+      try {
+        const purchase = await params.procurementService.getPurchase(
+          parseRouteParam(request.params.purchaseId),
+        );
+        response.json(okFor(response, { purchase }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   return router;
 }
 

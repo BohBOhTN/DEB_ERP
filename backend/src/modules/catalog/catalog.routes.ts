@@ -390,6 +390,36 @@ export function catalogRouter(params: {
     },
   );
 
+  router.get(
+    "/products/:productId",
+    requirePermission("products.view"),
+    async (request, response, next) => {
+      try {
+        const product = await params.catalogService.getProduct(
+          parseRouteParam(request.params.productId),
+        );
+        response.json(okFor(response, { product }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/raw-materials/:rawMaterialId",
+    requirePermission("raw_materials.view"),
+    async (request, response, next) => {
+      try {
+        const rawMaterial = await params.catalogService.getRawMaterial(
+          parseRouteParam(request.params.rawMaterialId),
+        );
+        response.json(okFor(response, { rawMaterial }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   return router;
 }
 

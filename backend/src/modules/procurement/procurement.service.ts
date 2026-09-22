@@ -1060,6 +1060,47 @@ export class ProcurementService {
     );
   }
 
+  /// Detail for the supplier page: the row plus its payable balance.
+  public async getSupplier(supplierId: string) {
+    const supplier = await this.findSupplierOrThrow(supplierId);
+    const payable = await this.prisma.supplierLedgerEntry.aggregate({
+      where: { supplierId },
+      _sum: { amountTnd: true },
+    });
+
+    return {
+      ...supplier,
+      balanceTnd: sumOrZero(payable._sum.amountTnd).toFixed(3),
+    };
+  }
+
+  public async getPurchase(purchaseId: string) {
+    const purchase = await this.prisma.purchase.findUnique({
+      where: { id: purchaseId },
+      include: purchaseInclude,
+    });
+
+    if (!purchase) {
+      throw new AppError({
+        statusCode: 404,
+        code: "PURCHASE_NOT_FOUND",
+        message: "Achat introuvable.",
+      });
+    }
+
+    const balance = await this.prisma.supplierLedgerEntry.aggregate({
+      where: { purchaseId },
+      _sum: { amountTnd: true },
+    });
+    const balanceTnd = sumOrZero(balance._sum.amountTnd);
+
+    return {
+      ...purchase,
+      balanceTnd: balanceTnd.toFixed(3),
+      paymentState: derivePaymentState(purchase, balanceTnd),
+    };
+  }
+
   private async findSupplierOrThrow(supplierId: string) {
     const supplier = await this.prisma.supplier.findUnique({
       where: {

@@ -679,6 +679,136 @@ export class PosService {
     );
   }
 
+  public async getSale(saleId: string) {
+    const sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      include: {
+        customer: true,
+        lines: true,
+        payments: true,
+        session: { include: { terminal: true } },
+      },
+    });
+
+    if (!sale) {
+      throw new AppError({
+        statusCode: 404,
+        code: "SALE_NOT_FOUND",
+        message: "Vente introuvable.",
+      });
+    }
+
+    return sale;
+  }
+
+  /// Session history for the Z-report screen.
+  public async listSessions(params: {
+    from?: Date;
+    to?: Date;
+    status?: PosSessionStatus;
+    cashierUserId?: string;
+    sort?: SortSpec<"openedAt">;
+    page: number;
+    pageSize: number;
+  }) {
+    const where = {
+      ...(params.status ? { status: params.status } : {}),
+      ...(params.cashierUserId ? { openedByUserId: params.cashierUserId } : {}),
+      ...(params.from || params.to
+        ? {
+            openedAt: {
+              ...(params.from ? { gte: params.from } : {}),
+              ...(params.to ? { lte: params.to } : {}),
+            },
+          }
+        : {}),
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.posSession.findMany({
+        where,
+        include: { terminal: true },
+        orderBy: orderByFor<
+          "openedAt",
+          Prisma.PosSessionOrderByWithRelationInput
+        >(
+          params.sort,
+          { openedAt: (direction) => [{ openedAt: direction }] },
+          [{ openedAt: "desc" }],
+          { id: "desc" },
+        ),
+        skip: (params.page - 1) * params.pageSize,
+        take: params.pageSize,
+      }),
+      this.prisma.posSession.count({ where }),
+    ]);
+
+    return paginated(items, total, params);
+  }
+
+  /// A session with its drawer totals, summed by the database: sales, cash
+  /// taken at the till, credit granted, order advances in and out, and
+  /// customer payments collected at the till.
+  public async getSession(sessionId: string) {
+    const session = await this.prisma.posSession.findUnique({
+      where: { id: sessionId },
+      include: { terminal: true },
+    });
+
+    if (!session) {
+      throw new AppError({
+        statusCode: 404,
+        code: "POS_SESSION_NOT_FOUND",
+        message: "Session de caisse introuvable.",
+      });
+    }
+
+    const [sales, salePayments, advances, customerPayments] = await Promise.all(
+      [
+        this.prisma.sale.aggregate({
+          where: { sessionId, status: SaleStatus.POSTED },
+          _count: { _all: true },
+          _sum: { totalTnd: true, remainingDueTnd: true },
+        }),
+        this.prisma.salePayment.aggregate({
+          where: { sessionId },
+          _sum: { amountTnd: true },
+        }),
+        this.prisma.customerOrderAdvance.groupBy({
+          by: ["movement"],
+          where: { sessionId },
+          _sum: { amountTnd: true },
+        }),
+        this.prisma.customerPayment.aggregate({
+          where: { sessionId },
+          _sum: { amountTnd: true },
+        }),
+      ],
+    );
+    const advanceOf = (movement: CustomerOrderAdvanceMovement) =>
+      sumOrZero(
+        advances.find((row) => row.movement === movement)?._sum.amountTnd,
+      );
+
+    return {
+      session,
+      totals: {
+        salesCount: sales._count._all,
+        salesTotalTnd: sumOrZero(sales._sum.totalTnd).toFixed(3),
+        creditGrantedTnd: sumOrZero(sales._sum.remainingDueTnd).toFixed(3),
+        cashCollectedTnd: sumOrZero(salePayments._sum.amountTnd).toFixed(3),
+        advancesReceivedTnd: advanceOf(
+          CustomerOrderAdvanceMovement.RECEIPT,
+        ).toFixed(3),
+        advancesRefundedTnd: advanceOf(
+          CustomerOrderAdvanceMovement.REFUND,
+        ).toFixed(3),
+        customerPaymentsTnd: sumOrZero(customerPayments._sum.amountTnd).toFixed(
+          3,
+        ),
+      },
+    };
+  }
+
   private async findMainTerminal(client: Prisma.TransactionClient) {
     const terminal = await client.posTerminal.findUnique({
       where: {

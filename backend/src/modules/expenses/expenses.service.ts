@@ -253,6 +253,23 @@ export class ExpensesService {
   /// Days are bucketed in the bakery's time zone by the database, so an
   /// expense entered at 00:30 in Tunis counts on that day and not the day
   /// before in UTC.
+  public async getExpense(expenseId: string) {
+    const expense = await this.prisma.expense.findUnique({
+      where: { id: expenseId },
+      include: { category: true },
+    });
+
+    if (!expense) {
+      throw new AppError({
+        statusCode: 404,
+        code: "EXPENSE_NOT_FOUND",
+        message: "Dépense introuvable.",
+      });
+    }
+
+    return expense;
+  }
+
   private async sumExpensesByBusinessDay(params: {
     from?: Date;
     to: Date;

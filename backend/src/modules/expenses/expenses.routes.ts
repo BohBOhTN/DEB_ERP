@@ -247,6 +247,21 @@ export function expensesRouter(params: {
     },
   );
 
+  router.get(
+    "/expenses/:expenseId",
+    requirePermission("expenses.view"),
+    async (request, response, next) => {
+      try {
+        const expense = await params.expensesService.getExpense(
+          parseRouteParam(request.params.expenseId),
+        );
+        response.json(okFor(response, { expense }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   return router;
 }
 

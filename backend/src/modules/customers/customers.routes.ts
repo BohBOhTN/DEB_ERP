@@ -216,6 +216,21 @@ export function customersRouter(params: {
     },
   );
 
+  router.get(
+    "/customers/:customerId",
+    requirePermission("customers.view"),
+    async (request, response, next) => {
+      try {
+        const customer = await params.customersService.getCustomer(
+          parseRouteParam(request.params.customerId),
+        );
+        response.json(okFor(response, { customer }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   return router;
 }
 

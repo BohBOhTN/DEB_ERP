@@ -1378,6 +1378,29 @@ export class DistributionService {
     };
   }
 
+  /// Detail for the distributor page: the row, its receivable balance and how
+  /// many dispatch lines it still holds.
+  public async getDistributor(distributorId: string) {
+    const distributor = await this.findDistributorOrThrow(distributorId);
+    const [receivable, heldLines] = await Promise.all([
+      this.prisma.distributorLedgerEntry.aggregate({
+        where: { distributorId },
+        _sum: { amountTnd: true },
+      }),
+      this.prisma.distributorDispatchLine.count({
+        where: {
+          dispatch: { distributorId, status: DistributorDispatchStatus.OPEN },
+        },
+      }),
+    ]);
+
+    return {
+      ...distributor,
+      balanceTnd: sumOrZero(receivable._sum.amountTnd).toFixed(3),
+      heldLineCount: heldLines,
+    };
+  }
+
   private runIdempotentCommand<TResponse>(
     scope: string,
     key: string,

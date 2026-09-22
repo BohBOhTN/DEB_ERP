@@ -514,6 +514,64 @@ export class AccessService {
     return updated;
   }
 
+  public async getUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        isActive: true,
+        roles: {
+          select: {
+            role: {
+              select: {
+                id: true,
+                name: true,
+                isActive: true,
+                isSystem: true,
+                systemKey: true,
+              },
+            },
+          },
+          orderBy: { role: { name: "asc" } },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new AppError({
+        statusCode: 404,
+        code: "USER_NOT_FOUND",
+        message: "Utilisateur introuvable.",
+      });
+    }
+
+    return user;
+  }
+
+  public async getRole(roleId: string) {
+    const role = await this.prisma.role.findUnique({
+      where: { id: roleId },
+      include: {
+        permissions: {
+          select: { permissionKey: true },
+          orderBy: { permissionKey: "asc" },
+        },
+      },
+    });
+
+    if (!role) {
+      throw new AppError({
+        statusCode: 404,
+        code: "ROLE_NOT_FOUND",
+        message: "Rôle introuvable.",
+      });
+    }
+
+    return role;
+  }
+
   private async validatePermissionKeys(keys: string[]): Promise<string[]> {
     const uniqueKeys = [...new Set(keys)];
     const count = await this.prisma.permission.count({

@@ -655,6 +655,25 @@ export class CustomersService {
     );
   }
 
+  /// Detail for the customer page: the row plus both balances.
+  public async getCustomer(customerId: string) {
+    const customer = await this.findCustomerOrThrow(customerId);
+    const totals = await this.prisma.customerLedgerEntry.groupBy({
+      by: ["balanceKind"],
+      where: { customerId },
+      _sum: { amountTnd: true },
+    });
+    const kind = new Map(
+      totals.map((row) => [row.balanceKind, sumOrZero(row._sum.amountTnd)]),
+    );
+
+    return {
+      ...customer,
+      balanceTnd: money(kind.get(CustomerLedgerBalanceKind.RECEIVABLE)),
+      advanceBalanceTnd: money(kind.get(CustomerLedgerBalanceKind.ADVANCE)),
+    };
+  }
+
   private async validateCustomerPaymentAllocations(
     params: {
       customerId: string;

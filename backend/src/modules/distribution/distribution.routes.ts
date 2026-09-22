@@ -415,6 +415,21 @@ export function distributionRouter(params: {
     },
   );
 
+  router.get(
+    "/distributors/:distributorId",
+    requirePermission("distributors.view"),
+    async (request, response, next) => {
+      try {
+        const distributor = await params.distributionService.getDistributor(
+          parseRouteParam(request.params.distributorId),
+        );
+        response.json(okFor(response, { distributor }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   return router;
 }
 

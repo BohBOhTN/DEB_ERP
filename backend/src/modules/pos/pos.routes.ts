@@ -1,4 +1,4 @@
-import { SalePaymentState } from "@prisma/client";
+import { PosSessionStatus, SalePaymentState } from "@prisma/client";
 import { Router, type Response } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
@@ -45,6 +45,14 @@ const saleListQuerySchema = z.object({
   cashierUserId: z.string().trim().min(1).optional(),
   sessionId: z.string().trim().min(1).optional(),
   ...pageFields,
+});
+
+const sessionListQuerySchema = z.object({
+  ...pageFields,
+  ...dateRangeFields,
+  status: z.nativeEnum(PosSessionStatus).optional(),
+  cashierUserId: z.string().trim().min(1).optional(),
+  sort: sortField(["openedAt"]),
 });
 
 const openSessionSchema = z.object({
@@ -206,6 +214,52 @@ export function posRouter(params: {
     },
   );
 
+  router.get(
+    "/sales/:saleId",
+    requirePermission("pos.access"),
+    async (request, response, next) => {
+      try {
+        const sale = await params.posService.getSale(
+          parseRouteParam(request.params.saleId),
+        );
+        response.json(okFor(response, { sale }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  // Registered after /sessions/current and /sessions/open so those literal
+  // paths win over the parameter.
+  router.get(
+    "/sessions",
+    requirePermission("pos.access"),
+    async (request, response, next) => {
+      try {
+        const query = sessionListQuerySchema.parse(request.query);
+        const sessions = await params.posService.listSessions(query);
+        response.json(okFor(response, { sessions }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/sessions/:sessionId",
+    requirePermission("pos.access"),
+    async (request, response, next) => {
+      try {
+        const result = await params.posService.getSession(
+          parseRouteParam(request.params.sessionId),
+        );
+        response.json(okFor(response, result));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   return router;
 }
 
@@ -255,4 +309,18 @@ function assertCreditSalePermission(
       message: "Vous n'avez pas l'autorisation nécessaire.",
     });
   }
+}
+
+function parseRouteParam(value: string | string[] | undefined): string {
+  const id = Array.isArray(value) ? value[0] : value;
+
+  if (!id || !id.trim()) {
+    throw new AppError({
+      statusCode: 400,
+      code: "VALIDATION_ERROR",
+      message: "Identifiant invalide.",
+    });
+  }
+
+  return id;
 }

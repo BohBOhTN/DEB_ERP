@@ -217,6 +217,36 @@ export function accessRouter(params: {
     },
   );
 
+  router.get(
+    "/users/:userId",
+    requirePermission("users.view"),
+    async (request, response, next) => {
+      try {
+        const user = await params.accessService.getUser(
+          parseRouteParam(request.params.userId),
+        );
+        response.json(okFor(response, { user: serializeUser(user) }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/roles/:roleId",
+    requirePermission("roles.view"),
+    async (request, response, next) => {
+      try {
+        const role = await params.accessService.getRole(
+          parseRouteParam(request.params.roleId),
+        );
+        response.json(okFor(response, { role: serializeRole(role) }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   return router;
 }
 

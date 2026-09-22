@@ -853,6 +853,43 @@ export class CatalogService {
     return product;
   }
 
+  public async getProduct(productId: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: { category: true, baseUnit: true },
+    });
+
+    if (!product) {
+      throw new AppError({
+        statusCode: 404,
+        code: "PRODUCT_NOT_FOUND",
+        message: "Produit introuvable.",
+      });
+    }
+
+    return product;
+  }
+
+  public async getRawMaterial(rawMaterialId: string) {
+    const rawMaterial = await this.prisma.rawMaterial.findUnique({
+      where: { id: rawMaterialId },
+      include: {
+        baseUnit: true,
+        conversions: { include: { unit: true }, orderBy: { createdAt: "asc" } },
+      },
+    });
+
+    if (!rawMaterial) {
+      throw new AppError({
+        statusCode: 404,
+        code: "RAW_MATERIAL_NOT_FOUND",
+        message: "Matière première introuvable.",
+      });
+    }
+
+    return rawMaterial;
+  }
+
   private async findUnitOrThrow(unitId: string) {
     const unit = await this.prisma.unit.findUnique({
       where: {
