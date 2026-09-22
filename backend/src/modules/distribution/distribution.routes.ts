@@ -98,6 +98,32 @@ const settlementSchema = z.object({
     .min(1),
 });
 
+const pageQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
+const paymentListQuerySchema = pageQuerySchema.extend({
+  distributorId: z.string().trim().min(1).optional(),
+});
+
+const createPaymentSchema = z.object({
+  distributorId: z.string().trim().min(1),
+  paidAt: z.coerce.date(),
+  amountTnd: moneyTnd,
+  reference: z.string().optional(),
+  notes: z.string().optional(),
+  allocations: z
+    .array(
+      z.object({
+        saleId: z.string().trim().min(1).optional(),
+        settlementId: z.string().trim().min(1).optional(),
+        amountTnd: moneyTnd,
+      }),
+    )
+    .default([]),
+});
+
 const updateDistributorSchema = z.object({
   version: z.number().int().positive(),
   name: z.string().trim().min(1).optional(),
@@ -271,6 +297,73 @@ export function distributionRouter(params: {
         const query = custodyQuerySchema.parse(request.query);
         const custody = await params.distributionService.listCustody(query);
         response.json(ok({ custody }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/distributor-balances",
+    requirePermission("distribution.balances.view"),
+    async (request, response, next) => {
+      try {
+        const query = pageQuerySchema.parse(request.query);
+        const distributorBalances =
+          await params.distributionService.listDistributorBalances(query);
+        response.json(ok({ distributorBalances }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/distributors/:distributorId/statement",
+    requirePermission("distribution.balances.view"),
+    async (request, response, next) => {
+      try {
+        const statement =
+          await params.distributionService.getDistributorStatement(
+            parseRouteParam(request.params.distributorId),
+          );
+        response.json(ok({ statement }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/distributor-payments",
+    requirePermission("distributor_payments.view"),
+    async (request, response, next) => {
+      try {
+        const query = paymentListQuerySchema.parse(request.query);
+        const distributorPayments =
+          await params.distributionService.listDistributorPayments(query);
+        response.json(ok({ distributorPayments }, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/distributor-payments",
+    requirePermission("distributor_payments.create"),
+    async (request, response, next) => {
+      try {
+        const body = createPaymentSchema.parse(request.body);
+        const result =
+          await params.distributionService.createDistributorPayment(
+            {
+              ...body,
+              idempotencyKey: readIdempotencyKey(request.headers),
+            },
+            actorFromResponse(response),
+          );
+        response.status(201).json(ok(result, getCorrelationId(response)));
       } catch (error) {
         next(error);
       }

@@ -390,6 +390,12 @@ export function makeDistributionTransactionClient(store: DistributionStore) {
       },
     },
     distributorLedgerEntry: {
+      findMany: async (args?: { where?: { distributorId?: string } }) =>
+        store.distributorLedgerEntries.filter(
+          (entry) =>
+            !args?.where?.distributorId ||
+            entry.distributorId === args.where.distributorId,
+        ),
       create: async (args: { data: Row & { amountTnd: string } }) => {
         store.distributorLedgerEntries.push({
           id: `distributor-ledger-${store.distributorLedgerEntries.length + 1}`,
