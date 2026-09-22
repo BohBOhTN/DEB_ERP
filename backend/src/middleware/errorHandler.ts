@@ -2,6 +2,7 @@ import type { ErrorRequestHandler } from "express";
 import { ZodError } from "zod";
 import { AppError } from "../shared/appError.js";
 import { getCorrelationId } from "../shared/correlation.js";
+import { toFrenchFieldErrors } from "../shared/validationMessages.js";
 
 export const errorHandler: ErrorRequestHandler = (
   error,
@@ -28,9 +29,7 @@ export const errorHandler: ErrorRequestHandler = (
       error: {
         code: "VALIDATION_ERROR",
         message: "Les donnees saisies sont invalides.",
-        fieldErrors: Object.fromEntries(
-          error.issues.map((issue) => [issue.path.join("."), issue.message]),
-        ),
+        fieldErrors: toFrenchFieldErrors(error),
         correlationId,
       },
     });
