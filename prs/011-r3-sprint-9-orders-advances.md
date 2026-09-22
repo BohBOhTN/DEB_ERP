@@ -65,9 +65,15 @@ movement, and receivable.
 - `npm run prisma:validate`: passed.
 - `npm run lint`: passed.
 - `npm run typecheck`: passed.
-- `npm run test`: passed; backend 110 tests and frontend 3 tests.
+- `npm run test`: passed; backend 110 tests and frontend 3 tests. The 2
+  database-backed concurrency tests skip locally and run in CI, where
+  `REQUIRE_INTEGRATION_TESTS` makes a missing database fail the build rather
+  than skip them.
 - `npm run build`: passed.
 - `npm run format:check`: passed.
+
+CI additionally runs a `postgres:16` service, applies every migration with
+`prisma migrate deploy`, and executes the concurrency suite against it.
 
 ## Database and Migration Impact
 
@@ -181,10 +187,18 @@ No new or changed environment variables.
   "completes an order into one linked sale with advance applied" asserts a
   40.000 TND sale, a 10.000 TND advance applied, a 16-unit stock decrease, and a
   30.000 TND receivable.
-- `AS-011` duplicate completion:
+- `AS-011` duplicate completion, at the service level:
   "completes an order only once" asserts that an idempotent retry returns the
   same sale and that a second completion with a fresh key is rejected while the
   sale count stays at one.
+- `AS-011` concurrent completion, against PostgreSQL:
+  `backend/src/modules/orders/orders.service.concurrency.test.ts` fires four
+  genuinely overlapping completions with distinct idempotency keys and asserts
+  exactly one linked sale, one sale line, one stock movement, and one payment,
+  with all three losers failing `409`. A second case covers a concurrent
+  duplicate submit on a single idempotency key. This suite runs against a real
+  database because the in-memory double runs transactions one after another and
+  can never exercise the row lock.
 - `AS-012` cancelled paid order:
   "rejects cancelling an order with an advance and no disposition", "refunds an
   advance out of the open session on cancellation", and "keeps a cancelled
@@ -196,6 +210,10 @@ No new or changed environment variables.
   - `backend/src/modules/orders/orders.service.ts`
   - `backend/src/modules/orders/orders.routes.ts`
   - `backend/src/modules/orders/orders.routes.test.ts`
+  - `backend/src/modules/orders/orders.service.concurrency.test.ts`
+- Continuous integration now provisions PostgreSQL and applies migrations:
+  - `.github/workflows/ci.yml`
+  - `backend/prisma/migrations/migration_lock.toml`
 - Ledger balance separation and POS drawer reconciliation:
   - `backend/src/modules/customers/customers.service.ts`
   - `backend/src/modules/pos/pos.service.ts`
@@ -230,11 +248,12 @@ revenue.
 
 ## Risks and Follow-Up
 
-- The once-only completion invariant is enforced by a `SELECT ... FOR UPDATE`
-  row lock plus a guarded status update. The service tests prove the sequential
-  and idempotent-retry cases; genuine parallel-transaction behavior is not
-  exercised by the in-memory test double and should be confirmed against
-  PostgreSQL before acceptance.
+- CI now applies the full migration chain to a real database for the first time.
+  Every migration in this repository was hand-written and had only ever been
+  reviewed as SQL, so a failure in the "Apply migrations to the CI database"
+  step would be a pre-existing defect surfaced by this PR rather than one
+  introduced by Sprint 9. The chain was also missing
+  `prisma/migrations/migration_lock.toml`, which this PR adds.
 - Manual responsive review is still needed at 360 px, 430 px, 768 px, and
   desktop widths before acceptance.
 - Customer payments collected in the customer module still do not appear in the
