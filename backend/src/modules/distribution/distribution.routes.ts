@@ -1,10 +1,12 @@
 import { Router, type Response } from "express";
+import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
 import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import { ok } from "../../shared/apiResponse.js";
+import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { DistributionService } from "./distribution.service.js";
 
@@ -24,6 +26,32 @@ const createDistributorSchema = z.object({
   address: z.string().optional(),
   taxIdentifier: z.string().optional(),
   notes: z.string().optional(),
+});
+
+const moneyTnd = z
+  .string()
+  .trim()
+  .regex(/^\d+(\.\d{1,3})?$/);
+
+const quantity = z
+  .string()
+  .trim()
+  .regex(/^\d+(\.\d{1,6})?$/);
+
+const directSaleSchema = z.object({
+  distributorId: z.string().trim().min(1),
+  soldAt: z.coerce.date(),
+  paidAmountTnd: moneyTnd.optional(),
+  notes: z.string().optional(),
+  lines: z
+    .array(
+      z.object({
+        productId: z.string().trim().min(1),
+        quantity,
+        unitPriceTnd: moneyTnd,
+      }),
+    )
+    .min(1),
 });
 
 const updateDistributorSchema = z.object({
@@ -101,7 +129,45 @@ export function distributionRouter(params: {
     },
   );
 
+  router.post(
+    "/distributor-sales",
+    requirePermission("distribution.direct_sale"),
+    async (request, response, next) => {
+      try {
+        const body = directSaleSchema.parse(request.body);
+        const result = await params.distributionService.postDirectSale(
+          {
+            ...body,
+            idempotencyKey: readIdempotencyKey(request.headers),
+          },
+          actorFromResponse(response),
+        );
+        response.status(201).json(ok(result, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   return router;
+}
+
+function readIdempotencyKey(headers: IncomingHttpHeaders): string {
+  const value = headers["idempotency-key"];
+
+  if (Array.isArray(value)) {
+    return value[0] ?? "";
+  }
+
+  if (!value) {
+    throw new AppError({
+      statusCode: 400,
+      code: "IDEMPOTENCY_KEY_REQUIRED",
+      message: "Une cle d'idempotence est requise.",
+    });
+  }
+
+  return value;
 }
 
 function actorFromResponse(response: Response) {
