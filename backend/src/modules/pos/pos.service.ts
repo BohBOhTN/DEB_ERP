@@ -12,7 +12,8 @@ import {
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
-import { normalizeName } from "../catalog/catalog.service.js";
+import { sumOrZero } from "../../shared/ledger.js";
+import { normalizeName } from "../../shared/text.js";
 
 const mainTerminalCode = "main";
 const mainLocationCode = "main";
@@ -72,15 +73,16 @@ export class PosService {
 
   public async listProducts(params: PosProductListParams) {
     const search = params.search?.trim();
+    // Names are matched on their accent-stripped form so "the" finds
+    // "Thé à la menthe" at the till, exactly as in the back office.
     const where = {
       isActive: true,
       ...(search
         ? {
             OR: [
               {
-                name: {
-                  contains: search,
-                  mode: "insensitive" as const,
+                normalizedName: {
+                  contains: normalizeName(search),
                 },
               },
               {
@@ -183,10 +185,10 @@ export class PosService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.sale.findMany({
         where,
+        // List rows carry the sale header only; lines and payments belong to
+        // the sale detail and would multiply the payload by the line count.
         include: {
           customer: true,
-          lines: true,
-          payments: true,
         },
         // NFR-005: stable sort. The id breaks ties so paging cannot repeat or
         // skip a sale posted in the same millisecond as another.
@@ -308,42 +310,40 @@ export class PosService {
           });
         }
 
-        const payments = await tx.salePayment.findMany({
-          where: {
-            sessionId,
-          },
+        // The drawer's expected cash is summed by the database: sale payments,
+        // order advances (receipts minus refunds, which are real cash through
+        // this drawer) and customer payments collected at the till. Back-office
+        // payments have no session and are not counted, matching the
+        // source-of-truth expected-cash formula.
+        const salePaymentTotal = await tx.salePayment.aggregate({
+          where: { sessionId },
+          _sum: { amountTnd: true },
         });
-        // Order advances and refunds are real cash through this drawer, so the
-        // expected close must include them alongside sale payments.
-        const orderAdvances = await tx.customerOrderAdvance.findMany({
-          where: {
-            sessionId,
-          },
+        const advanceTotals = await tx.customerOrderAdvance.groupBy({
+          by: ["movement"],
+          where: { sessionId },
+          _sum: { amountTnd: true },
         });
-        // Customer payments collected at the till carry this session, matching
-        // the source-of-truth expected-cash formula. Back-office payments have
-        // no session and are not counted here.
-        const customerPayments = await tx.customerPayment.findMany({
-          where: {
-            sessionId,
-          },
+        const customerPaymentTotal = await tx.customerPayment.aggregate({
+          where: { sessionId },
+          _sum: { amountTnd: true },
         });
-        const expectedCashTnd = sumDecimals(
-          [
-            new Prisma.Decimal(existing.openingCashTnd),
-            ...payments.map((payment) => new Prisma.Decimal(payment.amountTnd)),
-            ...orderAdvances.map((advance) => {
-              const amount = new Prisma.Decimal(advance.amountTnd);
-              return advance.movement === CustomerOrderAdvanceMovement.RECEIPT
-                ? amount
-                : amount.negated();
-            }),
-            ...customerPayments.map(
-              (payment) => new Prisma.Decimal(payment.amountTnd),
-            ),
-          ],
-          3,
+        const advanceReceipts = sumOrZero(
+          advanceTotals.find(
+            (row) => row.movement === CustomerOrderAdvanceMovement.RECEIPT,
+          )?._sum.amountTnd,
         );
+        const advanceRefunds = sumOrZero(
+          advanceTotals.find(
+            (row) => row.movement !== CustomerOrderAdvanceMovement.RECEIPT,
+          )?._sum.amountTnd,
+        );
+        const expectedCashTnd = new Prisma.Decimal(existing.openingCashTnd)
+          .plus(sumOrZero(salePaymentTotal._sum.amountTnd))
+          .plus(advanceReceipts)
+          .minus(advanceRefunds)
+          .plus(sumOrZero(customerPaymentTotal._sum.amountTnd))
+          .toDecimalPlaces(3);
         const cashDifferenceTnd = countedCashTnd.minus(expectedCashTnd);
 
         const session = await tx.posSession.update({

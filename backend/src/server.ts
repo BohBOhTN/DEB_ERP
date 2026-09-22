@@ -1,11 +1,11 @@
 import { createRequire } from "node:module";
-import { PrismaClient } from "@prisma/client";
 import { createApp } from "./app.js";
 import { env } from "./config/env.js";
 import { AccessService } from "./modules/access/access.service.js";
 import { AuditService } from "./modules/audit/audit.service.js";
 import { PrismaAuthRepository } from "./modules/auth/auth.repository.js";
 import { AuthService } from "./modules/auth/auth.service.js";
+import { PermissionCache } from "./modules/auth/permissionCache.js";
 import { CatalogService } from "./modules/catalog/catalog.service.js";
 import { CustomersService } from "./modules/customers/customers.service.js";
 import { DistributionService } from "./modules/distribution/distribution.service.js";
@@ -21,6 +21,7 @@ import { ProcurementService } from "./modules/procurement/procurement.service.js
 import { SimulationService } from "./modules/simulation/simulation.service.js";
 import { scheduleCleanup } from "./jobs/cleanup.js";
 import { createLogger } from "./shared/logger.js";
+import { createPrismaClient } from "./shared/prisma.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -44,8 +45,12 @@ process.on("uncaughtException", (error) => {
   process.exit(1);
 });
 
-const prisma = new PrismaClient();
-const accessService = new AccessService(prisma);
+const prisma = createPrismaClient({
+  logger,
+  slowQueryMs: env.SLOW_QUERY_MS,
+});
+const permissionCache = new PermissionCache(env.PERMISSION_CACHE_TTL_MS);
+const accessService = new AccessService(prisma, permissionCache);
 const auditService = new AuditService(prisma);
 const catalogService = new CatalogService(prisma);
 const customersService = new CustomersService(prisma);
@@ -57,9 +62,10 @@ const procurementService = new ProcurementService(prisma);
 const posService = new PosService(prisma);
 const simulationService = new SimulationService(prisma);
 const authService = new AuthService(
-  new PrismaAuthRepository(prisma),
+  new PrismaAuthRepository(prisma, permissionCache),
   env.SESSION_TTL_MINUTES,
   auditService,
+  { touchIntervalMs: env.SESSION_TOUCH_INTERVAL_MS },
 );
 
 await accessService.bootstrapSystemAccess();

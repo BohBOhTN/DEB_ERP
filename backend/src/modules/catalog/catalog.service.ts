@@ -1,5 +1,9 @@
 import type { PrismaClient } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { normalizeName } from "../../shared/text.js";
+
+// Re-exported so existing importers and tests keep working.
+export { normalizeName };
 import { postingTransactionOptions } from "../../shared/idempotency.js";
 
 export interface CatalogActor {
@@ -1023,15 +1027,6 @@ export class CatalogService {
       },
     });
   }
-}
-
-export function normalizeName(value: string): string {
-  return value
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .toLowerCase();
 }
 
 function normalizeCode(value: string): string {

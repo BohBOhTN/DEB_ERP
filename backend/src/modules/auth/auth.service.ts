@@ -23,12 +23,25 @@ export interface SecurityAuditRecorder {
   }): Promise<void>;
 }
 
+export interface AuthServiceOptions {
+  /// A session's `lastUsedAt` is refreshed at most this often. Writing it on
+  /// every request turned the hottest read path into a write path.
+  touchIntervalMs?: number;
+}
+
+const defaultTouchIntervalMs = 5 * 60 * 1000;
+
 export class AuthService {
+  private readonly touchIntervalMs: number;
+
   public constructor(
     private readonly repository: AuthRepository,
     private readonly sessionTtlMinutes: number,
     private readonly securityAudit?: SecurityAuditRecorder,
-  ) {}
+    options: AuthServiceOptions = {},
+  ) {
+    this.touchIntervalMs = options.touchIntervalMs ?? defaultTouchIntervalMs;
+  }
 
   public async login(params: { email: string; password: string }): Promise<{
     user: AuthenticatedUser;
@@ -108,7 +121,14 @@ export class AuthService {
       throw authenticationRequired();
     }
 
-    await this.repository.touchSession(session.id);
+    const lastUsedAt = session.lastUsedAt?.getTime();
+    if (
+      lastUsedAt === undefined ||
+      lastUsedAt === null ||
+      Date.now() - lastUsedAt >= this.touchIntervalMs
+    ) {
+      await this.repository.touchSession(session.id);
+    }
 
     return this.toAuthenticatedUser(session.user);
   }

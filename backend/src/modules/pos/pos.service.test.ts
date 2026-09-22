@@ -531,18 +531,50 @@ function makeTransactionClient(store: PosStore) {
         store.customerOrderAdvances.filter(
           (advance) => advance.sessionId === args.where.sessionId,
         ),
+      // Session close sums per movement kind in SQL.
+      groupBy: async (args: { where: { sessionId: string } }) => {
+        const totals = new Map<string, number>();
+        for (const advance of store.customerOrderAdvances) {
+          if (advance.sessionId !== args.where.sessionId) continue;
+          const movement = String(advance.movement);
+          totals.set(
+            movement,
+            (totals.get(movement) ?? 0) + Number(advance.amountTnd),
+          );
+        }
+        return [...totals.entries()].map(([movement, amount]) => ({
+          movement,
+          _sum: { amountTnd: amount.toFixed(3) },
+        }));
+      },
     },
     customerPayment: {
       findMany: async (args: { where: { sessionId: string } }) =>
         store.customerPayments.filter(
           (payment) => payment.sessionId === args.where.sessionId,
         ),
+      aggregate: async (args: { where: { sessionId: string } }) => ({
+        _sum: {
+          amountTnd: store.customerPayments
+            .filter((payment) => payment.sessionId === args.where.sessionId)
+            .reduce((sum, payment) => sum + Number(payment.amountTnd), 0)
+            .toFixed(3),
+        },
+      }),
     },
     salePayment: {
       findMany: async (args: { where: { sessionId: string } }) =>
         store.salePayments.filter(
           (payment) => payment.sessionId === args.where.sessionId,
         ),
+      aggregate: async (args: { where: { sessionId: string } }) => ({
+        _sum: {
+          amountTnd: store.salePayments
+            .filter((payment) => payment.sessionId === args.where.sessionId)
+            .reduce((sum, payment) => sum + Number(payment.amountTnd), 0)
+            .toFixed(3),
+        },
+      }),
       create: async (args: { data: Record<string, unknown> }) => {
         const payment = {
           id: `payment-${store.salePayments.length + 1}`,

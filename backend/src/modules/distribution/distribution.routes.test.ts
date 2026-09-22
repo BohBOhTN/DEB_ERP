@@ -525,6 +525,7 @@ describe("distribution routes", () => {
     expect(distributionService.listDistributorBalances).toHaveBeenCalled();
     expect(distributionService.getDistributorStatement).toHaveBeenCalledWith(
       "distributor-1",
+      expect.any(Object),
     );
   });
 

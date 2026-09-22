@@ -116,6 +116,23 @@ const paymentListQuerySchema = pageQuerySchema.extend({
   distributorId: z.string().trim().min(1).optional(),
 });
 
+const balanceListQuerySchema = pageQuerySchema.extend({
+  search: z.string().trim().optional(),
+  sort: z.enum(["name", "balance"]).optional(),
+  minBalance: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d{1,3})?$/)
+    .optional(),
+});
+
+const statementQuerySchema = z.object({
+  cursor: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});
+
 const createPaymentSchema = z.object({
   distributorId: z.string().trim().min(1),
   paidAt: z.coerce.date(),
@@ -332,7 +349,7 @@ export function distributionRouter(params: {
     requirePermission("distribution.balances.view"),
     async (request, response, next) => {
       try {
-        const query = pageQuerySchema.parse(request.query);
+        const query = balanceListQuerySchema.parse(request.query);
         const distributorBalances =
           await params.distributionService.listDistributorBalances(query);
         response.json(ok({ distributorBalances }, getCorrelationId(response)));
@@ -350,6 +367,7 @@ export function distributionRouter(params: {
         const statement =
           await params.distributionService.getDistributorStatement(
             parseRouteParam(request.params.distributorId),
+            statementQuerySchema.parse(request.query),
           );
         response.json(ok({ statement }, getCorrelationId(response)));
       } catch (error) {

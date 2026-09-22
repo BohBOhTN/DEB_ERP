@@ -1,4 +1,5 @@
 import {
+  Prisma,
   PurchasePaymentTerms,
   PurchaseStatus,
   type PrismaClient,
@@ -235,6 +236,43 @@ function makePaymentTransactionClient(store: PaymentStore) {
         store.supplierLedgerEntries.filter(
           (entry) => entry.supplierId === args.where.supplierId,
         ),
+      // The service sums in SQL; the double mirrors a plain sum and a sum per
+      // purchase id.
+      aggregate: async (args: { where: { supplierId: string } }) => ({
+        _sum: {
+          amountTnd: store.supplierLedgerEntries
+            .filter((entry) => entry.supplierId === args.where.supplierId)
+            .reduce(
+              (sum, entry) => sum.plus(entry.amountTnd),
+              new Prisma.Decimal(0),
+            ),
+        },
+      }),
+      groupBy: async (args: {
+        by: string[];
+        where: { supplierId: string; purchaseId?: { in: string[] } };
+      }) => {
+        const groups = new Map<string, Prisma.Decimal>();
+        for (const entry of store.supplierLedgerEntries) {
+          if (
+            entry.supplierId !== args.where.supplierId ||
+            (args.where.purchaseId !== undefined &&
+              (entry.purchaseId === null ||
+                !args.where.purchaseId.in.includes(entry.purchaseId)))
+          ) {
+            continue;
+          }
+          const key = entry.purchaseId ?? "";
+          groups.set(
+            key,
+            (groups.get(key) ?? new Prisma.Decimal(0)).plus(entry.amountTnd),
+          );
+        }
+        return [...groups.entries()].map(([purchaseId, amountTnd]) => ({
+          purchaseId: purchaseId || null,
+          _sum: { amountTnd },
+        }));
+      },
       create: async (args: {
         data: Omit<PaymentStore["supplierLedgerEntries"][number], "id">;
       }) => {
