@@ -245,7 +245,7 @@ export class DistributionService {
           throw new AppError({
             statusCode: 400,
             code: "DISTRIBUTOR_SALE_TOTAL_REQUIRED",
-            message: "Le total de la vente doit etre superieur a zero.",
+            message: "Le total de la vente doit être supérieur à zéro.",
           });
         }
 
@@ -258,7 +258,7 @@ export class DistributionService {
           throw new AppError({
             statusCode: 400,
             code: "DISTRIBUTOR_OVERPAYMENT_REJECTED",
-            message: "Le paiement ne peut pas depasser le total de la vente.",
+            message: "Le paiement ne peut pas dépasser le total de la vente.",
           });
         }
 
@@ -643,7 +643,7 @@ export class DistributionService {
           throw new AppError({
             statusCode: 409,
             code: "DISPATCH_NOT_OPEN",
-            message: "Ce bon de livraison est deja solde.",
+            message: "Ce bon de livraison est déjà soldé.",
           });
         }
 
@@ -671,7 +671,7 @@ export class DistributionService {
               statusCode: 400,
               code: "SETTLEMENT_EXCEEDS_HELD_QUANTITY",
               message:
-                "La quantite reglee depasse la quantite encore detenue par le distributeur.",
+                "La quantité réglée dépasse la quantité encore détenue par le distributeur.",
             });
           }
 
@@ -698,7 +698,7 @@ export class DistributionService {
           throw new AppError({
             statusCode: 400,
             code: "DISTRIBUTOR_OVERPAYMENT_REJECTED",
-            message: "Le paiement ne peut pas depasser le montant vendu.",
+            message: "Le paiement ne peut pas dépasser le montant vendu.",
           });
         }
 
@@ -992,7 +992,7 @@ export class DistributionService {
           throw new AppError({
             statusCode: 400,
             code: "DISTRIBUTOR_OVERPAYMENT_REJECTED",
-            message: "Le paiement ne peut pas depasser le solde distributeur.",
+            message: "Le paiement ne peut pas dépasser le solde distributeur.",
           });
         }
 
@@ -1252,7 +1252,7 @@ export class DistributionService {
       throw new AppError({
         statusCode: 409,
         code: "DISTRIBUTOR_NAME_EXISTS",
-        message: "Un distributeur actif avec ce nom existe deja.",
+        message: "Un distributeur actif avec ce nom existe déjà.",
       });
     }
   }
@@ -1295,7 +1295,7 @@ function normalizeSaleLines(lines: DistributorSaleLineInput[]) {
     throw new AppError({
       statusCode: 400,
       code: "DISTRIBUTOR_SALE_LINES_REQUIRED",
-      message: "Ajoutez au moins une ligne a la vente.",
+      message: "Ajoutez au moins une ligne à la vente.",
     });
   }
 
@@ -1368,7 +1368,7 @@ function normalizeSettlementLines(lines: SettlementLineInput[]) {
     throw new AppError({
       statusCode: 400,
       code: "SETTLEMENT_LINES_REQUIRED",
-      message: "Ajoutez au moins une ligne au reglement.",
+      message: "Ajoutez au moins une ligne au règlement.",
     });
   }
 
@@ -1401,7 +1401,7 @@ function normalizeSettlementLines(lines: SettlementLineInput[]) {
     throw new AppError({
       statusCode: 400,
       code: "SETTLEMENT_QUANTITY_REQUIRED",
-      message: "Indiquez au moins une quantite vendue, retournee ou manquante.",
+      message: "Indiquez au moins une quantité vendue, retournée ou manquante.",
     });
   }
 
@@ -1638,7 +1638,7 @@ function parsePositiveQuantity(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_QUANTITY_REQUIRED",
-      message: "La quantite doit etre superieure a zero.",
+      message: "La quantité doit être supérieure à zéro.",
     });
   }
 
@@ -1684,7 +1684,7 @@ function validateAllocations(params: {
         statusCode: 400,
         code: "ALLOCATION_TARGET_REQUIRED",
         message:
-          "Chaque allocation doit viser soit une vente directe, soit un reglement.",
+          "Chaque allocation doit viser soit une vente directe, soit un règlement.",
       });
     }
 
@@ -1705,7 +1705,7 @@ function validateAllocations(params: {
     throw new AppError({
       statusCode: 400,
       code: "DUPLICATE_DISTRIBUTOR_ALLOCATION",
-      message: "Un document ne peut etre alloue qu'une seule fois.",
+      message: "Un document ne peut être alloué qu'une seule fois.",
     });
   }
 
@@ -1718,7 +1718,7 @@ function validateAllocations(params: {
     throw new AppError({
       statusCode: 400,
       code: "PAYMENT_ALLOCATION_TOTAL_MISMATCH",
-      message: "Les allocations doivent correspondre au montant paye.",
+      message: "Les allocations doivent correspondre au montant payé.",
     });
   }
 
@@ -1729,7 +1729,7 @@ function validateAllocations(params: {
       throw new AppError({
         statusCode: 400,
         code: "PAYMENT_ALLOCATION_EXCEEDS_DOCUMENT_BALANCE",
-        message: "Une allocation depasse le solde du document.",
+        message: "Une allocation dépasse le solde du document.",
       });
     }
   }
@@ -1744,7 +1744,7 @@ function parsePositiveMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_AMOUNT_REQUIRED",
-      message: "Le montant doit etre superieur a zero.",
+      message: "Le montant doit être supérieur à zéro.",
     });
   }
 
@@ -1758,7 +1758,7 @@ function parseNonNegativeQuantity(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "NON_NEGATIVE_QUANTITY_REQUIRED",
-      message: "La quantite doit etre positive ou nulle.",
+      message: "La quantité doit être positive ou nulle.",
     });
   }
 
@@ -1772,7 +1772,7 @@ function parseNonNegativeMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "NON_NEGATIVE_AMOUNT_REQUIRED",
-      message: "Le montant doit etre positif ou nul.",
+      message: "Le montant doit être positif ou nul.",
     });
   }
 
@@ -1804,7 +1804,7 @@ function assertVersionUpdated(count: number) {
     throw new AppError({
       statusCode: 409,
       code: "VERSION_CONFLICT",
-      message: "Ce distributeur a ete modifie entre-temps.",
+      message: "Ce distributeur a été modifié entre-temps.",
     });
   }
 }

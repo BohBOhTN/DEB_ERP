@@ -68,6 +68,6 @@ function permissionDenied(): AppError {
   return new AppError({
     statusCode: 403,
     code: "PERMISSION_DENIED",
-    message: "Vous n'avez pas l'autorisation necessaire.",
+    message: "Vous n'avez pas l'autorisation nécessaire.",
   });
 }

@@ -813,7 +813,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 404,
         code: "UNIT_NOT_FOUND",
-        message: "Unite introuvable.",
+        message: "Unité introuvable.",
       });
     }
 
@@ -831,7 +831,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 404,
         code: "CATEGORY_NOT_FOUND",
-        message: "Categorie introuvable.",
+        message: "Catégorie introuvable.",
       });
     }
 
@@ -854,7 +854,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 409,
         code: "ACTIVE_CATEGORY_NAME_NOT_UNIQUE",
-        message: "Une categorie active porte deja ce nom.",
+        message: "Une catégorie active porte déjà ce nom.",
       });
     }
   }
@@ -871,7 +871,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 400,
         code: "ACTIVE_UNIT_REQUIRED",
-        message: "Une unite active est requise.",
+        message: "Une unité active est requise.",
       });
     }
   }
@@ -908,7 +908,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 400,
         code: "ACTIVE_CATEGORY_REQUIRED",
-        message: "Une categorie active est requise.",
+        message: "Une catégorie active est requise.",
       });
     }
   }
@@ -929,7 +929,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 409,
         code: "ACTIVE_RAW_MATERIAL_NAME_NOT_UNIQUE",
-        message: "Une matiere premiere active porte deja ce nom.",
+        message: "Une matière première active porte déjà ce nom.",
       });
     }
   }
@@ -950,7 +950,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 409,
         code: "ACTIVE_PRODUCT_NAME_NOT_UNIQUE",
-        message: "Un produit actif porte deja ce nom.",
+        message: "Un produit actif porte déjà ce nom.",
       });
     }
   }
@@ -974,7 +974,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 404,
         code: "RAW_MATERIAL_NOT_FOUND",
-        message: "Matiere premiere introuvable.",
+        message: "Matière première introuvable.",
       });
     }
 
@@ -1052,7 +1052,7 @@ function assertVersionUpdated(count: number): void {
     throw new AppError({
       statusCode: 409,
       code: "VERSION_CONFLICT",
-      message: "Cette fiche a ete modifiee. Rechargez puis reessayez.",
+      message: "Cette fiche a été modifiée. Rechargez puis réessayez.",
     });
   }
 }

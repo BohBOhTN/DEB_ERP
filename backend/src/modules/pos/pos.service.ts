@@ -231,7 +231,7 @@ export class PosService {
           throw new AppError({
             statusCode: 409,
             code: "POS_SESSION_ALREADY_OPEN",
-            message: "Une session de caisse est deja ouverte.",
+            message: "Une session de caisse est déjà ouverte.",
           });
         }
 
@@ -264,7 +264,7 @@ export class PosService {
             throw new AppError({
               statusCode: 409,
               code: "POS_SESSION_ALREADY_OPEN",
-              message: "Une session de caisse est deja ouverte.",
+              message: "Une session de caisse est déjà ouverte.",
             });
           }
 
@@ -492,7 +492,7 @@ export class PosService {
           throw new AppError({
             statusCode: 400,
             code: "SALE_TOTAL_REQUIRED",
-            message: "Le total de la vente doit etre superieur a zero.",
+            message: "Le total de la vente doit être supérieur à zéro.",
           });
         }
         const paidAmountTnd =
@@ -507,7 +507,7 @@ export class PosService {
           throw new AppError({
             statusCode: 400,
             code: "SALE_OVERPAYMENT_REJECTED",
-            message: "Le paiement ne peut pas depasser le total de la vente.",
+            message: "Le paiement ne peut pas dépasser le total de la vente.",
           });
         }
 
@@ -738,7 +738,7 @@ function parsePositiveQuantity(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_QUANTITY_REQUIRED",
-      message: "La quantite doit etre superieure a zero.",
+      message: "La quantité doit être supérieure à zéro.",
     });
   }
 
@@ -752,7 +752,7 @@ function parseNonNegativeMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "NON_NEGATIVE_AMOUNT_REQUIRED",
-      message: "Le montant doit etre positif ou nul.",
+      message: "Le montant doit être positif ou nul.",
     });
   }
 

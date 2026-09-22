@@ -459,7 +459,7 @@ export class AccessService {
                 statusCode: 409,
                 code: "LAST_SUPER_ADMIN_REQUIRED",
                 message:
-                  "Le dernier Super Admin actif ne peut pas etre desactive.",
+                  "Le dernier Super Admin actif ne peut pas être désactivé.",
               });
             }
           }
@@ -613,7 +613,7 @@ function protectedRoleError(): AppError {
   return new AppError({
     statusCode: 409,
     code: "PROTECTED_SYSTEM_ROLE",
-    message: "Le role Super Admin protege ne peut pas etre modifie ainsi.",
+    message: "Le role Super Admin protégé ne peut pas être modifié ainsi.",
   });
 }
 

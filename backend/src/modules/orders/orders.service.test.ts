@@ -384,7 +384,7 @@ describe("OrdersService", () => {
       {
         idempotencyKey: "cancel-1",
         cancelledAt: completedAt,
-        reason: "Commande annulee",
+        reason: "Commande annulée",
         advanceDisposition: CustomerOrderAdvanceDisposition.CREDITED,
       },
       { actorUserId: "user-1" },

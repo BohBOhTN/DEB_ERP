@@ -247,7 +247,7 @@ function parseRouteParam(value: string | string[] | undefined): string {
     throw new AppError({
       statusCode: 400,
       code: "VALIDATION_ERROR",
-      message: "Les donnees saisies sont invalides.",
+      message: "Les données saisies sont invalides.",
     });
   }
 

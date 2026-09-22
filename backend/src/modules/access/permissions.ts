@@ -85,7 +85,7 @@ export const permissionCatalog = [
     "Soldes fournisseurs",
     "Voir les soldes fournisseurs",
   ),
-  permission("pos.access", "Caisse", "Acceder a la caisse"),
+  permission("pos.access", "Caisse", "Accéder à la caisse"),
   permission("pos.open_session", "Caisse", "Ouvrir une session de caisse"),
   permission("pos.sell", "Caisse", "Enregistrer une vente"),
   permission("pos.credit_sale", "Caisse", "Enregistrer une vente a credit"),

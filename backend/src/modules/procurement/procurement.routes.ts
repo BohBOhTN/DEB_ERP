@@ -331,7 +331,7 @@ function parseRouteParam(value: string | string[] | undefined): string {
     throw new AppError({
       statusCode: 400,
       code: "VALIDATION_ERROR",
-      message: "Les donnees saisies sont invalides.",
+      message: "Les données saisies sont invalides.",
     });
   }
 
@@ -349,7 +349,7 @@ function readIdempotencyKey(headers: IncomingHttpHeaders): string {
     throw new AppError({
       statusCode: 400,
       code: "IDEMPOTENCY_KEY_REQUIRED",
-      message: "Une cle d'idempotence est requise.",
+      message: "Une clé d'idempotence est requise.",
     });
   }
 

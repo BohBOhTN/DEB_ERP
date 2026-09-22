@@ -103,7 +103,7 @@ describe("validation messages are French", () => {
     expect(response.body.error.code).toBe("VALIDATION_ERROR");
     expect(response.body.error.fieldErrors).toMatchObject({
       name: "Ce champ est obligatoire.",
-      lines: "Ajoutez au moins un element.",
+      lines: "Ajoutez au moins un élément.",
     });
 
     // Zod's own wording must never reach the interface.
@@ -130,7 +130,7 @@ describe("validation messages are French", () => {
       .expect(400);
 
     expect(response.body.error.fieldErrors.amountTnd).toBe(
-      "Cette valeur doit etre superieure a zero.",
+      "Cette valeur doit être supérieure à zéro.",
     );
   });
 

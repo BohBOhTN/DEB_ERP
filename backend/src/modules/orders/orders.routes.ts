@@ -272,7 +272,7 @@ function readIdempotencyKey(headers: IncomingHttpHeaders): string {
     throw new AppError({
       statusCode: 400,
       code: "IDEMPOTENCY_KEY_REQUIRED",
-      message: "Une cle d'idempotence est requise.",
+      message: "Une clé d'idempotence est requise.",
     });
   }
 

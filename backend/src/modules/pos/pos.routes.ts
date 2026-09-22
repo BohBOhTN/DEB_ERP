@@ -223,7 +223,7 @@ function readIdempotencyKey(headers: IncomingHttpHeaders): string {
     throw new AppError({
       statusCode: 400,
       code: "IDEMPOTENCY_KEY_REQUIRED",
-      message: "Une cle d'idempotence est requise.",
+      message: "Une clé d'idempotence est requise.",
     });
   }
 
@@ -246,7 +246,7 @@ function assertCreditSalePermission(
     throw new AppError({
       statusCode: 403,
       code: "PERMISSION_DENIED",
-      message: "Vous n'avez pas l'autorisation necessaire.",
+      message: "Vous n'avez pas l'autorisation nécessaire.",
     });
   }
 }

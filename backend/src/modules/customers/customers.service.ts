@@ -392,7 +392,7 @@ export class CustomersService {
           throw new AppError({
             statusCode: 400,
             code: "CUSTOMER_OVERPAYMENT_REJECTED",
-            message: "Le paiement ne peut pas depasser le solde client.",
+            message: "Le paiement ne peut pas dépasser le solde client.",
           });
         }
 
@@ -503,7 +503,7 @@ export class CustomersService {
       throw new AppError({
         statusCode: 400,
         code: "DUPLICATE_PAYMENT_ALLOCATION",
-        message: "Une vente ne peut etre allouee qu'une seule fois.",
+        message: "Une vente ne peut être allouée qu'une seule fois.",
       });
     }
 
@@ -516,7 +516,7 @@ export class CustomersService {
       throw new AppError({
         statusCode: 400,
         code: "PAYMENT_ALLOCATION_TOTAL_MISMATCH",
-        message: "Les allocations doivent correspondre au montant paye.",
+        message: "Les allocations doivent correspondre au montant payé.",
       });
     }
 
@@ -548,7 +548,7 @@ export class CustomersService {
         throw new AppError({
           statusCode: 400,
           code: "PAYMENT_ALLOCATION_EXCEEDS_SALE_BALANCE",
-          message: "Une allocation depasse le solde de la vente.",
+          message: "Une allocation dépasse le solde de la vente.",
         });
       }
     }
@@ -590,7 +590,7 @@ export class CustomersService {
       throw new AppError({
         statusCode: 409,
         code: "CUSTOMER_NAME_EXISTS",
-        message: "Un client actif avec ce nom existe deja.",
+        message: "Un client actif avec ce nom existe déjà.",
       });
     }
   }
@@ -672,7 +672,7 @@ async function requireOpenPosSession(client: Prisma.TransactionClient) {
       statusCode: 409,
       code: "POS_SESSION_NOT_OPEN",
       message:
-        "Ouvrez une session de caisse pour encaisser un paiement a la caisse.",
+        "Ouvrez une session de caisse pour encaisser un paiement à la caisse.",
     });
   }
 
@@ -711,7 +711,7 @@ function parsePositiveMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_AMOUNT_REQUIRED",
-      message: "Le montant doit etre superieur a zero.",
+      message: "Le montant doit être supérieur à zéro.",
     });
   }
 
@@ -734,7 +734,7 @@ function assertVersionUpdated(count: number) {
     throw new AppError({
       statusCode: 409,
       code: "VERSION_CONFLICT",
-      message: "Cette fiche a ete modifiee. Rechargez puis reessayez.",
+      message: "Cette fiche a été modifiée. Rechargez puis réessayez.",
     });
   }
 }

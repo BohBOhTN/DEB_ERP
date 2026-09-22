@@ -198,7 +198,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "ORDER_TOTAL_REQUIRED",
-            message: "Le total de la commande doit etre superieur a zero.",
+            message: "Le total de la commande doit être supérieur à zéro.",
           });
         }
 
@@ -254,7 +254,7 @@ export class OrdersService {
         throw new AppError({
           statusCode: 409,
           code: "ORDER_NOT_EDITABLE",
-          message: "Cette commande ne peut plus etre modifiee.",
+          message: "Cette commande ne peut plus être modifiée.",
         });
       }
 
@@ -272,7 +272,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "ORDER_TOTAL_REQUIRED",
-            message: "Le total de la commande doit etre superieur a zero.",
+            message: "Le total de la commande doit être supérieur à zéro.",
           });
         }
       }
@@ -286,7 +286,7 @@ export class OrdersService {
           statusCode: 409,
           code: "ORDER_TOTAL_BELOW_ADVANCE",
           message:
-            "Le total ne peut pas etre inferieur a l'avance deja encaissee. Remboursez ou creditez l'avance d'abord.",
+            "Le total ne peut pas être inférieur à l'avance déjà encaissée. Remboursez ou créditez l'avance d'abord.",
         });
       }
 
@@ -446,7 +446,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "ORDER_ADVANCE_EXCEEDS_TOTAL",
-            message: "L'avance ne peut pas depasser le total de la commande.",
+            message: "L'avance ne peut pas dépasser le total de la commande.",
           });
         }
 
@@ -538,7 +538,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_NOT_COMPLETABLE",
-            message: "Cette commande ne peut pas etre terminee.",
+            message: "Cette commande ne peut pas être terminée.",
           });
         }
 
@@ -561,7 +561,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_LINES_REQUIRED",
-            message: "Une commande sans ligne ne peut pas etre terminee.",
+            message: "Une commande sans ligne ne peut pas être terminée.",
           });
         }
 
@@ -581,7 +581,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "SALE_OVERPAYMENT_REJECTED",
-            message: "Le paiement ne peut pas depasser le total de la vente.",
+            message: "Le paiement ne peut pas dépasser le total de la vente.",
           });
         }
 
@@ -723,7 +723,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_ALREADY_COMPLETED",
-            message: "Cette commande a deja ete terminee.",
+            message: "Cette commande a déjà été terminée.",
           });
         }
 
@@ -785,7 +785,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_NOT_CANCELLABLE",
-            message: "Cette commande ne peut plus etre annulee.",
+            message: "Cette commande ne peut plus être annulée.",
           });
         }
 
@@ -893,7 +893,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_NOT_CANCELLABLE",
-            message: "Cette commande ne peut plus etre annulee.",
+            message: "Cette commande ne peut plus être annulée.",
           });
         }
 
@@ -961,7 +961,7 @@ function normalizeOrderLines(lines: OrderLineInput[]) {
     throw new AppError({
       statusCode: 400,
       code: "ORDER_LINES_REQUIRED",
-      message: "Ajoutez au moins une ligne a la commande.",
+      message: "Ajoutez au moins une ligne à la commande.",
     });
   }
 
@@ -1082,7 +1082,7 @@ async function requireOpenSession(client: Prisma.TransactionClient) {
     throw new AppError({
       statusCode: 409,
       code: "POS_SESSION_NOT_OPEN",
-      message: "Ouvrez une session de caisse avant cette operation.",
+      message: "Ouvrez une session de caisse avant cette opération.",
     });
   }
 
@@ -1162,7 +1162,7 @@ function parsePositiveQuantity(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_QUANTITY_REQUIRED",
-      message: "La quantite doit etre superieure a zero.",
+      message: "La quantité doit être supérieure à zéro.",
     });
   }
 
@@ -1176,7 +1176,7 @@ function parsePositiveMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_AMOUNT_REQUIRED",
-      message: "Le montant doit etre superieur a zero.",
+      message: "Le montant doit être supérieur à zéro.",
     });
   }
 
@@ -1190,7 +1190,7 @@ function parseNonNegativeMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "NON_NEGATIVE_AMOUNT_REQUIRED",
-      message: "Le montant doit etre positif ou nul.",
+      message: "Le montant doit être positif ou nul.",
     });
   }
 
@@ -1208,7 +1208,7 @@ function assertVersionUpdated(count: number) {
     throw new AppError({
       statusCode: 409,
       code: "VERSION_CONFLICT",
-      message: "Cette commande a ete modifiee entre-temps.",
+      message: "Cette commande a été modifiée entre-temps.",
     });
   }
 }
