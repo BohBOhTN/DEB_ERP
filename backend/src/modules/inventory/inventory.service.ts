@@ -1,7 +1,8 @@
 import {
   InventoryItemType,
   InventoryMovementType,
-  type Prisma,
+  InventorySourceType,
+  Prisma,
   type PrismaClient,
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
@@ -14,6 +15,12 @@ export interface InventoryActor {
 }
 
 export interface InventoryListParams {
+  itemType?: InventoryItemType;
+  itemId?: string;
+  movementType?: InventoryMovementType;
+  sourceType?: InventorySourceType;
+  from?: Date;
+  to?: Date;
   sort?: SortSpec<"occurredAt">;
   page: number;
   pageSize: number;
@@ -48,10 +55,32 @@ export class InventoryService {
   }
 
   public async listMovements(params: InventoryListParams) {
+    const where: Prisma.InventoryMovementWhereInput = {
+      ...(params.itemType ? { itemType: params.itemType } : {}),
+      ...(params.itemId
+        ? {
+            OR: [
+              { productId: params.itemId },
+              { rawMaterialId: params.itemId },
+            ],
+          }
+        : {}),
+      ...(params.movementType ? { movementType: params.movementType } : {}),
+      ...(params.sourceType ? { sourceType: params.sourceType } : {}),
+      ...(params.from || params.to
+        ? {
+            occurredAt: {
+              ...(params.from ? { gte: params.from } : {}),
+              ...(params.to ? { lte: params.to } : {}),
+            },
+          }
+        : {}),
+    };
     const [items, total] = await this.prisma.$transaction([
       // Item and unit names are snapshotted on the row, so no join is needed
       // to render the list.
       this.prisma.inventoryMovement.findMany({
+        where,
         orderBy: orderByFor<
           "occurredAt",
           Prisma.InventoryMovementOrderByWithRelationInput
@@ -64,7 +93,7 @@ export class InventoryService {
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
-      this.prisma.inventoryMovement.count(),
+      this.prisma.inventoryMovement.count({ where }),
     ]);
 
     return paginated(items, total, params);
@@ -227,7 +256,7 @@ export class InventoryService {
       itemId: string;
       quantityDelta: string;
       movementType: InventoryMovementType;
-      sourceType: string;
+      sourceType: InventorySourceType;
       reason: string;
       actor: InventoryActor;
     },

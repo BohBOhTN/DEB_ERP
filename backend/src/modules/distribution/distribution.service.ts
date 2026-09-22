@@ -3,6 +3,7 @@ import {
   DistributorLedgerEntryType,
   InventoryItemType,
   InventoryMovementType,
+  InventorySourceType,
   Prisma,
   SalePaymentState,
   SaleStatus,
@@ -1712,7 +1713,7 @@ async function writeStockMovements(
       unitNameSnapshot: string;
     }>;
     movementType: InventoryMovementType;
-    sourceType: string;
+    sourceType: InventorySourceType;
     sourceId: string;
     reason: string;
     occurredAt: Date;

@@ -1,4 +1,8 @@
-import { InventoryItemType } from "@prisma/client";
+import {
+  InventoryItemType,
+  InventoryMovementType,
+  InventorySourceType,
+} from "@prisma/client";
 import { Router, type Response } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
@@ -7,12 +11,21 @@ import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
-import { pageFields, sortField } from "../../shared/listQuery.js";
+import {
+  dateRangeFields,
+  pageFields,
+  sortField,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { InventoryService } from "./inventory.service.js";
 
 const listQuerySchema = z.object({
+  itemType: z.nativeEnum(InventoryItemType).optional(),
+  itemId: z.string().trim().min(1).optional(),
+  movementType: z.nativeEnum(InventoryMovementType).optional(),
+  sourceType: z.nativeEnum(InventorySourceType).optional(),
+  ...dateRangeFields,
   sort: sortField(["occurredAt"]),
   ...pageFields,
 });
