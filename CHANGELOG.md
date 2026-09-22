@@ -2,6 +2,36 @@
 
 All notable project changes are recorded here.
 
+## [Unreleased]
+
+Release R6 platform hardening, targeting `v1.1.0`.
+
+### Added
+
+- Structured request and error logging (pino) keyed by correlation id.
+- Liveness and readiness probes under `/api/v1/health` with build version,
+  git sha and latest applied migration; `/api/health` remains as an alias.
+- `Idempotency-Replayed: true` header on replayed posting commands.
+- Cleanup job for expired idempotency records and sessions.
+- Global per-client rate limit, gzip compression, request timeouts, graceful
+  shutdown with forced exit, and `trust proxy` configuration.
+
+### Changed
+
+- Body-parser and Prisma errors map to 400/413/415/404/409/503 with stable
+  codes instead of a generic 500.
+- `VERSION_CONFLICT` is the only code for stale optimistic updates.
+- Client-supplied correlation ids are validated before being stored.
+- Every posting transaction runs with an explicit timeout and isolation level.
+
+### Fixed
+
+- `InventoryService` could run one request's reads and writes inside another
+  request's transaction under load.
+- Two identical concurrent posting commands could return a 500 instead of a
+  replay.
+- Backend user-facing messages were written without accents.
+
 ## [1.0.0] - 2026-09-22
 
 Version 1 feature scope is complete. See `RELEASE_v1.0.0.md` for the
