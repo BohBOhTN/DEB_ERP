@@ -50,6 +50,8 @@ export default tseslint.config(
     rules: {
       ...reactHooks.configs.recommended.rules,
       ...jsxA11y.flatConfigs.recommended.rules,
+      // React Compiler advisory; the project does not use the compiler.
+      "react-hooks/incompatible-library": "off",
     },
   },
 );
