@@ -97,26 +97,15 @@ performance suite, and both builds. Local results are in `RELEASE_v1.1.0.md`.
 
 ## Tagging
 
-The R6 release file asks for a `v1.1.0` tag on `dev` after the sprint merges,
-with `RELEASE_v1.1.0.md` recording timings, migrations and the OpenAPI
-location. That file exists and its gate table is met except for the remote
-development migration line, which only the owner can complete.
+Decision DEC-V2-001 (V2 decision log) settles where release tags go: `v1.0.0`
+stays untagged, and each V2 release is tagged **on `dev`** at its release
+gate. The R6 gate is met except for the remote development migration line in
+`RELEASE_v1.1.0.md`; once the owner records it, `v1.1.0` is tagged on the
+`dev` commit that carries the release file, with the command given there.
 
-`v1.0.0` was never tagged because the responsive review, UAT and backup
-evidence were open; they still are, and the V2 plan addresses them in R10.
-R6 changed no screen, so those items are no worse than at `v1.0.0`.
-
-Recommendation: after this merge and the remote migration line, tag the
-merge commit on `main`:
-
-```text
-git tag -a v1.1.0 -m "v1.1.0 - Platform hardening and API contract" <merge-sha>
-git push origin v1.1.0
-```
-
-If the owner prefers to keep the V1 rule that no tag precedes a signed
-checklist, leave `v1.1.0` untagged like `v1.0.0` and record that decision in
-the sprint tracker; nothing in R7 depends on the tag.
+This pull request therefore does not tag anything. It promotes the tagged
+state of `dev` to `main` so that `main` stays the releasable branch, as
+it did for `v1.0.0`.
 
 ## Merge Checklist
 
@@ -125,4 +114,4 @@ the sprint tracker; nothing in R7 depends on the tag.
 - [ ] Scope matches release R6
 - [ ] Target branch is `main`
 - [ ] Remote development database migrated and recorded in `RELEASE_v1.1.0.md`
-- [ ] Tag decision made
+- [ ] `v1.1.0` tagged on `dev` per DEC-V2-001, or the reason it is not recorded in the sprint tracker

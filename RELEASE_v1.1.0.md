@@ -109,12 +109,12 @@ permission cache TTL, session touch interval, and pool settings on
 
 ## R6 release gate
 
-| Gate item                                             | Status                                                    |
-| ----------------------------------------------------- | --------------------------------------------------------- |
-| Sprints 15 to 17 accepted                             | met: PR #24, #25, #26 merged with CI green                |
-| Full quality suite and integration suite green in CI  | met on PR #26                                             |
-| `RELEASE_v1.1.0.md` with timings, migrations, OpenAPI | this file; remote development migration line pending      |
-| `v1.1.0` tagged                                       | **pending**: after promotion to `main` and the line above |
+| Gate item                                             | Status                                                             |
+| ----------------------------------------------------- | ------------------------------------------------------------------ |
+| Sprints 15 to 17 accepted                             | met: PR #24, #25, #26 merged with CI green                         |
+| Full quality suite and integration suite green in CI  | met on PR #26                                                      |
+| `RELEASE_v1.1.0.md` with timings, migrations, OpenAPI | this file; remote development migration line pending               |
+| `v1.1.0` tagged                                       | **pending**: on `dev` once the line above is recorded (DEC-V2-001) |
 
 ## Release checklist position
 
@@ -133,7 +133,15 @@ Against `templates/RELEASE_CHECKLIST.md`, relative to the `v1.0.0` position:
 - UAT: not run; the V2 plan schedules it in R10.
 
 `v1.0.0` was never tagged, for the reasons recorded in `RELEASE_v1.0.0.md`.
-The R6 release file asks for a `v1.1.0` tag once its own gate is met; that
-gate is met except for the remote development migration line. Whether to tag
-`v1.1.0` while the V1 gate items stay open is the owner's call and is stated
-in `prs/022-release-v1.1.0-dev-to-main.md`.
+Decision DEC-V2-001 in the V2 decision log closes that question: `v1.0.0`
+stays untagged, and each V2 release is tagged on `dev` at its release gate.
+The R6 gate is met except for the remote development migration line above;
+once it is recorded, tag the commit on `dev` that carries this file:
+
+```text
+git tag -a v1.1.0 -m "v1.1.0 - Platform hardening and API contract" <dev-sha>
+git push origin v1.1.0
+```
+
+The promotion of `dev` to `main` (`prs/022-release-v1.1.0-dev-to-main.md`)
+is independent of the tag.
