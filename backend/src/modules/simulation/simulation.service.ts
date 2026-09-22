@@ -165,7 +165,7 @@ export class SimulationService {
       if (updated.count === 0) {
         throw new AppError({
           statusCode: 409,
-          code: "CONCURRENT_UPDATE",
+          code: "VERSION_CONFLICT",
           message: "Cette simulation a ete modifiee entre-temps.",
         });
       }

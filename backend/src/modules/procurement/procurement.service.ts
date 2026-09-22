@@ -1496,7 +1496,7 @@ function assertVersionUpdated(count: number): void {
   if (count === 0) {
     throw new AppError({
       statusCode: 409,
-      code: "STALE_VERSION",
+      code: "VERSION_CONFLICT",
       message: "Les donnees ont change. Actualisez puis reessayez.",
     });
   }
