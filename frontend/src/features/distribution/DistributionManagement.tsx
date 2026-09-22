@@ -8,6 +8,7 @@ import {
   getDispatches,
   getDistributorBalances,
   getDistributors,
+  getDistributorStatement,
   postDirectSale,
   postDispatch,
   postSettlement,
@@ -16,6 +17,7 @@ import {
   type Dispatch,
   type Distributor,
   type DistributorBalance,
+  type DistributorStatement,
 } from "./distributionApi";
 
 interface DistributionManagementProps {
@@ -77,6 +79,7 @@ export function DistributionManagement({ user }: DistributionManagementProps) {
   const [dispatches, setDispatches] = useState<Dispatch[]>([]);
   const [custody, setCustody] = useState<Custody | null>(null);
   const [balances, setBalances] = useState<DistributorBalance[]>([]);
+  const [statement, setStatement] = useState<DistributorStatement | null>(null);
   const [distributorName, setDistributorName] = useState("");
   const [selectedDistributorId, setSelectedDistributorId] = useState("");
   const [saleCart, setSaleCart] = useState<CartLine[]>([]);
@@ -153,6 +156,16 @@ export function DistributionManagement({ user }: DistributionManagementProps) {
       setError(errorMessage(caught));
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function selectStatement(distributorId: string) {
+    setError("");
+
+    try {
+      setStatement(await getDistributorStatement(distributorId));
+    } catch (caught) {
+      setError(errorMessage(caught));
     }
   }
 
@@ -651,12 +664,88 @@ export function DistributionManagement({ user }: DistributionManagementProps) {
             ) : (
               <ul className="record-list">
                 {balances.map((balance) => (
-                  <li className="metric-row" key={balance.distributor.id}>
-                    <span>{balance.distributor.name}</span>
-                    <strong>{formatTnd(balance.balanceTnd)}</strong>
+                  <li key={balance.distributor.id}>
+                    <button
+                      aria-pressed={
+                        statement?.distributor.id === balance.distributor.id
+                      }
+                      className="record-button"
+                      onClick={() =>
+                        void selectStatement(balance.distributor.id)
+                      }
+                      type="button"
+                    >
+                      <span className="record-title">
+                        {balance.distributor.name}
+                      </span>
+                      <span className="record-meta">
+                        Solde {formatTnd(balance.balanceTnd)}
+                      </span>
+                    </button>
                   </li>
                 ))}
               </ul>
+            )}
+          </div>
+
+          <div className="panel">
+            <div className="panel-heading">
+              <h3>Releve distributeur</h3>
+            </div>
+            {!statement ? (
+              <p className="status-muted">Selectionnez un distributeur.</p>
+            ) : (
+              <div className="assignment-panel">
+                <div className="metric-row">
+                  <span>Solde</span>
+                  <strong>{formatTnd(statement.balanceTnd)}</strong>
+                </div>
+
+                <h4>Ventes directes</h4>
+                {statement.sales.length === 0 ? (
+                  <p className="status-muted">Aucune vente directe.</p>
+                ) : (
+                  statement.sales.map((sale) => (
+                    <div className="metric-row" key={sale.id}>
+                      <span>
+                        {sale.reference}
+                        <small>{formatDate(sale.soldAt)}</small>
+                      </span>
+                      <strong>{formatTnd(sale.balanceTnd)}</strong>
+                    </div>
+                  ))
+                )}
+
+                <h4>Reglements</h4>
+                {statement.settlements.length === 0 ? (
+                  <p className="status-muted">Aucun reglement.</p>
+                ) : (
+                  statement.settlements.map((settlement) => (
+                    <div className="metric-row" key={settlement.id}>
+                      <span>
+                        {settlement.reference}
+                        <small>{formatDate(settlement.settledAt)}</small>
+                      </span>
+                      <strong>{formatTnd(settlement.balanceTnd)}</strong>
+                    </div>
+                  ))
+                )}
+
+                <h4>Paiements</h4>
+                {statement.payments.length === 0 ? (
+                  <p className="status-muted">Aucun paiement.</p>
+                ) : (
+                  statement.payments.map((payment) => (
+                    <div className="metric-row" key={payment.id}>
+                      <span>
+                        {formatDate(payment.paidAt)}
+                        {payment.reference ? ` · ${payment.reference}` : ""}
+                      </span>
+                      <strong>{formatTnd(payment.amountTnd)}</strong>
+                    </div>
+                  ))
+                )}
+              </div>
             )}
           </div>
 

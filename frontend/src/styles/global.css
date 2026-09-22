@@ -330,6 +330,20 @@ button:disabled {
   padding-bottom: 0;
 }
 
+/* Checkbox rows keep a 44px touch target without stretching the box itself. */
+.checkbox-field {
+  align-items: center;
+  display: flex;
+  font-weight: 700;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.checkbox-field input {
+  height: 20px;
+  width: 20px;
+}
+
 .settlement-line {
   border: 1px solid var(--border);
   border-radius: 12px;

@@ -303,6 +303,11 @@ describe("PosService", () => {
       { sessionId: "session-1", movement: "RECEIPT", amountTnd: "10.000" },
       { sessionId: "session-1", movement: "REFUND", amountTnd: "4.000" },
     );
+    // A back-office customer payment carries no session and must not count.
+    prisma.store.customerPayments.push({
+      sessionId: null,
+      amountTnd: "99.000",
+    });
 
     const result = await service.closeSession(
       "session-1",
@@ -316,6 +321,39 @@ describe("PosService", () => {
 
     expect(result.session).toMatchObject({
       expectedCashTnd: "26.000",
+      cashDifferenceTnd: "0.000",
+    });
+  });
+
+  it("counts customer payments collected at the till in expected closing cash", async () => {
+    const prisma = new PosPrismaDouble();
+    const service = new PosService(prisma as unknown as PrismaClient);
+    await service.openSession(
+      {
+        idempotencyKey: "open-1",
+        openingCashTnd: "20.000",
+        openedAt: new Date("2026-09-21T08:00:00.000Z"),
+      },
+      { actorUserId: "user-1" },
+    );
+    prisma.store.customerPayments.push(
+      { sessionId: "session-1", amountTnd: "15.000" },
+      // Collected in the back office, so it is not drawer cash.
+      { sessionId: null, amountTnd: "40.000" },
+    );
+
+    const result = await service.closeSession(
+      "session-1",
+      {
+        idempotencyKey: "close-1",
+        countedCashTnd: "35.000",
+        closedAt: new Date("2026-09-21T12:00:00.000Z"),
+      },
+      { actorUserId: "user-1" },
+    );
+
+    expect(result.session).toMatchObject({
+      expectedCashTnd: "35.000",
       cashDifferenceTnd: "0.000",
     });
   });
@@ -344,6 +382,7 @@ interface PosStore {
   saleLines: Array<Record<string, unknown>>;
   salePayments: Array<Record<string, unknown>>;
   customerOrderAdvances: Array<Record<string, unknown>>;
+  customerPayments: Array<Record<string, unknown>>;
   customerLedgerEntries: Array<Record<string, unknown>>;
   inventoryMovements: Array<Record<string, unknown>>;
   auditEvents: Array<Record<string, unknown>>;
@@ -410,6 +449,7 @@ function createStore(): PosStore {
     saleLines: [],
     salePayments: [],
     customerOrderAdvances: [],
+    customerPayments: [],
     customerLedgerEntries: [],
     inventoryMovements: [],
     auditEvents: [],
@@ -490,6 +530,12 @@ function makeTransactionClient(store: PosStore) {
       findMany: async (args: { where: { sessionId: string } }) =>
         store.customerOrderAdvances.filter(
           (advance) => advance.sessionId === args.where.sessionId,
+        ),
+    },
+    customerPayment: {
+      findMany: async (args: { where: { sessionId: string } }) =>
+        store.customerPayments.filter(
+          (payment) => payment.sessionId === args.where.sessionId,
         ),
     },
     salePayment: {

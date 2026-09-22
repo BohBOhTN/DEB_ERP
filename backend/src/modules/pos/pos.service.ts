@@ -275,6 +275,14 @@ export class PosService {
             sessionId,
           },
         });
+        // Customer payments collected at the till carry this session, matching
+        // the source-of-truth expected-cash formula. Back-office payments have
+        // no session and are not counted here.
+        const customerPayments = await tx.customerPayment.findMany({
+          where: {
+            sessionId,
+          },
+        });
         const expectedCashTnd = sumDecimals(
           [
             new Prisma.Decimal(existing.openingCashTnd),
@@ -285,6 +293,9 @@ export class PosService {
                 ? amount
                 : amount.negated();
             }),
+            ...customerPayments.map(
+              (payment) => new Prisma.Decimal(payment.amountTnd),
+            ),
           ],
           3,
         );

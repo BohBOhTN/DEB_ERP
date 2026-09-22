@@ -109,6 +109,71 @@ describe("CustomersService customer payments", () => {
     expect(prisma.store.customerPayments).toHaveLength(0);
   });
 
+  // The source-of-truth expected-cash formula counts customer payments taken
+  // at the till, so those and only those carry the open session.
+  it("links a payment collected at the till to the open POS session", async () => {
+    const prisma = new CustomerPaymentPrismaDouble();
+    prisma.store.posSessions.push({ id: "session-1", status: "OPEN" });
+    const service = new CustomersService(prisma as unknown as PrismaClient);
+
+    await service.createCustomerPayment(
+      {
+        idempotencyKey: "customer-payment-pos",
+        customerId: "customer-1",
+        paidAt: new Date("2026-09-21T08:00:00.000Z"),
+        amountTnd: "20.000",
+        collectedAtPos: true,
+      },
+      { actorUserId: "user-1" },
+    );
+
+    expect(prisma.store.customerPayments[0]).toMatchObject({
+      sessionId: "session-1",
+    });
+  });
+
+  it("leaves a back-office payment without a POS session", async () => {
+    const prisma = new CustomerPaymentPrismaDouble();
+    prisma.store.posSessions.push({ id: "session-1", status: "OPEN" });
+    const service = new CustomersService(prisma as unknown as PrismaClient);
+
+    await service.createCustomerPayment(
+      {
+        idempotencyKey: "customer-payment-office",
+        customerId: "customer-1",
+        paidAt: new Date("2026-09-21T08:00:00.000Z"),
+        amountTnd: "20.000",
+      },
+      { actorUserId: "user-1" },
+    );
+
+    expect(prisma.store.customerPayments[0]).toMatchObject({
+      sessionId: null,
+    });
+  });
+
+  it("rejects a till payment when no POS session is open", async () => {
+    const prisma = new CustomerPaymentPrismaDouble();
+    const service = new CustomersService(prisma as unknown as PrismaClient);
+
+    await expect(
+      service.createCustomerPayment(
+        {
+          idempotencyKey: "customer-payment-pos",
+          customerId: "customer-1",
+          paidAt: new Date("2026-09-21T08:00:00.000Z"),
+          amountTnd: "20.000",
+          collectedAtPos: true,
+        },
+        { actorUserId: "user-1" },
+      ),
+    ).rejects.toMatchObject({
+      code: "POS_SESSION_NOT_OPEN",
+    });
+
+    expect(prisma.store.customerPayments).toHaveLength(0);
+  });
+
   it("rejects allocations that exceed a posted sale balance", async () => {
     const prisma = new CustomerPaymentPrismaDouble();
     const service = new CustomersService(prisma as unknown as PrismaClient);
@@ -136,6 +201,7 @@ describe("CustomersService customer payments", () => {
 });
 
 interface CustomerPaymentStore {
+  posSessions: Array<{ id: string; status: string }>;
   customers: Array<{ id: string; isActive: boolean; name: string }>;
   sales: Array<{
     id: string;
@@ -155,6 +221,7 @@ interface CustomerPaymentStore {
   customerPayments: Array<{
     id: string;
     customerId: string;
+    sessionId?: string | null;
     amountTnd: string;
     reference?: string | null;
   }>;
@@ -210,6 +277,12 @@ function makeCustomerPaymentTransactionClient(store: CustomerPaymentStore) {
       findUnique: async (args: { where: { id: string } }) =>
         store.customers.find((customer) => customer.id === args.where.id) ??
         null,
+    },
+    posSession: {
+      findFirst: async (args: { where: { status: string } }) =>
+        store.posSessions.find(
+          (session) => session.status === args.where.status,
+        ) ?? null,
     },
     customerLedgerEntry: {
       findMany: async (args: {
@@ -310,6 +383,7 @@ function makeCustomerPaymentTransactionClient(store: CustomerPaymentStore) {
 
 function createCustomerPaymentStore(): CustomerPaymentStore {
   return {
+    posSessions: [],
     customers: [
       {
         id: "customer-1",

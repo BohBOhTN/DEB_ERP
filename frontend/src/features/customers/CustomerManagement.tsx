@@ -47,6 +47,7 @@ export function CustomerManagement({ user }: CustomerManagementProps) {
     reference: "",
     notes: "",
     saleId: "",
+    collectedAtPos: false,
   });
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -111,6 +112,7 @@ export function CustomerManagement({ user }: CustomerManagementProps) {
         amountTnd: paymentForm.amountTnd,
         reference: paymentForm.reference,
         notes: paymentForm.notes,
+        collectedAtPos: paymentForm.collectedAtPos,
         allocations: paymentForm.saleId
           ? [{ saleId: paymentForm.saleId, amountTnd: paymentForm.amountTnd }]
           : [],
@@ -122,6 +124,7 @@ export function CustomerManagement({ user }: CustomerManagementProps) {
         reference: "",
         notes: "",
         saleId: "",
+        collectedAtPos: false,
       });
       setStatus("Paiement enregistre.");
       await refresh();
@@ -300,6 +303,24 @@ export function CustomerManagement({ user }: CustomerManagementProps) {
 
           {canCreatePayments ? (
             <form className="inline-form" onSubmit={handleCreatePayment}>
+              <label className="checkbox-field">
+                <input
+                  checked={paymentForm.collectedAtPos}
+                  onChange={(event) =>
+                    setPaymentForm({
+                      ...paymentForm,
+                      collectedAtPos: event.target.checked,
+                    })
+                  }
+                  type="checkbox"
+                />
+                Encaisse a la caisse
+              </label>
+              <p className="status-muted">
+                Cochez uniquement si l'argent passe par le tiroir-caisse. Le
+                montant entre alors dans le fonds de caisse attendu a la
+                cloture.
+              </p>
               <label className="field">
                 Client
                 <select

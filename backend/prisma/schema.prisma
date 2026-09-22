@@ -517,6 +517,7 @@ model PosSession {
   sales             Sale[]
   payments          SalePayment[]
   orderAdvances     CustomerOrderAdvance[]
+  customerPayments  CustomerPayment[]
 
   @@index([terminalId])
   @@index([status])
@@ -597,6 +598,10 @@ model SalePayment {
 model CustomerPayment {
   id            String                      @id @default(cuid())
   customerId    String                      @map("customer_id")
+  /// Set only when the money was taken at the till, so the POS close can
+  /// reconcile the drawer against what actually passed through it. A
+  /// back-office payment leaves this null and never touches the session.
+  sessionId     String?                     @map("session_id")
   amountTnd     Decimal                     @map("amount_tnd") @db.Decimal(14, 3)
   method        CustomerPaymentMethod       @default(CASH)
   paidAt        DateTime                    @map("paid_at")
@@ -606,10 +611,12 @@ model CustomerPayment {
   correlationId String?                     @map("correlation_id")
   createdAt     DateTime                    @default(now()) @map("created_at")
   customer      Customer                    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  session       PosSession?                 @relation(fields: [sessionId], references: [id], onDelete: Restrict)
   ledgerEntries CustomerLedgerEntry[]
   allocations   CustomerPaymentAllocation[]
 
   @@index([customerId])
+  @@index([sessionId])
   @@index([paidAt])
   @@map("customer_payments")
 }
