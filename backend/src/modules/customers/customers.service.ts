@@ -1,6 +1,7 @@
 import {
   CustomerLedgerBalanceKind,
   CustomerLedgerEntryType,
+  PosSessionStatus,
   Prisma,
   SaleStatus,
   type PrismaClient,
@@ -339,6 +340,9 @@ export class CustomersService {
       amountTnd: string;
       reference?: string;
       notes?: string;
+      /// True when the cashier took the money at the till, so it belongs to the
+      /// open POS session's expected cash. Back-office payments leave it unset.
+      collectedAtPos?: boolean;
       allocations?: CustomerPaymentAllocationInput[];
     },
     actor: CustomerActor,
@@ -401,9 +405,13 @@ export class CustomersService {
           },
           tx,
         );
+        const sessionId = params.collectedAtPos
+          ? (await requireOpenPosSession(tx)).id
+          : null;
         const payment = await tx.customerPayment.create({
           data: {
             customerId: params.customerId,
+            sessionId,
             amountTnd: amountTnd.toFixed(3),
             paidAt: params.paidAt,
             reference: emptyToNull(params.reference),
@@ -697,6 +705,27 @@ function saleBalanceFromEntries(saleId: string, entries: LedgerEntrySlice[]) {
       .map((entry) => new Prisma.Decimal(entry.amountTnd as string)),
     3,
   );
+}
+
+/// Only one POS session may be open at a time, so the open one is the till that
+/// received the money.
+async function requireOpenPosSession(client: Prisma.TransactionClient) {
+  const session = await client.posSession.findFirst({
+    where: {
+      status: PosSessionStatus.OPEN,
+    },
+  });
+
+  if (!session) {
+    throw new AppError({
+      statusCode: 409,
+      code: "POS_SESSION_NOT_OPEN",
+      message:
+        "Ouvrez une session de caisse pour encaisser un paiement a la caisse.",
+    });
+  }
+
+  return session;
 }
 
 function receivableEntries<TEntry extends LedgerEntrySlice>(entries: TEntry[]) {

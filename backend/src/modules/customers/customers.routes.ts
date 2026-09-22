@@ -58,6 +58,7 @@ const createCustomerPaymentSchema = z.object({
   amountTnd: moneyTnd,
   reference: z.string().optional(),
   notes: z.string().optional(),
+  collectedAtPos: z.boolean().optional(),
   allocations: z
     .array(
       z.object({
