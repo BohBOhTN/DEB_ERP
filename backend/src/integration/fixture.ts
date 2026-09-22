@@ -139,6 +139,10 @@ export async function seedPerformanceFixture(
       openedByUserId: user.id,
       closedByUserId: user.id,
       openingCashTnd: money(0),
+      // A closed session must carry its closing amounts (database check).
+      countedCashTnd: money(0),
+      expectedCashTnd: money(0),
+      cashDifferenceTnd: money(0),
     },
   });
 
