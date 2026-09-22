@@ -2,7 +2,14 @@ import { Router, type Response } from "express";
 import { z } from "zod";
 import { okFor } from "../../shared/apiResponse.js";
 import { AppError } from "../../shared/appError.js";
+import { getApiVersion } from "../../shared/apiVersion.js";
 import { getCorrelationId } from "../../shared/correlation.js";
+import {
+  pageFields,
+  searchFields,
+  sortField,
+  withSearch,
+} from "../../shared/listQuery.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
@@ -40,6 +47,32 @@ const userActivationSchema = z.object({
   isActive: z.boolean(),
 });
 
+const userListQuerySchema = z.object({
+  ...pageFields,
+  ...searchFields,
+  sort: sortField(["displayName", "email", "createdAt"]),
+  isActive: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+  roleId: z.string().trim().min(1).optional(),
+});
+
+const updateUserSchema = z
+  .object({
+    displayName: z.string().trim().min(1).optional(),
+    email: z.string().email().optional(),
+    version: z.number().int().positive(),
+  })
+  .refine(
+    (body) => body.displayName !== undefined || body.email !== undefined,
+    { message: "Aucune modification fournie." },
+  );
+
+const passwordResetSchema = z.object({
+  password: z.string().min(8),
+});
+
 export function accessRouter(params: {
   authService: AuthService;
   cookie: SessionCookieConfig;
@@ -58,8 +91,11 @@ export function accessRouter(params: {
     requirePermission("roles.view"),
     async (_request, response, next) => {
       try {
-        const permissions = await params.accessService.listPermissions();
-        response.json(okFor(response, { permissions }));
+        const [permissions, groups] = await Promise.all([
+          params.accessService.listPermissions(),
+          params.accessService.listPermissionGroups(),
+        ]);
+        response.json(okFor(response, { permissions, groups }));
       } catch (error) {
         next(error);
       }
@@ -140,8 +176,19 @@ export function accessRouter(params: {
   router.get(
     "/users",
     requirePermission("users.view"),
-    async (_request, response, next) => {
+    async (request, response, next) => {
       try {
+        if (getApiVersion(response) === 1) {
+          const query = withSearch(userListQuerySchema.parse(request.query));
+          const page = await params.accessService.searchUsers(query);
+          response.json(
+            okFor(response, {
+              users: { ...page, items: page.items.map(serializeUser) },
+            }),
+          );
+          return;
+        }
+
         const users = await params.accessService.listUsers();
         response.json(okFor(response, { users: users.map(serializeUser) }));
       } catch (error) {
@@ -164,6 +211,44 @@ export function accessRouter(params: {
         response
           .status(201)
           .json(okFor(response, { user: serializeUser(user) }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.patch(
+    "/users/:userId",
+    requirePermission("users.update"),
+    async (request, response, next) => {
+      try {
+        const body = updateUserSchema.parse(request.body);
+        const user = await params.accessService.updateUser(
+          parseRouteParam(request.params.userId),
+          body,
+          actorFromResponse(response),
+        );
+
+        response.json(okFor(response, { user: serializeUser(user) }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/users/:userId/password-reset",
+    requirePermission("users.reset_password"),
+    async (request, response, next) => {
+      try {
+        const body = passwordResetSchema.parse(request.body);
+        const user = await params.accessService.resetPassword(
+          parseRouteParam(request.params.userId),
+          body,
+          actorFromResponse(response),
+        );
+
+        response.json(okFor(response, { user: serializeUser(user) }));
       } catch (error) {
         next(error);
       }
@@ -208,6 +293,7 @@ export function accessRouter(params: {
               email: user.email,
               displayName: user.displayName,
               isActive: user.isActive,
+              version: user.version,
             },
           }),
         );
@@ -279,6 +365,7 @@ function serializeRole(role: {
   isSystem: boolean;
   systemKey: string | null;
   permissions: { permissionKey: string }[];
+  _count?: { permissions: number; users: number };
 }) {
   return {
     id: role.id,
@@ -288,6 +375,8 @@ function serializeRole(role: {
     isSystem: role.isSystem,
     systemKey: role.systemKey,
     permissionKeys: role.permissions.map((item) => item.permissionKey).sort(),
+    permissionCount: role._count?.permissions ?? role.permissions.length,
+    userCount: role._count?.users ?? null,
   };
 }
 
@@ -296,6 +385,8 @@ function serializeUser(user: {
   email: string;
   displayName: string;
   isActive: boolean;
+  version?: number;
+  createdAt?: Date;
   roles: {
     role: {
       id: string;
@@ -311,6 +402,8 @@ function serializeUser(user: {
     email: user.email,
     displayName: user.displayName,
     isActive: user.isActive,
+    version: user.version ?? null,
+    createdAt: user.createdAt ?? null,
     roles: user.roles.map((item) => item.role),
   };
 }
