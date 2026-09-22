@@ -69,9 +69,20 @@ export interface OrderListParams {
   customerId?: string;
   dueBefore?: Date;
   dueAfter?: Date;
+  /// Section 18: overdue and upcoming orders. Only an order still awaiting
+  /// fulfilment can be either; a completed or cancelled one is neither.
+  dueState?: "OVERDUE" | "UPCOMING";
+  asOf?: Date;
   page: number;
   pageSize: number;
 }
+
+const awaitingFulfilment = [
+  CustomerOrderStatus.DRAFT,
+  CustomerOrderStatus.CONFIRMED,
+  CustomerOrderStatus.PREPARING,
+  CustomerOrderStatus.READY,
+] as const;
 
 const orderDetailInclude = {
   customer: true,
@@ -91,6 +102,7 @@ export class OrdersService {
   public constructor(private readonly prisma: PrismaClient) {}
 
   public async listOrders(params: OrderListParams) {
+    const asOf = params.asOf ?? new Date();
     const where = {
       ...(params.status ? { status: params.status } : {}),
       ...(params.customerId ? { customerId: params.customerId } : {}),
@@ -102,6 +114,15 @@ export class OrdersService {
             },
           }
         : {}),
+      ...(params.dueState
+        ? {
+            status: {
+              in: [...awaitingFulfilment],
+            },
+            requestedFulfillmentAt:
+              params.dueState === "OVERDUE" ? { lt: asOf } : { gte: asOf },
+          }
+        : {}),
     };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.customerOrder.findMany({
@@ -110,7 +131,8 @@ export class OrdersService {
           customer: true,
           lines: true,
         },
-        orderBy: [{ requestedFulfillmentAt: "asc" }, { createdAt: "asc" }],
+        // NFR-005: stable sort, soonest due first.
+        orderBy: [{ requestedFulfillmentAt: "asc" }, { id: "asc" }],
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),

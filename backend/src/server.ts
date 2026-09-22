@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { createApp } from "./app.js";
 import { env } from "./config/env.js";
 import { AccessService } from "./modules/access/access.service.js";
+import { AuditService } from "./modules/audit/audit.service.js";
 import { PrismaAuthRepository } from "./modules/auth/auth.repository.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { CatalogService } from "./modules/catalog/catalog.service.js";
@@ -17,6 +18,7 @@ import { SimulationService } from "./modules/simulation/simulation.service.js";
 
 const prisma = new PrismaClient();
 const accessService = new AccessService(prisma);
+const auditService = new AuditService(prisma);
 const catalogService = new CatalogService(prisma);
 const customersService = new CustomersService(prisma);
 const distributionService = new DistributionService(prisma);
@@ -29,6 +31,7 @@ const simulationService = new SimulationService(prisma);
 const authService = new AuthService(
   new PrismaAuthRepository(prisma),
   env.SESSION_TTL_MINUTES,
+  auditService,
 );
 
 await accessService.bootstrapSystemAccess();
@@ -59,6 +62,9 @@ const app = createApp({
   },
   access: {
     accessService,
+  },
+  audit: {
+    auditService,
   },
   catalog: {
     catalogService,

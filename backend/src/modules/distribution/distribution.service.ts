@@ -418,6 +418,47 @@ export class DistributionService {
     );
   }
 
+  /// Section 18: distributor settlement history as its own list, not only
+  /// nested under a dispatch.
+  public async listSettlements(params: {
+    distributorId?: string;
+    dispatchId?: string;
+    from?: Date;
+    to?: Date;
+    page: number;
+    pageSize: number;
+  }) {
+    const where = {
+      ...(params.distributorId ? { distributorId: params.distributorId } : {}),
+      ...(params.dispatchId ? { dispatchId: params.dispatchId } : {}),
+      ...(params.from || params.to
+        ? {
+            settledAt: {
+              ...(params.from ? { gte: params.from } : {}),
+              ...(params.to ? { lte: params.to } : {}),
+            },
+          }
+        : {}),
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.distributorSettlement.findMany({
+        where,
+        include: {
+          distributor: true,
+          dispatch: true,
+          lines: true,
+        },
+        // NFR-005: stable sort.
+        orderBy: [{ settledAt: "desc" }, { id: "desc" }],
+        skip: (params.page - 1) * params.pageSize,
+        take: params.pageSize,
+      }),
+      this.prisma.distributorSettlement.count({ where }),
+    ]);
+
+    return paginated(items, total, params);
+  }
+
   public async getDispatch(dispatchId: string) {
     const dispatch = await this.prisma.distributorDispatch.findUnique({
       where: {

@@ -26,6 +26,13 @@ export interface SupplierListParams {
 export interface PurchaseListParams {
   supplierId?: string;
   status?: PurchaseStatus;
+  paymentTerms?: PurchasePaymentTerms;
+  from?: Date;
+  to?: Date;
+  /// Section 18: purchases by due date. "overdue" is a due date in the past
+  /// with money still owed; "upcoming" is a future due date still owed.
+  dueState?: "OVERDUE" | "UPCOMING";
+  asOf?: Date;
   page: number;
   pageSize: number;
 }
@@ -237,9 +244,31 @@ export class ProcurementService {
   }
 
   public async listPurchases(params: PurchaseListParams) {
+    const asOf = params.asOf ?? new Date();
     const where = {
       ...(params.supplierId ? { supplierId: params.supplierId } : {}),
       ...(params.status ? { status: params.status } : {}),
+      ...(params.paymentTerms ? { paymentTerms: params.paymentTerms } : {}),
+      ...(params.from || params.to
+        ? {
+            purchaseDate: {
+              ...(params.from ? { gte: params.from } : {}),
+              ...(params.to ? { lte: params.to } : {}),
+            },
+          }
+        : {}),
+      // Only a posted purchase that is not fully paid can be due. A draft
+      // owes nothing yet and a cancelled one never will.
+      ...(params.dueState
+        ? {
+            status: PurchaseStatus.POSTED,
+            paymentTerms: {
+              in: [PurchasePaymentTerms.PARTIAL, PurchasePaymentTerms.UNPAID],
+            },
+            dueDate:
+              params.dueState === "OVERDUE" ? { lt: asOf } : { gte: asOf },
+          }
+        : {}),
     };
 
     const [items, total] = await this.prisma.$transaction([
@@ -250,7 +279,10 @@ export class ProcurementService {
           lines: true,
           payments: true,
         },
-        orderBy: [{ purchaseDate: "desc" }, { createdAt: "desc" }],
+        // NFR-005: a stable sort, with the due list ordered by urgency.
+        orderBy: params.dueState
+          ? [{ dueDate: "asc" as const }, { id: "asc" as const }]
+          : [{ purchaseDate: "desc" as const }, { id: "desc" as const }],
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),

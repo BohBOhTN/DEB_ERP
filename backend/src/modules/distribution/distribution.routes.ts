@@ -62,6 +62,15 @@ const dispatchListQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
 
+const settlementListQuerySchema = z.object({
+  distributorId: z.string().trim().min(1).optional(),
+  dispatchId: z.string().trim().min(1).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
 const custodyQuerySchema = z.object({
   distributorId: z.string().trim().min(1).optional(),
 });
@@ -263,6 +272,21 @@ export function distributionRouter(params: {
           actorFromResponse(response),
         );
         response.status(201).json(ok(result, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/distributor-settlements",
+    requirePermission("distribution.custody.view"),
+    async (request, response, next) => {
+      try {
+        const query = settlementListQuerySchema.parse(request.query);
+        const settlements =
+          await params.distributionService.listSettlements(query);
+        response.json(ok({ settlements }, getCorrelationId(response)));
       } catch (error) {
         next(error);
       }

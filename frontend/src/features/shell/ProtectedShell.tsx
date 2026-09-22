@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { AccessManagement } from "../access/AccessManagement";
+import { AuditManagement } from "../audit/AuditManagement";
 import { logout, type CurrentUser } from "../auth/authApi";
 import { CatalogManagement } from "../catalog/CatalogManagement";
 import { CustomerManagement } from "../customers/CustomerManagement";
@@ -81,6 +82,8 @@ export function ProtectedShell({ user, onLogout }: ProtectedShellProps) {
           <SimulationManagement user={user} />
         ) : activeModule === "catalog" ? (
           <CatalogManagement user={user} />
+        ) : activeModule === "audit" ? (
+          <AuditManagement user={user} />
         ) : activeModule === "access" ? (
           <AccessManagement user={user} />
         ) : (
@@ -115,6 +118,10 @@ function buildNavigation(user: CurrentUser) {
     user.effectivePermissions.includes("users.view")
   ) {
     modules.push({ id: "access", label: "Acces" });
+  }
+
+  if (user.effectivePermissions.includes("audit.view")) {
+    modules.push({ id: "audit", label: "Audit" });
   }
 
   if (
