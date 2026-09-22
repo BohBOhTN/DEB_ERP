@@ -1,5 +1,6 @@
 import { ExpenseStatus, Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { postingTransactionOptions } from "../../shared/idempotency.js";
 import { normalizeName } from "../catalog/catalog.service.js";
 
 /// EXP-001: categories are dynamic. These are the examples the source of truth
@@ -268,7 +269,7 @@ export class ExpensesService {
         throw new AppError({
           statusCode: 400,
           code: "ACTIVE_EXPENSE_CATEGORY_REQUIRED",
-          message: "Une categorie de depense active est obligatoire.",
+          message: "Une catégorie de dépense active est obligatoire.",
         });
       }
 
@@ -307,7 +308,7 @@ export class ExpensesService {
       });
 
       return { expense };
-    });
+    }, postingTransactionOptions);
   }
 
   public async updateExpense(
@@ -335,7 +336,7 @@ export class ExpensesService {
         throw new AppError({
           statusCode: 409,
           code: "EXPENSE_NOT_EDITABLE",
-          message: "Une depense validee ne peut plus etre modifiee.",
+          message: "Une dépense validée ne peut plus être modifiée.",
         });
       }
 
@@ -350,7 +351,7 @@ export class ExpensesService {
           throw new AppError({
             statusCode: 400,
             code: "ACTIVE_EXPENSE_CATEGORY_REQUIRED",
-            message: "Une categorie de depense active est obligatoire.",
+            message: "Une catégorie de dépense active est obligatoire.",
           });
         }
       }
@@ -401,7 +402,7 @@ export class ExpensesService {
       });
 
       return { expense };
-    });
+    }, postingTransactionOptions);
   }
 
   /// EXP-007: posting is what makes an expense count. A posted expense is
@@ -418,7 +419,7 @@ export class ExpensesService {
         throw new AppError({
           statusCode: 409,
           code: "EXPENSE_NOT_POSTABLE",
-          message: "Seule une depense en brouillon peut etre validee.",
+          message: "Seule une dépense en brouillon peut être validée.",
         });
       }
 
@@ -460,7 +461,7 @@ export class ExpensesService {
       });
 
       return { expense };
-    });
+    }, postingTransactionOptions);
   }
 
   /// EXP-008 and AS-017: a cancelled expense stays in history with a mandatory
@@ -487,7 +488,7 @@ export class ExpensesService {
         throw new AppError({
           statusCode: 409,
           code: "EXPENSE_NOT_CANCELLABLE",
-          message: "Cette depense est deja annulee.",
+          message: "Cette dépense est déjà annulée.",
         });
       }
 
@@ -532,7 +533,7 @@ export class ExpensesService {
       });
 
       return { expense };
-    });
+    }, postingTransactionOptions);
   }
 
   private async findCategoryOrThrow(categoryId: string) {
@@ -546,7 +547,7 @@ export class ExpensesService {
       throw new AppError({
         statusCode: 404,
         code: "EXPENSE_CATEGORY_NOT_FOUND",
-        message: "Categorie de depense introuvable.",
+        message: "Catégorie de dépense introuvable.",
       });
     }
 
@@ -569,7 +570,7 @@ export class ExpensesService {
       throw new AppError({
         statusCode: 409,
         code: "EXPENSE_CATEGORY_NAME_EXISTS",
-        message: "Une categorie active avec ce nom existe deja.",
+        message: "Une catégorie active avec ce nom existe déjà.",
       });
     }
   }
@@ -620,7 +621,7 @@ async function findExpenseOrThrow(
     throw new AppError({
       statusCode: 404,
       code: "EXPENSE_NOT_FOUND",
-      message: "Depense introuvable.",
+      message: "Dépense introuvable.",
     });
   }
 
@@ -667,7 +668,7 @@ function parsePositiveMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_AMOUNT_REQUIRED",
-      message: "Le montant doit etre superieur a zero.",
+      message: "Le montant doit être supérieur à zéro.",
     });
   }
 
@@ -684,8 +685,8 @@ function assertVersionUpdated(count: number) {
   if (count === 0) {
     throw new AppError({
       statusCode: 409,
-      code: "CONCURRENT_UPDATE",
-      message: "Cet enregistrement a ete modifie entre-temps.",
+      code: "VERSION_CONFLICT",
+      message: "Cet enregistrement a été modifié entre-temps.",
     });
   }
 }

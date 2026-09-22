@@ -6,7 +6,7 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok } from "../../shared/apiResponse.js";
+import { ok, sendCommandResult } from "../../shared/apiResponse.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { ProcurementService } from "./procurement.service.js";
@@ -217,7 +217,7 @@ export function procurementRouter(params: {
           },
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        sendCommandResult(response, 201, result);
       } catch (error) {
         next(error);
       }
@@ -238,7 +238,7 @@ export function procurementRouter(params: {
           },
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        sendCommandResult(response, 201, result);
       } catch (error) {
         next(error);
       }
@@ -307,7 +307,7 @@ export function procurementRouter(params: {
           },
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        sendCommandResult(response, 201, result);
       } catch (error) {
         next(error);
       }
@@ -331,7 +331,7 @@ function parseRouteParam(value: string | string[] | undefined): string {
     throw new AppError({
       statusCode: 400,
       code: "VALIDATION_ERROR",
-      message: "Les donnees saisies sont invalides.",
+      message: "Les données saisies sont invalides.",
     });
   }
 
@@ -349,7 +349,7 @@ function readIdempotencyKey(headers: IncomingHttpHeaders): string {
     throw new AppError({
       statusCode: 400,
       code: "IDEMPOTENCY_KEY_REQUIRED",
-      message: "Une cle d'idempotence est requise.",
+      message: "Une clé d'idempotence est requise.",
     });
   }
 

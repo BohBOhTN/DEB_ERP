@@ -178,7 +178,7 @@ describe("access routes", () => {
 
     expect(response.body.error).toMatchObject({
       code: "PERMISSION_DENIED",
-      message: "Vous n'avez pas l'autorisation necessaire.",
+      message: "Vous n'avez pas l'autorisation nécessaire.",
     });
   });
 

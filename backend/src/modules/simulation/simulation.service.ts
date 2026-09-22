@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { postingTransactionOptions } from "../../shared/idempotency.js";
 
 export interface SimulationActor {
   actorUserId: string;
@@ -114,7 +115,7 @@ export class SimulationService {
       });
 
       return { simulation };
-    });
+    }, postingTransactionOptions);
   }
 
   /// SIM-005: rename and update. Recalculates from the values submitted now,
@@ -165,8 +166,8 @@ export class SimulationService {
       if (updated.count === 0) {
         throw new AppError({
           statusCode: 409,
-          code: "CONCURRENT_UPDATE",
-          message: "Cette simulation a ete modifiee entre-temps.",
+          code: "VERSION_CONFLICT",
+          message: "Cette simulation a été modifiée entre-temps.",
         });
       }
 
@@ -199,7 +200,7 @@ export class SimulationService {
       });
 
       return { simulation };
-    });
+    }, postingTransactionOptions);
   }
 
   /// SIM-005 and SIM-006: a duplicate copies the snapshotted values as they
@@ -276,7 +277,7 @@ export class SimulationService {
       });
 
       return { simulation };
-    });
+    }, postingTransactionOptions);
   }
 
   /// SIM-005: a simulation is a draft with no operational effect, so unlike a
@@ -313,7 +314,7 @@ export class SimulationService {
       });
 
       return { deleted: true };
-    });
+    }, postingTransactionOptions);
   }
 }
 
@@ -337,14 +338,14 @@ async function resolveSimulation(
     throw new AppError({
       statusCode: 400,
       code: "SIMULATION_INGREDIENTS_REQUIRED",
-      message: "Ajoutez au moins un ingredient.",
+      message: "Ajoutez au moins un ingrédient.",
     });
   }
 
   const outputQuantity = parsePositiveQuantity(
     params.outputQuantity,
     "SIMULATION_OUTPUT_REQUIRED",
-    "La quantite produite doit etre superieure a zero.",
+    "La quantité produite doit être supérieure à zéro.",
   );
   const unitIds = new Set<string>([params.outputUnitId]);
 
@@ -367,7 +368,7 @@ async function resolveSimulation(
     throw new AppError({
       statusCode: 400,
       code: "SIMULATION_UNIT_REQUIRED",
-      message: "Chaque unite doit exister.",
+      message: "Chaque unité doit exister.",
     });
   }
 
@@ -419,7 +420,7 @@ async function resolveSimulation(
       throw new AppError({
         statusCode: 400,
         code: "SIMULATION_UNIT_REQUIRED",
-        message: "Chaque unite doit exister.",
+        message: "Chaque unité doit exister.",
       });
     }
 
@@ -431,7 +432,7 @@ async function resolveSimulation(
       throw new AppError({
         statusCode: 400,
         code: "SIMULATION_RAW_MATERIAL_REQUIRED",
-        message: "La matiere premiere doit exister.",
+        message: "La matière première doit exister.",
       });
     }
 
@@ -442,14 +443,14 @@ async function resolveSimulation(
       throw new AppError({
         statusCode: 400,
         code: "SIMULATION_INGREDIENT_NAME_REQUIRED",
-        message: "Chaque ingredient doit avoir un nom.",
+        message: "Chaque ingrédient doit avoir un nom.",
       });
     }
 
     const enteredQuantity = parsePositiveQuantity(
       ingredient.enteredQuantity,
       "SIMULATION_QUANTITY_REQUIRED",
-      "La quantite d'un ingredient doit etre superieure a zero.",
+      "La quantité d'un ingrédient doit être supérieure à zéro.",
     );
     const unitPriceTnd = parseNonNegativeMoney(ingredient.unitPriceTnd);
     const conversionFactorToBase = resolveConversionFactor({
@@ -525,7 +526,7 @@ function resolveConversionFactor(params: {
     return parsePositiveQuantity(
       ingredient.conversionFactorToBase,
       "SIMULATION_CONVERSION_REQUIRED",
-      "Le facteur de conversion doit etre superieur a zero.",
+      "Le facteur de conversion doit être supérieur à zéro.",
     );
   }
 
@@ -543,7 +544,7 @@ function resolveConversionFactor(params: {
       statusCode: 400,
       code: "SIMULATION_CONVERSION_REQUIRED",
       message:
-        "Une conversion est obligatoire lorsque l'unite saisie differe de l'unite de prix.",
+        "Une conversion est obligatoire lorsque l'unité saisie diffère de l'unité de prix.",
     });
   }
 
@@ -599,7 +600,7 @@ function parseNonNegativeMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "SIMULATION_PRICE_INVALID",
-      message: "Le prix unitaire ne peut pas etre negatif.",
+      message: "Le prix unitaire ne peut pas être négatif.",
     });
   }
 

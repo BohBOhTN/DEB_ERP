@@ -21,9 +21,10 @@ import { permissionKeys } from "../access/permissions.js";
 /// to rebuild its URL. A router that authenticates is a protected router, and
 /// every route inside one must also carry a permission.
 ///
-/// Public by design: health needs no session, and the auth endpoints are how a
+/// Public by design: the health probes (`/`, `/ready`, `/live`) need no
+/// session so an orchestrator can poll them, and the auth endpoints are how a
 /// session is obtained in the first place.
-const publicRoutePaths = ["/", "/login", "/logout", "/me"];
+const publicRoutePaths = ["/", "/ready", "/live", "/login", "/logout", "/me"];
 
 interface RouteGuard {
   method: string;

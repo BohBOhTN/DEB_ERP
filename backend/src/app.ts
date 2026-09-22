@@ -1,7 +1,9 @@
+import compression from "compression";
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { requestLogger } from "./middleware/requestLogger.js";
 import { accessRouter } from "./modules/access/access.routes.js";
 import type { AccessService } from "./modules/access/access.service.js";
 import { auditRouter } from "./modules/audit/audit.routes.js";
@@ -18,7 +20,10 @@ import { expensesRouter } from "./modules/expenses/expenses.routes.js";
 import type { ExpensesService } from "./modules/expenses/expenses.service.js";
 import type { DistributionService } from "./modules/distribution/distribution.service.js";
 import { healthRouter } from "./modules/health/health.routes.js";
-import type { HealthCheck } from "./modules/health/health.service.js";
+import type {
+  HealthCheck,
+  LivenessCheck,
+} from "./modules/health/health.service.js";
 import { inventoryRouter } from "./modules/inventory/inventory.routes.js";
 import type { InventoryService } from "./modules/inventory/inventory.service.js";
 import { ordersRouter } from "./modules/orders/orders.routes.js";
@@ -29,12 +34,27 @@ import { procurementRouter } from "./modules/procurement/procurement.routes.js";
 import { simulationRouter } from "./modules/simulation/simulation.routes.js";
 import type { SimulationService } from "./modules/simulation/simulation.service.js";
 import type { ProcurementService } from "./modules/procurement/procurement.service.js";
+import { createRateLimiter } from "./modules/auth/rateLimit.js";
 import { AppError } from "./shared/appError.js";
 import { correlationId } from "./shared/correlation.js";
+import { createLogger, type Logger } from "./shared/logger.js";
 
 export function createApp(params: {
   allowedOrigins: string[];
   healthCheck: HealthCheck;
+  livenessCheck?: LivenessCheck;
+  /// Route tests build an app without a logger; a silent one keeps them quiet
+  /// while the real server injects the configured pino instance.
+  logger?: Logger;
+  /// Number of proxy hops to trust for the client address (Express
+  /// `trust proxy`). Behind nginx this must be at least 1 or every user shares
+  /// the proxy's rate-limit bucket.
+  trustProxy?: number | boolean;
+  /// Soft ceiling for any client, applied to every route. Absent in tests.
+  globalRateLimit?: {
+    maxRequests: number;
+    windowMs: number;
+  };
   auth?: {
     authService: AuthService;
     cookie: SessionCookieConfig;
@@ -78,8 +98,17 @@ export function createApp(params: {
   };
 }): express.Express {
   const app = express();
+  const logger = params.logger ?? createLogger({ level: "silent" });
 
   app.disable("x-powered-by");
+  if (params.trustProxy !== undefined) {
+    app.set("trust proxy", params.trustProxy);
+  }
+
+  // The correlation id is assigned before anything can fail so that every log
+  // line and every error body, including a rate-limit rejection, carries it.
+  app.use(correlationId);
+  app.use(requestLogger(logger));
   app.use(helmet());
   app.use(
     cors({
@@ -87,10 +116,20 @@ export function createApp(params: {
       credentials: true,
     }),
   );
+  if (params.globalRateLimit) {
+    app.use(
+      createRateLimiter({
+        maxAttempts: params.globalRateLimit.maxRequests,
+        windowMs: params.globalRateLimit.windowMs,
+      }),
+    );
+  }
+  app.use(compression());
   app.use(express.json({ limit: "1mb" }));
-  app.use(correlationId);
 
-  app.use("/api/health", healthRouter(params.healthCheck));
+  const health = healthRouter(params.healthCheck, params.livenessCheck);
+  app.use("/api/health", health);
+  app.use("/api/v1/health", health);
 
   if (params.auth) {
     app.use("/api/auth", authRouter(params.auth));

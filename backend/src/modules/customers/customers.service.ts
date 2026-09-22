@@ -6,8 +6,8 @@ import {
   SaleStatus,
   type PrismaClient,
 } from "@prisma/client";
-import { createHash } from "node:crypto";
 import { AppError } from "../../shared/appError.js";
+import { runIdempotentCommand } from "../../shared/idempotency.js";
 import { normalizeName } from "../catalog/catalog.service.js";
 
 export interface CustomerActor {
@@ -392,7 +392,7 @@ export class CustomersService {
           throw new AppError({
             statusCode: 400,
             code: "CUSTOMER_OVERPAYMENT_REJECTED",
-            message: "Le paiement ne peut pas depasser le solde client.",
+            message: "Le paiement ne peut pas dépasser le solde client.",
           });
         }
 
@@ -503,7 +503,7 @@ export class CustomersService {
       throw new AppError({
         statusCode: 400,
         code: "DUPLICATE_PAYMENT_ALLOCATION",
-        message: "Une vente ne peut etre allouee qu'une seule fois.",
+        message: "Une vente ne peut être allouée qu'une seule fois.",
       });
     }
 
@@ -516,7 +516,7 @@ export class CustomersService {
       throw new AppError({
         statusCode: 400,
         code: "PAYMENT_ALLOCATION_TOTAL_MISMATCH",
-        message: "Les allocations doivent correspondre au montant paye.",
+        message: "Les allocations doivent correspondre au montant payé.",
       });
     }
 
@@ -548,7 +548,7 @@ export class CustomersService {
         throw new AppError({
           statusCode: 400,
           code: "PAYMENT_ALLOCATION_EXCEEDS_SALE_BALANCE",
-          message: "Une allocation depasse le solde de la vente.",
+          message: "Une allocation dépasse le solde de la vente.",
         });
       }
     }
@@ -590,7 +590,7 @@ export class CustomersService {
       throw new AppError({
         statusCode: 409,
         code: "CUSTOMER_NAME_EXISTS",
-        message: "Un client actif avec ce nom existe deja.",
+        message: "Un client actif avec ce nom existe déjà.",
       });
     }
   }
@@ -630,67 +630,18 @@ export class CustomersService {
     });
   }
 
-  private async runIdempotentCommand<TResponse>(
+  private runIdempotentCommand<TResponse>(
     scope: string,
     key: string,
     payload: unknown,
-    action: (tx: Prisma.TransactionClient) => Promise<TResponse>,
+    execute: (tx: Prisma.TransactionClient) => Promise<TResponse>,
   ): Promise<TResponse> {
-    if (!key.trim()) {
-      throw new AppError({
-        statusCode: 400,
-        code: "IDEMPOTENCY_KEY_REQUIRED",
-        message: "Une cle d'idempotence est requise.",
-      });
-    }
-
-    const requestHash = hashPayload(payload);
-    const existing = await this.prisma.idempotencyRecord.findUnique({
-      where: {
-        scope_key: {
-          scope,
-          key,
-        },
-      },
-    });
-
-    if (existing) {
-      if (existing.requestHash !== requestHash) {
-        throw new AppError({
-          statusCode: 409,
-          code: "IDEMPOTENCY_CONFLICT",
-          message: "Cette cle a deja ete utilisee pour une autre demande.",
-        });
-      }
-
-      if (existing.response) {
-        return existing.response as TResponse;
-      }
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.idempotencyRecord.create({
-        data: {
-          scope,
-          key,
-          requestHash,
-        },
-      });
-
-      const response = await action(tx);
-      await tx.idempotencyRecord.update({
-        where: {
-          scope_key: {
-            scope,
-            key,
-          },
-        },
-        data: {
-          response: response as object,
-        },
-      });
-
-      return response;
+    return runIdempotentCommand({
+      prisma: this.prisma,
+      scope,
+      key,
+      payload,
+      execute,
     });
   }
 }
@@ -721,7 +672,7 @@ async function requireOpenPosSession(client: Prisma.TransactionClient) {
       statusCode: 409,
       code: "POS_SESSION_NOT_OPEN",
       message:
-        "Ouvrez une session de caisse pour encaisser un paiement a la caisse.",
+        "Ouvrez une session de caisse pour encaisser un paiement à la caisse.",
     });
   }
 
@@ -760,7 +711,7 @@ function parsePositiveMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_AMOUNT_REQUIRED",
-      message: "Le montant doit etre superieur a zero.",
+      message: "Le montant doit être supérieur à zéro.",
     });
   }
 
@@ -783,36 +734,13 @@ function assertVersionUpdated(count: number) {
     throw new AppError({
       statusCode: 409,
       code: "VERSION_CONFLICT",
-      message: "Cette fiche a ete modifiee. Rechargez puis reessayez.",
+      message: "Cette fiche a été modifiée. Rechargez puis réessayez.",
     });
   }
 }
 
 function toJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-}
-
-function hashPayload(payload: unknown): string {
-  return createHash("sha256").update(stableStringify(payload)).digest("hex");
-}
-
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
-  }
-
-  if (value instanceof Date) {
-    return JSON.stringify(value.toISOString());
-  }
-
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
-      .join(",")}}`;
-  }
-
-  return JSON.stringify(value);
 }
 
 function findDuplicate(values: string[]): string | undefined {

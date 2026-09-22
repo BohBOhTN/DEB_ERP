@@ -9,7 +9,7 @@ import {
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok } from "../../shared/apiResponse.js";
+import { ok, sendCommandResult } from "../../shared/apiResponse.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { PosService } from "./pos.service.js";
@@ -137,7 +137,7 @@ export function posRouter(params: {
           },
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        sendCommandResult(response, 201, result);
       } catch (error) {
         next(error);
       }
@@ -158,7 +158,7 @@ export function posRouter(params: {
           },
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        sendCommandResult(response, 201, result);
       } catch (error) {
         next(error);
       }
@@ -193,7 +193,7 @@ export function posRouter(params: {
           },
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        sendCommandResult(response, 201, result);
       } catch (error) {
         next(error);
       }
@@ -223,7 +223,7 @@ function readIdempotencyKey(headers: IncomingHttpHeaders): string {
     throw new AppError({
       statusCode: 400,
       code: "IDEMPOTENCY_KEY_REQUIRED",
-      message: "Une cle d'idempotence est requise.",
+      message: "Une clé d'idempotence est requise.",
     });
   }
 
@@ -246,7 +246,7 @@ function assertCreditSalePermission(
     throw new AppError({
       statusCode: 403,
       code: "PERMISSION_DENIED",
-      message: "Vous n'avez pas l'autorisation necessaire.",
+      message: "Vous n'avez pas l'autorisation nécessaire.",
     });
   }
 }

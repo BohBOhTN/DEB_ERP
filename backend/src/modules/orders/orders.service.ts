@@ -12,8 +12,11 @@ import {
   SaleStatus,
   type PrismaClient,
 } from "@prisma/client";
-import { createHash } from "node:crypto";
 import { AppError } from "../../shared/appError.js";
+import {
+  runIdempotentCommand,
+  postingTransactionOptions,
+} from "../../shared/idempotency.js";
 
 const mainTerminalCode = "main";
 const mainLocationCode = "main";
@@ -195,7 +198,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "ORDER_TOTAL_REQUIRED",
-            message: "Le total de la commande doit etre superieur a zero.",
+            message: "Le total de la commande doit être supérieur à zéro.",
           });
         }
 
@@ -251,7 +254,7 @@ export class OrdersService {
         throw new AppError({
           statusCode: 409,
           code: "ORDER_NOT_EDITABLE",
-          message: "Cette commande ne peut plus etre modifiee.",
+          message: "Cette commande ne peut plus être modifiée.",
         });
       }
 
@@ -269,7 +272,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "ORDER_TOTAL_REQUIRED",
-            message: "Le total de la commande doit etre superieur a zero.",
+            message: "Le total de la commande doit être supérieur à zéro.",
           });
         }
       }
@@ -283,7 +286,7 @@ export class OrdersService {
           statusCode: 409,
           code: "ORDER_TOTAL_BELOW_ADVANCE",
           message:
-            "Le total ne peut pas etre inferieur a l'avance deja encaissee. Remboursez ou creditez l'avance d'abord.",
+            "Le total ne peut pas être inférieur à l'avance déjà encaissée. Remboursez ou créditez l'avance d'abord.",
         });
       }
 
@@ -341,7 +344,7 @@ export class OrdersService {
       });
 
       return { order };
-    });
+    }, postingTransactionOptions);
   }
 
   public async changeOrderStatus(
@@ -397,7 +400,7 @@ export class OrdersService {
       });
 
       return { order };
-    });
+    }, postingTransactionOptions);
   }
 
   /// ORD-009: money received before fulfilment is a customer advance. It is
@@ -443,7 +446,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "ORDER_ADVANCE_EXCEEDS_TOTAL",
-            message: "L'avance ne peut pas depasser le total de la commande.",
+            message: "L'avance ne peut pas dépasser le total de la commande.",
           });
         }
 
@@ -535,7 +538,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_NOT_COMPLETABLE",
-            message: "Cette commande ne peut pas etre terminee.",
+            message: "Cette commande ne peut pas être terminée.",
           });
         }
 
@@ -558,7 +561,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_LINES_REQUIRED",
-            message: "Une commande sans ligne ne peut pas etre terminee.",
+            message: "Une commande sans ligne ne peut pas être terminée.",
           });
         }
 
@@ -578,7 +581,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "SALE_OVERPAYMENT_REJECTED",
-            message: "Le paiement ne peut pas depasser le total de la vente.",
+            message: "Le paiement ne peut pas dépasser le total de la vente.",
           });
         }
 
@@ -720,7 +723,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_ALREADY_COMPLETED",
-            message: "Cette commande a deja ete terminee.",
+            message: "Cette commande a déjà été terminée.",
           });
         }
 
@@ -782,7 +785,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_NOT_CANCELLABLE",
-            message: "Cette commande ne peut plus etre annulee.",
+            message: "Cette commande ne peut plus être annulée.",
           });
         }
 
@@ -890,7 +893,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_NOT_CANCELLABLE",
-            message: "Cette commande ne peut plus etre annulee.",
+            message: "Cette commande ne peut plus être annulée.",
           });
         }
 
@@ -915,67 +918,18 @@ export class OrdersService {
     );
   }
 
-  private async runIdempotentCommand<TResponse>(
+  private runIdempotentCommand<TResponse>(
     scope: string,
     key: string,
     payload: unknown,
-    action: (tx: Prisma.TransactionClient) => Promise<TResponse>,
+    execute: (tx: Prisma.TransactionClient) => Promise<TResponse>,
   ): Promise<TResponse> {
-    if (!key.trim()) {
-      throw new AppError({
-        statusCode: 400,
-        code: "IDEMPOTENCY_KEY_REQUIRED",
-        message: "Une cle d'idempotence est requise.",
-      });
-    }
-
-    const requestHash = hashPayload(payload);
-    const existing = await this.prisma.idempotencyRecord.findUnique({
-      where: {
-        scope_key: {
-          scope,
-          key,
-        },
-      },
-    });
-
-    if (existing) {
-      if (existing.requestHash !== requestHash) {
-        throw new AppError({
-          statusCode: 409,
-          code: "IDEMPOTENCY_CONFLICT",
-          message: "Cette cle a deja ete utilisee pour une autre demande.",
-        });
-      }
-
-      if (existing.response) {
-        return existing.response as TResponse;
-      }
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.idempotencyRecord.create({
-        data: {
-          scope,
-          key,
-          requestHash,
-        },
-      });
-
-      const response = await action(tx);
-      await tx.idempotencyRecord.update({
-        where: {
-          scope_key: {
-            scope,
-            key,
-          },
-        },
-        data: {
-          response: response as object,
-        },
-      });
-
-      return response;
+    return runIdempotentCommand({
+      prisma: this.prisma,
+      scope,
+      key,
+      payload,
+      execute,
     });
   }
 }
@@ -1007,7 +961,7 @@ function normalizeOrderLines(lines: OrderLineInput[]) {
     throw new AppError({
       statusCode: 400,
       code: "ORDER_LINES_REQUIRED",
-      message: "Ajoutez au moins une ligne a la commande.",
+      message: "Ajoutez au moins une ligne à la commande.",
     });
   }
 
@@ -1128,7 +1082,7 @@ async function requireOpenSession(client: Prisma.TransactionClient) {
     throw new AppError({
       statusCode: 409,
       code: "POS_SESSION_NOT_OPEN",
-      message: "Ouvrez une session de caisse avant cette operation.",
+      message: "Ouvrez une session de caisse avant cette opération.",
     });
   }
 
@@ -1208,7 +1162,7 @@ function parsePositiveQuantity(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_QUANTITY_REQUIRED",
-      message: "La quantite doit etre superieure a zero.",
+      message: "La quantité doit être supérieure à zéro.",
     });
   }
 
@@ -1222,7 +1176,7 @@ function parsePositiveMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_AMOUNT_REQUIRED",
-      message: "Le montant doit etre superieur a zero.",
+      message: "Le montant doit être supérieur à zéro.",
     });
   }
 
@@ -1236,7 +1190,7 @@ function parseNonNegativeMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "NON_NEGATIVE_AMOUNT_REQUIRED",
-      message: "Le montant doit etre positif ou nul.",
+      message: "Le montant doit être positif ou nul.",
     });
   }
 
@@ -1253,8 +1207,8 @@ function assertVersionUpdated(count: number) {
   if (count === 0) {
     throw new AppError({
       statusCode: 409,
-      code: "CONCURRENT_UPDATE",
-      message: "Cette commande a ete modifiee entre-temps.",
+      code: "VERSION_CONFLICT",
+      message: "Cette commande a été modifiée entre-temps.",
     });
   }
 }
@@ -1266,29 +1220,6 @@ function emptyToNull(value: string | undefined): string | null {
 
 function toJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-}
-
-function hashPayload(payload: unknown): string {
-  return createHash("sha256").update(stableStringify(payload)).digest("hex");
-}
-
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
-  }
-
-  if (value instanceof Date) {
-    return JSON.stringify(value.toISOString());
-  }
-
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
-      .join(",")}}`;
-  }
-
-  return JSON.stringify(value);
 }
 
 function findDuplicate(values: string[]): string | undefined {

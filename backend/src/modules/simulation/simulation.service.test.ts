@@ -351,7 +351,7 @@ describe("SimulationService", () => {
         { actorUserId: "user-1" },
       ),
     ).rejects.toMatchObject({
-      code: "CONCURRENT_UPDATE",
+      code: "VERSION_CONFLICT",
     });
   });
 });

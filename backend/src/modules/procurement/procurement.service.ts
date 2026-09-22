@@ -7,8 +7,8 @@ import {
   SupplierLedgerEntryType,
   type PrismaClient,
 } from "@prisma/client";
-import { createHash } from "node:crypto";
 import { AppError } from "../../shared/appError.js";
+import { runIdempotentCommand } from "../../shared/idempotency.js";
 import { normalizeName } from "../catalog/catalog.service.js";
 
 export interface ProcurementActor {
@@ -382,7 +382,7 @@ export class ProcurementService {
           throw new AppError({
             statusCode: 409,
             code: "PURCHASE_NOT_DRAFT",
-            message: "Seul un achat brouillon peut etre confirme.",
+            message: "Seul un achat brouillon peut être confirmé.",
           });
         }
 
@@ -525,7 +525,7 @@ export class ProcurementService {
           throw new AppError({
             statusCode: 409,
             code: "PURCHASE_NOT_POSTED",
-            message: "Seul un achat confirme peut etre annule.",
+            message: "Seul un achat confirmé peut être annulé.",
           });
         }
 
@@ -821,7 +821,7 @@ export class ProcurementService {
           throw new AppError({
             statusCode: 400,
             code: "SUPPLIER_OVERPAYMENT_REJECTED",
-            message: "Le paiement ne peut pas depasser le solde fournisseur.",
+            message: "Le paiement ne peut pas dépasser le solde fournisseur.",
           });
         }
 
@@ -960,7 +960,7 @@ export class ProcurementService {
       throw new AppError({
         statusCode: 409,
         code: "ACTIVE_SUPPLIER_NAME_NOT_UNIQUE",
-        message: "Un fournisseur actif porte deja ce nom.",
+        message: "Un fournisseur actif porte déjà ce nom.",
       });
     }
   }
@@ -1046,7 +1046,7 @@ export class ProcurementService {
           throw new AppError({
             statusCode: 400,
             code: "ACTIVE_RAW_MATERIAL_REQUIRED",
-            message: "Une matiere premiere active est requise.",
+            message: "Une matière première active est requise.",
           });
         }
 
@@ -1069,7 +1069,7 @@ export class ProcurementService {
           throw new AppError({
             statusCode: 400,
             code: "PURCHASE_UNIT_CONVERSION_REQUIRED",
-            message: "Une conversion active est requise pour cette unite.",
+            message: "Une conversion active est requise pour cette unité.",
           });
         }
 
@@ -1113,7 +1113,7 @@ export class ProcurementService {
       throw new AppError({
         statusCode: 400,
         code: "POSITIVE_PURCHASE_TOTAL_REQUIRED",
-        message: "Le total d'achat doit etre positif.",
+        message: "Le total d'achat doit être positif.",
       });
     }
 
@@ -1121,7 +1121,7 @@ export class ProcurementService {
       throw new AppError({
         statusCode: 400,
         code: "PAID_AMOUNT_INVALID",
-        message: "Le montant paye est invalide.",
+        message: "Le montant payé est invalide.",
       });
     }
 
@@ -1129,7 +1129,7 @@ export class ProcurementService {
       throw new AppError({
         statusCode: 400,
         code: "PAID_AMOUNT_EXCEEDS_TOTAL",
-        message: "Le montant paye ne peut pas depasser le total.",
+        message: "Le montant payé ne peut pas dépasser le total.",
       });
     }
 
@@ -1140,7 +1140,7 @@ export class ProcurementService {
         throw new AppError({
           statusCode: 400,
           code: "PAID_PURCHASE_INVALID",
-          message: "Un achat paye doit etre regle en totalite sans echeance.",
+          message: "Un achat payé doit être réglé en totalité sans échéance.",
         });
       }
       return;
@@ -1150,7 +1150,7 @@ export class ProcurementService {
       throw new AppError({
         statusCode: 400,
         code: "DUE_DATE_REQUIRED",
-        message: "Une echeance est requise lorsqu'un solde reste du.",
+        message: "Une échéance est requise lorsqu'un solde reste dû.",
       });
     }
 
@@ -1159,7 +1159,7 @@ export class ProcurementService {
         throw new AppError({
           statusCode: 400,
           code: "UNPAID_PURCHASE_INVALID",
-          message: "Un achat non paye ne doit pas avoir de paiement.",
+          message: "Un achat non payé ne doit pas avoir de paiement.",
         });
       }
       return;
@@ -1172,7 +1172,7 @@ export class ProcurementService {
       throw new AppError({
         statusCode: 400,
         code: "PARTIAL_PURCHASE_INVALID",
-        message: "Un achat partiel doit avoir un paiement entre zero et total.",
+        message: "Un achat partiel doit avoir un paiement entre zéro et total.",
       });
     }
   }
@@ -1242,7 +1242,7 @@ export class ProcurementService {
       throw new AppError({
         statusCode: 400,
         code: "DUPLICATE_PAYMENT_ALLOCATION",
-        message: "Une facture ne peut etre allouee qu'une seule fois.",
+        message: "Une facture ne peut être allouée qu'une seule fois.",
       });
     }
 
@@ -1255,7 +1255,7 @@ export class ProcurementService {
       throw new AppError({
         statusCode: 400,
         code: "PAYMENT_ALLOCATION_TOTAL_MISMATCH",
-        message: "Les allocations doivent correspondre au montant paye.",
+        message: "Les allocations doivent correspondre au montant payé.",
       });
     }
 
@@ -1274,7 +1274,7 @@ export class ProcurementService {
         statusCode: 400,
         code: "POSTED_PURCHASE_ALLOCATION_REQUIRED",
         message:
-          "Chaque allocation doit viser un achat confirme du fournisseur.",
+          "Chaque allocation doit viser un achat confirmé du fournisseur.",
       });
     }
 
@@ -1288,7 +1288,7 @@ export class ProcurementService {
         throw new AppError({
           statusCode: 400,
           code: "PAYMENT_ALLOCATION_EXCEEDS_PURCHASE_BALANCE",
-          message: "Une allocation depasse le solde de l'achat.",
+          message: "Une allocation dépasse le solde de l'achat.",
         });
       }
     }
@@ -1296,69 +1296,24 @@ export class ProcurementService {
     return allocations;
   }
 
-  private async runIdempotentCommand<TResponse>(
+  private runIdempotentCommand<TResponse>(
     scope: string,
     key: string,
     payload: unknown,
-    action: (tx: Prisma.TransactionClient) => Promise<TResponse>,
+    execute: (tx: Prisma.TransactionClient) => Promise<TResponse>,
   ): Promise<TResponse> {
-    if (!key.trim()) {
-      throw new AppError({
-        statusCode: 400,
-        code: "IDEMPOTENCY_KEY_REQUIRED",
-        message: "Une cle d'idempotence est requise.",
-      });
-    }
-
-    const requestHash = hashPayload(payload);
-    const existing = await this.prisma.idempotencyRecord.findUnique({
-      where: {
-        scope_key: {
-          scope,
-          key,
-        },
+    return runIdempotentCommand({
+      prisma: this.prisma,
+      scope,
+      key,
+      payload,
+      execute,
+      hooks: {
+        afterRecordCreated: () =>
+          this.afterTransactionStep("idempotency_record_created", { scope }),
+        afterResponseSaved: () =>
+          this.afterTransactionStep("idempotency_response_saved", { scope }),
       },
-    });
-
-    if (existing) {
-      if (existing.requestHash !== requestHash) {
-        throw new AppError({
-          statusCode: 409,
-          code: "IDEMPOTENCY_CONFLICT",
-          message: "Cette cle a deja ete utilisee pour une autre demande.",
-        });
-      }
-
-      if (existing.response) {
-        return existing.response as TResponse;
-      }
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.idempotencyRecord.create({
-        data: {
-          scope,
-          key,
-          requestHash,
-        },
-      });
-      await this.afterTransactionStep("idempotency_record_created", { scope });
-
-      const response = await action(tx);
-      await tx.idempotencyRecord.update({
-        where: {
-          scope_key: {
-            scope,
-            key,
-          },
-        },
-        data: {
-          response: toJsonValue(response),
-        },
-      });
-      await this.afterTransactionStep("idempotency_response_saved", { scope });
-
-      return response;
     });
   }
 
@@ -1384,7 +1339,7 @@ function parseQuantity(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_QUANTITY_REQUIRED",
-      message: "La quantite doit etre positive.",
+      message: "La quantité doit être positive.",
     });
   }
 
@@ -1393,7 +1348,7 @@ function parseQuantity(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_QUANTITY_REQUIRED",
-      message: "La quantite doit etre positive.",
+      message: "La quantité doit être positive.",
     });
   }
 
@@ -1407,7 +1362,7 @@ function parseMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "MONEY_AMOUNT_INVALID",
-      message: "Le montant doit etre en TND avec trois decimales maximum.",
+      message: "Le montant doit être en TND avec trois décimales maximum.",
     });
   }
 
@@ -1421,7 +1376,7 @@ function parsePositiveMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_PAYMENT_AMOUNT_REQUIRED",
-      message: "Le montant du paiement doit etre positif.",
+      message: "Le montant du paiement doit être positif.",
     });
   }
 
@@ -1496,8 +1451,8 @@ function assertVersionUpdated(count: number): void {
   if (count === 0) {
     throw new AppError({
       statusCode: 409,
-      code: "STALE_VERSION",
-      message: "Les donnees ont change. Actualisez puis reessayez.",
+      code: "VERSION_CONFLICT",
+      message: "Les données ont changé. Actualisez puis réessayez.",
     });
   }
 }
@@ -1514,14 +1469,6 @@ function requireReason(value: string): string {
   }
 
   return reason;
-}
-
-function hashPayload(payload: unknown): string {
-  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
-}
-
-function toJsonValue(value: unknown): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
 function emptyToNull(value: string | undefined): string | null | undefined {

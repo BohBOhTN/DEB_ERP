@@ -57,7 +57,7 @@ describe("error redaction", () => {
 
     expect(response.body.error).toMatchObject({
       code: "RETRYABLE_SERVER_ERROR",
-      message: "Une erreur est survenue. Veuillez reessayer.",
+      message: "Une erreur est survenue. Veuillez réessayer.",
     });
     expect(body).not.toContain("ECONNREFUSED");
     expect(body).not.toContain("10.0.0.5");
@@ -103,7 +103,7 @@ describe("validation messages are French", () => {
     expect(response.body.error.code).toBe("VALIDATION_ERROR");
     expect(response.body.error.fieldErrors).toMatchObject({
       name: "Ce champ est obligatoire.",
-      lines: "Ajoutez au moins un element.",
+      lines: "Ajoutez au moins un élément.",
     });
 
     // Zod's own wording must never reach the interface.
@@ -130,7 +130,7 @@ describe("validation messages are French", () => {
       .expect(400);
 
     expect(response.body.error.fieldErrors.amountTnd).toBe(
-      "Cette valeur doit etre superieure a zero.",
+      "Cette valeur doit être supérieure à zéro.",
     );
   });
 
