@@ -4,6 +4,7 @@ import { logout, type CurrentUser } from "../auth/authApi";
 import { CatalogManagement } from "../catalog/CatalogManagement";
 import { CustomerManagement } from "../customers/CustomerManagement";
 import { InventoryManagement } from "../inventory/InventoryManagement";
+import { OrderManagement } from "../orders/OrderManagement";
 import { PosManagement } from "../pos/PosManagement";
 import { ProcurementManagement } from "../procurement/ProcurementManagement";
 
@@ -63,6 +64,8 @@ export function ProtectedShell({ user, onLogout }: ProtectedShellProps) {
           <InventoryManagement user={user} />
         ) : activeModule === "customers" ? (
           <CustomerManagement user={user} />
+        ) : activeModule === "orders" ? (
+          <OrderManagement user={user} />
         ) : activeModule === "pos" ? (
           <PosManagement user={user} />
         ) : activeModule === "procurement" ? (
@@ -128,6 +131,17 @@ function buildNavigation(user: CurrentUser) {
     user.effectivePermissions.includes("pos.close_session")
   ) {
     modules.push({ id: "pos", label: "Caisse" });
+  }
+
+  if (
+    user.effectivePermissions.includes("orders.view") ||
+    user.effectivePermissions.includes("orders.create") ||
+    user.effectivePermissions.includes("orders.update") ||
+    user.effectivePermissions.includes("orders.change_status") ||
+    user.effectivePermissions.includes("orders.complete") ||
+    user.effectivePermissions.includes("orders.cancel")
+  ) {
+    modules.push({ id: "orders", label: "Commandes" });
   }
 
   if (

@@ -304,6 +304,78 @@ button:disabled {
   padding-top: 14px;
 }
 
+.orders-workspace {
+  display: grid;
+  gap: 20px;
+}
+
+.orders-grid {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+}
+
+.mode-switch,
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Touch targets stay at least 44px tall on phones. */
+.chip-button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: inherit;
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 44px;
+  padding: 10px 16px;
+}
+
+.chip-button[aria-pressed="true"] {
+  background: var(--brand-deep);
+  border-color: var(--brand-deep);
+  color: var(--surface);
+}
+
+.record-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.record-button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  min-height: 44px;
+  padding: 12px 14px;
+  text-align: left;
+  width: 100%;
+}
+
+.record-button[aria-pressed="true"] {
+  border-color: var(--brand-deep);
+}
+
+.record-title {
+  font-weight: 700;
+}
+
+.record-meta {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
 .cart-lines {
   display: grid;
   gap: 10px;
@@ -626,6 +698,13 @@ dd {
   }
 
   .customers-grid {
+    grid-template-columns: minmax(280px, 0.85fr) minmax(320px, 1fr) minmax(
+        320px,
+        1fr
+      );
+  }
+
+  .orders-grid {
     grid-template-columns: minmax(280px, 0.85fr) minmax(320px, 1fr) minmax(
         320px,
         1fr
