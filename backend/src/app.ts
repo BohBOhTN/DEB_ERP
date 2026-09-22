@@ -24,6 +24,8 @@ import type {
   HealthCheck,
   LivenessCheck,
 } from "./modules/health/health.service.js";
+import { homeRouter } from "./modules/home/home.routes.js";
+import type { HomeService } from "./modules/home/home.service.js";
 import { inventoryRouter } from "./modules/inventory/inventory.routes.js";
 import type { InventoryService } from "./modules/inventory/inventory.service.js";
 import { ordersRouter } from "./modules/orders/orders.routes.js";
@@ -96,6 +98,9 @@ export function createApp(params: {
   };
   simulation?: {
     simulationService: SimulationService;
+  };
+  home?: {
+    homeService: HomeService;
   };
 }): express.Express {
   const app = express();
@@ -261,6 +266,19 @@ export function createApp(params: {
         authService: params.auth.authService,
         cookie: params.auth.cookie,
         simulationService: params.simulation.simulationService,
+      }),
+    );
+  }
+
+  // The home summary is new in V2 and has no legacy alias.
+  if (params.auth && params.home) {
+    app.use(
+      "/api/v1/home",
+      markApiVersion(1),
+      homeRouter({
+        authService: params.auth.authService,
+        cookie: params.auth.cookie,
+        homeService: params.home.homeService,
       }),
     );
   }
