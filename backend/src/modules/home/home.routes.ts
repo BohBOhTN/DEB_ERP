@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { z } from "zod";
-import { requireAnyPermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
@@ -15,21 +14,9 @@ export const summaryQuerySchema = z.object({
     .optional(),
 });
 
-/// Any of the block permissions opens the summary; the service then includes
-/// only the blocks the caller may see. A user with none of them has nothing
-/// to see and is refused like on any other screen.
-export const homeSummaryPermissions = [
-  "pos.access",
-  "customer_balances.view",
-  "distribution.balances.view",
-  "supplier_balances.view",
-  "orders.view",
-  "inventory.view",
-  "expenses.view",
-  "distribution.custody.view",
-  "audit.view",
-];
-
+/// The home page is open to every authenticated user (UI-08): the service
+/// includes only the blocks the caller may see, and a user with no block
+/// permission receives the empty summary the screen renders as its empty state.
 export function homeRouter(params: {
   authService: AuthService;
   cookie: SessionCookieConfig;
@@ -43,25 +30,21 @@ export function homeRouter(params: {
     }),
   );
 
-  router.get(
-    "/summary",
-    requireAnyPermission(homeSummaryPermissions),
-    async (request, response, next) => {
-      try {
-        const query = summaryQuerySchema.parse(request.query);
-        const user = response.locals.currentUser as {
-          effectivePermissions: string[];
-        };
-        const summary = await params.homeService.getSummary({
-          date: query.date,
-          permissions: new Set(user.effectivePermissions),
-        });
-        response.json(okFor(response, { summary }));
-      } catch (error) {
-        next(error);
-      }
-    },
-  );
+  router.get("/summary", async (request, response, next) => {
+    try {
+      const query = summaryQuerySchema.parse(request.query);
+      const user = response.locals.currentUser as {
+        effectivePermissions: string[];
+      };
+      const summary = await params.homeService.getSummary({
+        date: query.date,
+        permissions: new Set(user.effectivePermissions),
+      });
+      response.json(okFor(response, { summary }));
+    } catch (error) {
+      next(error);
+    }
+  });
 
   return router;
 }

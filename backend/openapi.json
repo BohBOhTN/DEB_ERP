@@ -369,17 +369,7 @@
             "sessionCookie": []
           }
         ],
-        "x-permissions": [
-          "pos.access",
-          "customer_balances.view",
-          "distribution.balances.view",
-          "supplier_balances.view",
-          "orders.view",
-          "inventory.view",
-          "expenses.view",
-          "distribution.custody.view",
-          "audit.view"
-        ],
+        "x-permissions": [],
         "parameters": [
           {
             "name": "date",
@@ -434,16 +424,6 @@
           },
           "401": {
             "description": "No valid session.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Permission denied.",
             "content": {
               "application/json": {
                 "schema": {

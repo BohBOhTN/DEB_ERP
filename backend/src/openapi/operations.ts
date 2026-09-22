@@ -754,7 +754,7 @@ const homeOperations: ApiOperation[] = [
     operationId: "home.summary",
     summary: "Operational summary, one block per permission held",
     tag: "home",
-    permissions: home.homeSummaryPermissions,
+    permissions: [],
     query: home.summaryQuerySchema,
     dataKey: "summary",
   }),
