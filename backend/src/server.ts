@@ -6,6 +6,7 @@ import { AccessService } from "./modules/access/access.service.js";
 import { AuditService } from "./modules/audit/audit.service.js";
 import { PrismaAuthRepository } from "./modules/auth/auth.repository.js";
 import { AuthService } from "./modules/auth/auth.service.js";
+import { PermissionCache } from "./modules/auth/permissionCache.js";
 import { CatalogService } from "./modules/catalog/catalog.service.js";
 import { CustomersService } from "./modules/customers/customers.service.js";
 import { DistributionService } from "./modules/distribution/distribution.service.js";
@@ -45,7 +46,8 @@ process.on("uncaughtException", (error) => {
 });
 
 const prisma = new PrismaClient();
-const accessService = new AccessService(prisma);
+const permissionCache = new PermissionCache(env.PERMISSION_CACHE_TTL_MS);
+const accessService = new AccessService(prisma, permissionCache);
 const auditService = new AuditService(prisma);
 const catalogService = new CatalogService(prisma);
 const customersService = new CustomersService(prisma);
@@ -57,9 +59,10 @@ const procurementService = new ProcurementService(prisma);
 const posService = new PosService(prisma);
 const simulationService = new SimulationService(prisma);
 const authService = new AuthService(
-  new PrismaAuthRepository(prisma),
+  new PrismaAuthRepository(prisma, permissionCache),
   env.SESSION_TTL_MINUTES,
   auditService,
+  { touchIntervalMs: env.SESSION_TOUCH_INTERVAL_MS },
 );
 
 await accessService.bootstrapSystemAccess();

@@ -8,6 +8,7 @@ import {
 } from "./permissions.js";
 import { hashPassword } from "../auth/password.service.js";
 import { normalizeEmail } from "../auth/auth.service.js";
+import type { PermissionCache } from "../auth/permissionCache.js";
 
 export interface ActorContext {
   actorUserId: string;
@@ -15,7 +16,12 @@ export interface ActorContext {
 }
 
 export class AccessService {
-  public constructor(private readonly prisma: PrismaClient) {}
+  public constructor(
+    private readonly prisma: PrismaClient,
+    /// IAM-012: a permission change takes effect on the next request, so
+    /// every mutation below drops the cached effective permissions.
+    private readonly permissionCache?: PermissionCache,
+  ) {}
 
   public async bootstrapSystemAccess(): Promise<void> {
     await this.seedPermissionCatalog();
@@ -105,9 +111,8 @@ export class AccessService {
     }
   }
 
+  /// The catalogue is seeded once at boot; a read must never write.
   public async listPermissions() {
-    await this.seedPermissionCatalog();
-
     return this.prisma.permission.findMany({
       orderBy: [{ module: "asc" }, { key: "asc" }],
     });
@@ -207,6 +212,7 @@ export class AccessService {
       before: serializeRole(existing),
       after: serializeRole(role),
     });
+    this.permissionCache?.invalidateAll();
 
     return role;
   }
@@ -259,6 +265,7 @@ export class AccessService {
         permissionKeys: validKeys,
       },
     });
+    this.permissionCache?.invalidateAll();
 
     return result;
   }
@@ -410,6 +417,7 @@ export class AccessService {
         roleIds: validRoleIds,
       },
     });
+    this.permissionCache?.invalidateUser(userId);
 
     return result;
   }
@@ -501,6 +509,7 @@ export class AccessService {
         isActive: updated.isActive,
       },
     });
+    this.permissionCache?.invalidateUser(userId);
 
     return updated;
   }

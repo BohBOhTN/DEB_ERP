@@ -19,6 +19,9 @@ export interface StoredSession {
   tokenHash: string;
   expiresAt: Date;
   revokedAt: Date | null;
+  /// When the session last authenticated a request. Optional so in-memory
+  /// repositories in tests need not track it.
+  lastUsedAt?: Date | null;
   user: StoredUser;
 }
 

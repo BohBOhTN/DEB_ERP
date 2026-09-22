@@ -49,8 +49,15 @@ class InMemoryAuthRepository implements AuthRepository {
     return this.sessions.get(tokenHash) ?? null;
   }
 
-  public async touchSession(_sessionId: string): Promise<void> {
-    return;
+  public touched: string[] = [];
+
+  public async touchSession(sessionId: string): Promise<void> {
+    this.touched.push(sessionId);
+    for (const session of this.sessions.values()) {
+      if (session.id === sessionId) {
+        session.lastUsedAt = new Date();
+      }
+    }
   }
 
   public async revokeSession(tokenHash: string): Promise<void> {
@@ -80,6 +87,34 @@ class InMemoryAuthRepository implements AuthRepository {
 }
 
 describe("AuthService", () => {
+  // The last-used timestamp is a write on the hottest read path, so it is
+  // refreshed at most once per interval rather than on every request.
+  it("touches a session at most once per interval", async () => {
+    const repository = new InMemoryAuthRepository();
+    const service = new AuthService(repository, 30, undefined, {
+      touchIntervalMs: 60_000,
+    });
+    await repository.createUser({
+      email: "cashier@example.com",
+      displayName: "Caissier",
+      passwordHash: await hashPassword("secret-password"),
+    });
+    const { sessionToken } = await service.login({
+      email: "cashier@example.com",
+      password: "secret-password",
+    });
+
+    await service.getCurrentUser(sessionToken);
+    await service.getCurrentUser(sessionToken);
+    await service.getCurrentUser(sessionToken);
+    expect(repository.touched).toHaveLength(1);
+
+    const session = [...repository.sessions.values()][0];
+    session.lastUsedAt = new Date(Date.now() - 61_000);
+    await service.getCurrentUser(sessionToken);
+    expect(repository.touched).toHaveLength(2);
+  });
+
   it("authenticates an active user and returns no password material", async () => {
     const repository = new InMemoryAuthRepository();
     const service = new AuthService(repository, 30);
