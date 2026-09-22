@@ -1,0 +1,53 @@
+.root {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: var(--chart-track);
+  border-radius: var(--radius-full);
+}
+
+.md {
+  height: 8px;
+}
+
+.sm {
+  height: 4px;
+}
+
+.bar {
+  height: 100%;
+  border-radius: inherit;
+  transition: width var(--motion-base) var(--ease-out);
+}
+
+.primary {
+  background: var(--primary);
+}
+
+.accent {
+  background: var(--accent);
+}
+
+.success {
+  background: var(--success);
+}
+
+.danger {
+  background: var(--danger);
+}
+
+.indeterminate .bar {
+  position: absolute;
+  width: 40%;
+  animation: slide 1.2s var(--ease-out) infinite;
+}
+
+@keyframes slide {
+  from {
+    left: -40%;
+  }
+
+  to {
+    left: 100%;
+  }
+}

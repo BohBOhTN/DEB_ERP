@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* global process, console */
 // Schema drift guard (BE-24).
 //
 // Compares the migrated database with prisma/schema.prisma. Prisma cannot

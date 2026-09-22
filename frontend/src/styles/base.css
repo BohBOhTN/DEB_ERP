@@ -1,0 +1,91 @@
+/*
+ * V2 base styles: body, headings, links and the few utilities the design
+ * system names (05 section 2). `global.css` next to this file is the V1
+ * stylesheet and is deleted in Sprint 26; nothing here depends on it.
+ */
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: var(--weight-body);
+  color: var(--text-primary);
+  background-color: var(--bg-page);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: var(--weight-title);
+  letter-spacing: var(--tracking-title);
+  line-height: 1.2;
+}
+
+h1 {
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+}
+
+h2 {
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+}
+
+h3,
+h4 {
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+}
+
+@media (min-width: 900px) {
+  h1 {
+    font-size: var(--text-2xl);
+    line-height: var(--leading-2xl);
+  }
+}
+
+a {
+  color: var(--text-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  color: var(--primary-hover);
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+::selection {
+  background: var(--primary-soft);
+}
+
+/* Money and quantities always use tabular numerals (05 section 1). */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Eyebrow labels: uppercase, tracked, muted (05 section 2.2). */
+.eyebrow {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: var(--weight-label);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

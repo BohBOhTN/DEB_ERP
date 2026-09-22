@@ -6,6 +6,25 @@ All notable project changes are recorded here.
 
 Release R7 design system and application shell, targeting `v1.2.0`.
 
+### Added
+
+- Frontend design system as code: brand and semantic tokens in
+  `src/styles/tokens.css`, reset and base styles, Inter and Fraunces
+  fonts, favicons and theme colour.
+- Thirty-four primitives under `src/components/ui` and twenty-one patterns
+  under `src/components/patterns`, each with a CSS module, tests and a
+  gallery example; the gallery is served at `/_kit` in development only.
+- Frontend libraries: `/api/v1` client with envelope unwrapping and
+  French error copy, pagination helpers, permission-key union generated from
+  the backend catalogue (`npm run api:permissions`), shared zod form
+  helpers, hooks (debounce, media query, breakpoint, URL state, confirm), the
+  French dictionary and money, quantity and date formatters.
+- Test infrastructure: msw server with auth and catalogue handlers, fixture
+  factories, and a viewport helper.
+- Lint and build gates: `eslint-plugin-react-hooks`, `eslint-plugin-jsx-a11y`,
+  `stylelint` with `color-no-hex` outside `tokens.css`, vendor chunking, a
+  bundle report and a bundle-size budget check in the frontend build.
+
 ## [1.1.0] - 2026-09-22
 
 Release R6 platform hardening and API contract (Sprints 15 to 17). Backend

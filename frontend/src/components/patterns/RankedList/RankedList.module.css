@@ -1,0 +1,77 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-title);
+  color: var(--text-secondary);
+}
+
+.first {
+  background: var(--accent);
+  color: var(--text-inverse);
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.label a {
+  text-decoration: none;
+}
+
+.label a:hover {
+  text-decoration: underline;
+}
+
+.value {
+  font-weight: var(--weight-title);
+}
+
+.track {
+  height: 6px;
+  overflow: hidden;
+  background: var(--chart-track);
+  border-radius: var(--radius-full);
+}
+
+.bar {
+  height: 100%;
+  background: var(--chart-1);
+  border-radius: var(--radius-full);
+}
