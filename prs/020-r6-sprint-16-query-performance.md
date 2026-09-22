@@ -96,9 +96,38 @@ read from the Actions log before merge:
 | AS-V2-06 unaccented search finds the accented product; `EXPLAIN` printed (`[performance] product search plan`) | CI                                   |
 | Reconciliation: SQL balances equal ledger sums; cursor paging neither repeats nor skips                        | CI                                   |
 
-Because the raw SQL in `getExpenseTotals` and the `groupBy`/`aggregate`
-shapes have not executed against a real database on this machine, the first
-CI run is the proof. If it fails, the fix is one more commit on this branch.
+### CI evidence (run of 2026-09-22 16:34 UTC, PostgreSQL 16 service)
+
+The migration applied, the schema drift guard passed, the unit run passed,
+and the performance suite passed on the fixture (5 000 products, 200
+customers with 10 000 ledger rows, 50 suppliers, 10 distributors, 3 000
+expenses). p95 over 20 samples, in milliseconds, budget 150:
+
+| Read                              | p95  |
+| --------------------------------- | ---- |
+| customer balances (name order)    | 20.8 |
+| customer balances (balance order) | 25.9 |
+| customer statement                | 22.4 |
+| supplier balances                 | 26.5 |
+| supplier statement                | 15.2 |
+| distributor balances              | 3.0  |
+| distributor statement             | 7.4  |
+| custody                           | 34.1 |
+| expense totals                    | 20.2 |
+| product search                    | 7.8  |
+
+AS-V2-06 plan on 5 000 products: `Bitmap Index Scan on
+products_normalized_name_trgm_idx` with `Index Cond: (normalized_name ~~
+'%the a la menthe%')`, execution time 0.041 ms. The trigram index is used.
+
+Reconciliation (SQL balance equals the ledger sum) and cursor paging
+(neither repeats nor skips) passed on the same run.
+
+Three fixture defects were found and fixed by CI before this evidence: a
+closed POS session created without its closing amounts (the database check
+constraint rejected it, as it should), a statement assertion that expected a
+second page from a supplier with fewer rows than one page, and bulk inserts
+above the bind-parameter limit.
 
 The gate line "a deliberate partial-index removal turns the guard red" was
 not exercised: it requires a throwaway CI run on a scratch branch, which I
@@ -134,7 +163,7 @@ and `README.md`: `SLOW_QUERY_MS`, `PERMISSION_CACHE_TTL_MS`,
 
 ## Merge Checklist
 
-- [ ] CI passed
+- [x] CI passed
 - [x] No real `.env` files or secrets committed
 - [x] Scope matches the sprint
 - [x] Target branch is `dev`
