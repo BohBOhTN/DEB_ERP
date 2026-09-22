@@ -1,6 +1,7 @@
 import { ExpenseStatus, Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
 import { postingTransactionOptions } from "../../shared/idempotency.js";
+import { sumOrZero } from "../../shared/ledger.js";
 import { normalizeName } from "../../shared/text.js";
 
 /// EXP-001: categories are dynamic. These are the examples the source of truth
@@ -30,6 +31,8 @@ export interface ExpenseActor {
   actorUserId: string;
   correlationId?: string;
 }
+
+const dayMs = 24 * 60 * 60 * 1000;
 
 export interface ExpenseListParams {
   categoryId?: string;
@@ -172,64 +175,95 @@ export class ExpensesService {
 
   /// The release gate: cancelled expenses stay in history but never count
   /// towards an active total, so totals read posted expenses only.
-  public async getExpenseTotals(params: { from?: Date; to?: Date }) {
+  public async getExpenseTotals(params: {
+    from?: Date;
+    to?: Date;
+    categoryId?: string;
+  }) {
+    // Without a range the call would read every expense ever posted; the
+    // last thirty days is what the home page and the expense screen show.
+    const to = params.to ?? new Date();
+    const from =
+      params.from ??
+      (params.to ? undefined : new Date(to.getTime() - 30 * dayMs));
     const where = buildExpenseWhere({
-      ...params,
+      from,
+      to,
+      categoryId: params.categoryId,
       status: ExpenseStatus.POSTED,
     });
-    const [expenses, categories] = await this.prisma.$transaction([
-      this.prisma.expense.findMany({
+
+    const [overall, categoryTotals, byDate] = await Promise.all([
+      this.prisma.expense.aggregate({
         where,
-        select: {
-          categoryId: true,
-          amountTnd: true,
-          expenseDate: true,
-        },
+        _sum: { amountTnd: true },
+        _count: { _all: true },
       }),
-      this.prisma.expenseCategory.findMany(),
+      this.prisma.expense.groupBy({
+        by: ["categoryId"],
+        where,
+        _sum: { amountTnd: true },
+      }),
+      this.sumExpensesByBusinessDay({
+        from,
+        to,
+        categoryId: params.categoryId,
+      }),
     ]);
-    const byCategory = categories
-      .map((category) => ({
-        categoryId: category.id,
-        categoryName: category.name,
-        totalTnd: sumDecimals(
-          expenses
-            .filter((expense) => expense.categoryId === category.id)
-            .map((expense) => new Prisma.Decimal(expense.amountTnd)),
-          3,
-        ).toFixed(3),
+    const categories = await this.prisma.expenseCategory.findMany({
+      where: { id: { in: categoryTotals.map((row) => row.categoryId) } },
+      select: { id: true, name: true },
+    });
+    const categoryName = new Map(
+      categories.map((category) => [category.id, category.name]),
+    );
+    const byCategory = categoryTotals
+      .map((row) => ({
+        categoryId: row.categoryId,
+        categoryName: categoryName.get(row.categoryId) ?? "",
+        totalTnd: sumOrZero(row._sum.amountTnd).toFixed(3),
       }))
-      .filter((row) => new Prisma.Decimal(row.totalTnd).greaterThan(0));
-    const byDate = [
-      ...new Set(
-        expenses.map((expense) =>
-          expense.expenseDate.toISOString().slice(0, 10),
-        ),
-      ),
-    ]
-      .sort()
-      .map((day) => ({
-        day,
-        totalTnd: sumDecimals(
-          expenses
-            .filter(
-              (expense) =>
-                expense.expenseDate.toISOString().slice(0, 10) === day,
-            )
-            .map((expense) => new Prisma.Decimal(expense.amountTnd)),
-          3,
-        ).toFixed(3),
-      }));
+      .filter((row) => new Prisma.Decimal(row.totalTnd).greaterThan(0))
+      .sort((left, right) =>
+        left.categoryName.localeCompare(right.categoryName),
+      );
 
     return {
-      totalTnd: sumDecimals(
-        expenses.map((expense) => new Prisma.Decimal(expense.amountTnd)),
-        3,
-      ).toFixed(3),
-      postedCount: expenses.length,
+      totalTnd: sumOrZero(overall._sum.amountTnd).toFixed(3),
+      postedCount: overall._count._all,
       byCategory,
       byDate,
+      range: { from: from ?? null, to },
     };
+  }
+
+  /// Days are bucketed in the bakery's time zone by the database, so an
+  /// expense entered at 00:30 in Tunis counts on that day and not the day
+  /// before in UTC.
+  private async sumExpensesByBusinessDay(params: {
+    from?: Date;
+    to: Date;
+    categoryId?: string;
+  }) {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ day: string; total: string }>
+    >`
+      SELECT
+        to_char(("expense_date" AT TIME ZONE 'UTC') AT TIME ZONE 'Africa/Tunis', 'YYYY-MM-DD') AS day,
+        SUM("amount_tnd")::text AS total
+      FROM "expenses"
+      WHERE "status" = 'POSTED'
+        AND "expense_date" <= ${params.to}
+        ${params.from ? Prisma.sql`AND "expense_date" >= ${params.from}` : Prisma.empty}
+        ${params.categoryId ? Prisma.sql`AND "category_id" = ${params.categoryId}` : Prisma.empty}
+      GROUP BY day
+      ORDER BY day
+    `;
+
+    return rows.map((row) => ({
+      day: row.day,
+      totalTnd: new Prisma.Decimal(row.total).toFixed(3),
+    }));
   }
 
   /// EXP-004 to EXP-006. A new expense starts as a draft unless the caller
@@ -673,12 +707,6 @@ function parsePositiveMoney(value: string): Prisma.Decimal {
   }
 
   return decimal.toDecimalPlaces(3, Prisma.Decimal.ROUND_HALF_UP);
-}
-
-function sumDecimals(values: Prisma.Decimal[], scale: number): Prisma.Decimal {
-  return values
-    .reduce((total, value) => total.plus(value), new Prisma.Decimal(0))
-    .toDecimalPlaces(scale, Prisma.Decimal.ROUND_HALF_UP);
 }
 
 function assertVersionUpdated(count: number) {

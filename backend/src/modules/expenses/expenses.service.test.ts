@@ -341,7 +341,53 @@ class ExpensePrismaDouble {
       filterExpenses(this.store, args?.where),
     count: async (args?: { where?: Row }) =>
       filterExpenses(this.store, args?.where).length,
+    // Totals are summed in SQL; the double mirrors the overall sum and the
+    // per-category groups.
+    aggregate: async (args?: { where?: Row }) => {
+      const rows = filterExpenses(this.store, args?.where);
+      return {
+        _sum: {
+          amountTnd: rows
+            .reduce((sum, row) => sum + Number(row.amountTnd), 0)
+            .toFixed(3),
+        },
+        _count: { _all: rows.length },
+      };
+    },
+    groupBy: async (args?: { where?: Row }) => {
+      const totals = new Map<string, number>();
+      for (const row of filterExpenses(this.store, args?.where)) {
+        const categoryId = String(row.categoryId);
+        totals.set(
+          categoryId,
+          (totals.get(categoryId) ?? 0) + Number(row.amountTnd),
+        );
+      }
+      return [...totals.entries()].map(([categoryId, amount]) => ({
+        categoryId,
+        _sum: { amountTnd: amount.toFixed(3) },
+      }));
+    },
   };
+
+  /// Day bucketing runs in SQL in the Tunis time zone; the double reproduces
+  /// it with Intl so the same expense lands on the same day.
+  public async $queryRaw() {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Africa/Tunis",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const totals = new Map<string, number>();
+    for (const row of filterExpenses(this.store, { status: "POSTED" })) {
+      const day = formatter.format(row.expenseDate as Date);
+      totals.set(day, (totals.get(day) ?? 0) + Number(row.amountTnd));
+    }
+    return [...totals.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([day, total]) => ({ day, total: total.toFixed(3) }));
+  }
 
   public async $transaction<TResult>(
     action:
