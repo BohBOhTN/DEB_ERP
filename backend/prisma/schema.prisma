@@ -25,6 +25,7 @@ model User {
   passwordHash  String        @map("password_hash")
   isActive      Boolean       @default(true) @map("is_active")
   deactivatedAt DateTime?     @map("deactivated_at")
+  version       Int           @default(1)
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
   sessions      AuthSession[]
