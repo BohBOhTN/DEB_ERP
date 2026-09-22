@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - dev
+
+env:
+  # Throwaway database for CI only. It is created fresh for every run and is
+  # never the shared remote development database.
+  CI_DATABASE_URL: postgresql://ci:ci@localhost:5432/dar_el_barka_ci?schema=public
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: dar_el_barka_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d dar_el_barka_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+
+      - name: Apply migrations to the CI database
+        run: npm run prisma:migrate:deploy --workspace backend
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+        env:
+          # Runs the database-backed concurrency suite. REQUIRE_INTEGRATION_TESTS
+          # makes a missing database fail the build rather than silently skip
+          # the test that proves one order cannot become two sales.
+          INTEGRATION_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          REQUIRE_INTEGRATION_TESTS: "1"
+
+      - name: Build
+        run: npm run build
