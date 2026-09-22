@@ -484,6 +484,7 @@ describe("procurement routes", () => {
     });
     expect(procurementService.getSupplierStatement).toHaveBeenCalledWith(
       "supplier-1",
+      expect.any(Object),
     );
   });
 

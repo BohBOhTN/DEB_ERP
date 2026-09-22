@@ -9,6 +9,13 @@ import {
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
+import {
+  balanceOf,
+  balancesByKey,
+  pageWithCursor,
+  statementDefaults,
+  sumOrZero,
+} from "../../shared/ledger.js";
 import { normalizeName } from "../../shared/text.js";
 
 export interface ProcurementActor {
@@ -39,8 +46,20 @@ export interface PurchaseListParams {
 
 export interface SupplierBalanceListParams {
   dueBefore?: Date;
+  search?: string;
+  /// `name` is the directory order; `balance` puts the largest payables
+  /// first and only lists suppliers with ledger activity.
+  sort?: "name" | "balance";
+  minBalance?: string;
   page: number;
   pageSize: number;
+}
+
+export interface SupplierStatementParams {
+  cursor?: string;
+  limit?: number;
+  from?: Date;
+  to?: Date;
 }
 
 export interface SupplierPaymentListParams {
@@ -614,126 +633,228 @@ export class ProcurementService {
     );
   }
 
+  /// Payables are summed by the database. The page comes from the supplier
+  /// directory (name order) or from the ledger aggregate (balance order); only
+  /// the page's suppliers are then enriched with their open purchases.
   public async listSupplierBalances(params: SupplierBalanceListParams) {
-    const suppliers = await this.prisma.supplier.findMany({
-      orderBy: [{ isActive: "desc" }, { name: "asc" }],
-      skip: (params.page - 1) * params.pageSize,
-      take: params.pageSize,
-    });
+    const searchWhere = supplierSearchWhere(params.search);
+    const minBalance =
+      params.minBalance === undefined
+        ? undefined
+        : new Prisma.Decimal(params.minBalance);
+    const byBalance = params.sort === "balance" || minBalance !== undefined;
+
+    let suppliers: Awaited<ReturnType<typeof this.prisma.supplier.findMany>>;
+    let total: number;
+
+    if (byBalance) {
+      const groups = await this.prisma.supplierLedgerEntry.groupBy({
+        by: ["supplierId"],
+        where: searchWhere ? { supplier: searchWhere } : {},
+        _sum: { amountTnd: true },
+        ...(minBalance !== undefined
+          ? { having: { amountTnd: { _sum: { gte: minBalance } } } }
+          : {}),
+        orderBy: { _sum: { amountTnd: "desc" } },
+      });
+      total = groups.length;
+      const pageIds = groups
+        .slice(
+          (params.page - 1) * params.pageSize,
+          params.page * params.pageSize,
+        )
+        .map((group) => group.supplierId);
+      const rows = await this.prisma.supplier.findMany({
+        where: { id: { in: pageIds } },
+      });
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      suppliers = pageIds
+        .map((id) => byId.get(id))
+        .filter((row): row is NonNullable<typeof row> => row !== undefined);
+    } else {
+      const where = searchWhere ?? {};
+      [suppliers, total] = await this.prisma.$transaction([
+        this.prisma.supplier.findMany({
+          where,
+          orderBy: [{ isActive: "desc" }, { name: "asc" }],
+          skip: (params.page - 1) * params.pageSize,
+          take: params.pageSize,
+        }),
+        this.prisma.supplier.count({ where }),
+      ]);
+    }
+
     const supplierIds = suppliers.map((supplier) => supplier.id);
-    const [total, ledgerEntries, purchases] = await this.prisma.$transaction([
-      this.prisma.supplier.count(),
-      this.prisma.supplierLedgerEntry.findMany({
-        where: {
-          supplierId: {
-            in: supplierIds,
-          },
-        },
+    const [supplierTotals, purchaseTotals] = await Promise.all([
+      this.prisma.supplierLedgerEntry.groupBy({
+        by: ["supplierId"],
+        where: { supplierId: { in: supplierIds } },
+        _sum: { amountTnd: true },
       }),
-      this.prisma.purchase.findMany({
-        where: {
-          supplierId: {
-            in: supplierIds,
-          },
-          status: PurchaseStatus.POSTED,
-          ...(params.dueBefore ? { dueDate: { lte: params.dueBefore } } : {}),
-        },
+      this.prisma.supplierLedgerEntry.groupBy({
+        by: ["purchaseId"],
+        where: { supplierId: { in: supplierIds }, purchaseId: { not: null } },
+        _sum: { amountTnd: true },
       }),
     ]);
+    const openPurchaseTotals = purchaseTotals.filter((row) =>
+      sumOrZero(row._sum.amountTnd).greaterThan(0),
+    );
+    const openPurchases = await this.prisma.purchase.findMany({
+      where: {
+        id: { in: openPurchaseTotals.map((row) => row.purchaseId as string) },
+        status: PurchaseStatus.POSTED,
+        ...(params.dueBefore ? { dueDate: { lte: params.dueBefore } } : {}),
+      },
+      select: {
+        id: true,
+        supplierId: true,
+        dueDate: true,
+        totalTnd: true,
+        status: true,
+      },
+      orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+    });
+    const purchaseBalance = balancesByKey(
+      openPurchaseTotals,
+      (row) => row.purchaseId,
+      (row) => row._sum.amountTnd,
+    );
+    const supplierBalance = balancesByKey(
+      supplierTotals,
+      (row) => row.supplierId,
+      (row) => row._sum.amountTnd,
+    );
 
     const items = suppliers.map((supplier) => {
-      const balance = sumDecimals(
-        ledgerEntries
-          .filter((entry) => entry.supplierId === supplier.id)
-          .map((entry) => new Prisma.Decimal(entry.amountTnd)),
-        3,
-      );
-      const openPurchases = purchases
+      const supplierOpenPurchases = openPurchases
         .filter((purchase) => purchase.supplierId === supplier.id)
         .map((purchase) => {
-          const purchaseBalance = purchaseBalanceFromEntries(
-            purchase.id,
-            ledgerEntries,
-          );
+          const balance = balanceOf(purchaseBalance, purchase.id);
           return {
             purchaseId: purchase.id,
             dueDate: purchase.dueDate,
-            balanceTnd: purchaseBalance.toFixed(3),
-            paymentState: derivePaymentState(purchase, purchaseBalance),
+            balanceTnd: balance.toFixed(3),
+            paymentState: derivePaymentState(purchase, balance),
           };
-        })
-        .filter((purchase) => new Prisma.Decimal(purchase.balanceTnd).gt(0));
+        });
 
       return {
         supplier,
-        balanceTnd: balance.toFixed(3),
-        openPurchaseCount: openPurchases.length,
-        overduePurchaseCount: openPurchases.filter(
+        balanceTnd: balanceOf(supplierBalance, supplier.id).toFixed(3),
+        openPurchaseCount: supplierOpenPurchases.length,
+        overduePurchaseCount: supplierOpenPurchases.filter(
           (purchase) => purchase.paymentState === "OVERDUE",
         ).length,
-        openPurchases,
+        openPurchases: supplierOpenPurchases,
       };
     });
 
     return paginated(items, total, params);
   }
 
-  public async getSupplierStatement(supplierId: string) {
+  /// NFR-007: the statement states its range and calculation basis. Ledger
+  /// entries page by cursor; purchases and payments show the most recent
+  /// `limit` documents and flag when more exist.
+  public async getSupplierStatement(
+    supplierId: string,
+    params: SupplierStatementParams = {},
+  ) {
     const supplier = await this.findSupplierOrThrow(supplierId);
-    const [ledgerEntries, payments, purchases] = await this.prisma.$transaction(
-      [
-        this.prisma.supplierLedgerEntry.findMany({
+    const limit = Math.min(
+      params.limit ?? statementDefaults.limit,
+      statementDefaults.maxLimit,
+    );
+    const range = {
+      ...(params.from ? { gte: params.from } : {}),
+      ...(params.to ? { lte: params.to } : {}),
+    };
+    const inRange = params.from || params.to ? { occurredAt: range } : {};
+
+    const [closingTotal, openingTotal, ledgerPage, payments, purchases] =
+      await this.prisma.$transaction([
+        this.prisma.supplierLedgerEntry.aggregate({
           where: {
             supplierId,
+            ...(params.to ? { occurredAt: { lte: params.to } } : {}),
           },
-          include: {
-            purchase: true,
-            payment: true,
+          _sum: { amountTnd: true },
+        }),
+        this.prisma.supplierLedgerEntry.aggregate({
+          where: {
+            supplierId,
+            ...(params.from ? { occurredAt: { lt: params.from } } : {}),
           },
-          orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
+          _sum: { amountTnd: true },
+        }),
+        this.prisma.supplierLedgerEntry.findMany({
+          where: { supplierId, ...inRange },
+          include: { purchase: true, payment: true },
+          orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+          take: limit + 1,
+          ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
         }),
         this.prisma.supplierPayment.findMany({
-          where: {
-            supplierId,
-          },
-          include: {
-            allocations: true,
-          },
+          where: { supplierId },
+          include: { allocations: true },
           orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+          take: limit + 1,
         }),
         this.prisma.purchase.findMany({
           where: {
             supplierId,
-            status: {
-              in: [PurchaseStatus.POSTED, PurchaseStatus.CANCELLED],
-            },
+            status: { in: [PurchaseStatus.POSTED, PurchaseStatus.CANCELLED] },
           },
           orderBy: [{ purchaseDate: "desc" }, { createdAt: "desc" }],
+          take: limit + 1,
         }),
-      ],
-    );
+      ]);
 
-    const balance = sumDecimals(
-      ledgerEntries.map((entry) => new Prisma.Decimal(entry.amountTnd)),
-      3,
+    const ledger = pageWithCursor(ledgerPage, limit);
+    const purchasesPage = purchases.slice(0, limit);
+    const purchaseTotals = await this.prisma.supplierLedgerEntry.groupBy({
+      by: ["purchaseId"],
+      where: {
+        supplierId,
+        purchaseId: { in: purchasesPage.map((purchase) => purchase.id) },
+      },
+      _sum: { amountTnd: true },
+    });
+    const purchaseBalance = balancesByKey(
+      purchaseTotals,
+      (row) => row.purchaseId,
+      (row) => row._sum.amountTnd,
     );
+    const closingBalance = sumOrZero(closingTotal._sum.amountTnd);
+    const openingBalance = params.from
+      ? sumOrZero(openingTotal._sum.amountTnd)
+      : new Prisma.Decimal(0);
 
     return {
       supplier,
-      balanceTnd: balance.toFixed(3),
-      purchases: purchases.map((purchase) => {
-        const purchaseBalance = purchaseBalanceFromEntries(
-          purchase.id,
-          ledgerEntries,
-        );
+      balanceTnd: closingBalance.toFixed(3),
+      purchases: purchasesPage.map((purchase) => {
+        const balance = balanceOf(purchaseBalance, purchase.id);
         return {
           ...purchase,
-          balanceTnd: purchaseBalance.toFixed(3),
-          paymentState: derivePaymentState(purchase, purchaseBalance),
+          balanceTnd: balance.toFixed(3),
+          paymentState: derivePaymentState(purchase, balance),
         };
       }),
-      ledgerEntries,
-      payments,
+      ledgerEntries: ledger.items,
+      payments: payments.slice(0, limit),
+      meta: {
+        limit,
+        from: params.from ?? null,
+        to: params.to ?? null,
+        openingBalanceTnd: openingBalance.toFixed(3),
+        closingBalanceTnd: closingBalance.toFixed(3),
+        nextCursor: ledger.nextCursor,
+        hasMorePurchases: purchases.length > limit,
+        hasMorePayments: payments.length > limit,
+        basis:
+          "Solde = somme des écritures du grand livre fournisseur (achats validés moins paiements) jusqu'à la date de fin.",
+      },
     };
   }
 
@@ -799,15 +920,11 @@ export class ProcurementService {
           });
         }
 
-        const ledgerEntries = await tx.supplierLedgerEntry.findMany({
-          where: {
-            supplierId: params.supplierId,
-          },
+        const payable = await tx.supplierLedgerEntry.aggregate({
+          where: { supplierId: params.supplierId },
+          _sum: { amountTnd: true },
         });
-        const currentBalance = sumDecimals(
-          ledgerEntries.map((entry) => new Prisma.Decimal(entry.amountTnd)),
-          3,
-        );
+        const currentBalance = sumOrZero(payable._sum.amountTnd);
 
         if (!currentBalance.greaterThan(0)) {
           throw new AppError({
@@ -830,7 +947,6 @@ export class ProcurementService {
             supplierId: params.supplierId,
             amountTnd,
             allocations,
-            ledgerEntries,
           },
           tx,
         );
@@ -1022,25 +1138,32 @@ export class ProcurementService {
       });
     }
 
-    return Promise.all(
-      lines.map(async (line) => {
-        const rawMaterial = await client.rawMaterial.findFirst({
+    // One lookup for every raw material on the document instead of one query
+    // per line.
+    const rawMaterials = await client.rawMaterial.findMany({
+      where: {
+        id: { in: [...new Set(lines.map((line) => line.rawMaterialId))] },
+        isActive: true,
+      },
+      include: {
+        baseUnit: true,
+        conversions: {
           where: {
-            id: line.rawMaterialId,
             isActive: true,
           },
           include: {
-            baseUnit: true,
-            conversions: {
-              where: {
-                isActive: true,
-              },
-              include: {
-                unit: true,
-              },
-            },
+            unit: true,
           },
-        });
+        },
+      },
+    });
+    const rawMaterialById = new Map(
+      rawMaterials.map((rawMaterial) => [rawMaterial.id, rawMaterial]),
+    );
+
+    return Promise.all(
+      lines.map(async (line) => {
+        const rawMaterial = rawMaterialById.get(line.rawMaterialId);
 
         if (!rawMaterial) {
           throw new AppError({
@@ -1222,7 +1345,6 @@ export class ProcurementService {
       supplierId: string;
       amountTnd: Prisma.Decimal;
       allocations: SupplierPaymentAllocationInput[];
-      ledgerEntries: Array<{ purchaseId: string | null; amountTnd: unknown }>;
     },
     client: Prisma.TransactionClient,
   ) {
@@ -1278,13 +1400,28 @@ export class ProcurementService {
       });
     }
 
-    for (const allocation of allocations) {
-      const purchaseBalance = purchaseBalanceFromEntries(
-        allocation.purchaseId,
-        params.ledgerEntries,
-      );
+    const purchaseTotals = await client.supplierLedgerEntry.groupBy({
+      by: ["purchaseId"],
+      where: {
+        supplierId: params.supplierId,
+        purchaseId: {
+          in: allocations.map((allocation) => allocation.purchaseId),
+        },
+      },
+      _sum: { amountTnd: true },
+    });
+    const purchaseBalance = balancesByKey(
+      purchaseTotals,
+      (row) => row.purchaseId,
+      (row) => row._sum.amountTnd,
+    );
 
-      if (allocation.amountTnd.greaterThan(purchaseBalance)) {
+    for (const allocation of allocations) {
+      if (
+        allocation.amountTnd.greaterThan(
+          balanceOf(purchaseBalance, allocation.purchaseId),
+        )
+      ) {
         throw new AppError({
           statusCode: 400,
           code: "PAYMENT_ALLOCATION_EXCEEDS_PURCHASE_BALANCE",
@@ -1389,18 +1526,6 @@ function sumDecimals(values: Prisma.Decimal[], decimalPlaces: number) {
     .toDecimalPlaces(decimalPlaces);
 }
 
-function purchaseBalanceFromEntries(
-  purchaseId: string,
-  entries: Array<{ purchaseId: string | null; amountTnd: unknown }>,
-): Prisma.Decimal {
-  return sumDecimals(
-    entries
-      .filter((entry) => entry.purchaseId === purchaseId)
-      .map((entry) => new Prisma.Decimal(entry.amountTnd as string)),
-    3,
-  );
-}
-
 function derivePaymentState(
   purchase: { totalTnd: unknown; dueDate: Date | null; status: PurchaseStatus },
   balance: Prisma.Decimal,
@@ -1491,5 +1616,22 @@ function paginated<TItem>(
     pageSize: params.pageSize,
     total,
     pageCount: Math.ceil(total / params.pageSize),
+  };
+}
+
+function supplierSearchWhere(
+  search: string | undefined,
+): Prisma.SupplierWhereInput | undefined {
+  const trimmed = search?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return {
+    OR: [
+      { normalizedName: { contains: normalizeName(trimmed) } },
+      { phone: { contains: trimmed, mode: "insensitive" } },
+      { taxIdentifier: { contains: trimmed, mode: "insensitive" } },
+    ],
   };
 }

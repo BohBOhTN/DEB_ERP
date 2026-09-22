@@ -34,8 +34,22 @@ const purchaseListQuerySchema = z.object({
 
 const supplierBalanceQuerySchema = z.object({
   dueBefore: z.coerce.date().optional(),
+  search: z.string().trim().optional(),
+  sort: z.enum(["name", "balance"]).optional(),
+  minBalance: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d{1,3})?$/)
+    .optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
+const statementQuerySchema = z.object({
+  cursor: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
 });
 
 const supplierPaymentListQuerySchema = z.object({
@@ -269,6 +283,7 @@ export function procurementRouter(params: {
       try {
         const statement = await params.procurementService.getSupplierStatement(
           parseRouteParam(request.params.supplierId),
+          statementQuerySchema.parse(request.query),
         );
         response.json(ok({ statement }, getCorrelationId(response)));
       } catch (error) {
