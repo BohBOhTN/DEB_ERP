@@ -1,3 +1,7 @@
+import type { Response } from "express";
+import { getCorrelationId } from "./correlation.js";
+import { isReplayedResult } from "./idempotency.js";
+
 export interface ApiMeta {
   correlationId: string;
 }
@@ -26,4 +30,20 @@ export function ok<TData>(
       correlationId,
     },
   };
+}
+
+/// Sends the result of an idempotent posting command. A replayed result gets
+/// the same status and body as the original so a retrying client cannot tell
+/// the difference by accident, plus a header so a client that wants to know
+/// can.
+export function sendCommandResult<TData>(
+  response: Response,
+  statusCode: number,
+  result: TData,
+): void {
+  if (isReplayedResult(result)) {
+    response.setHeader("Idempotency-Replayed", "true");
+  }
+
+  response.status(statusCode).json(ok(result, getCorrelationId(response)));
 }
