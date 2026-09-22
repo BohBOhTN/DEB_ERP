@@ -2,6 +2,55 @@
 
 All notable project changes are recorded here.
 
+## [1.0.0] - 2026-09-22
+
+Version 1 feature scope is complete. See `RELEASE_v1.0.0.md` for the
+stabilization evidence and the exit-gate status; the tag is withheld until the
+responsive review and UAT are closed.
+
+### Added
+
+- R5 audit and operational supervision:
+  - authentication security events (`auth.login`, `auth.logout`, and
+    `auth.login_failed` with a reason);
+  - a permission-protected, read-only audit viewer with server-side paging,
+    filtering, and a stable sort;
+  - the POS sales list, overdue and upcoming purchases and orders, and
+    distributor settlement history;
+  - ledger reconciliation tests.
+- R5 hardening:
+  - an authorization matrix derived from the running Express stack, so an
+    unguarded route fails the build;
+  - error redaction tests proving no stack, host, path, SQL, or schema name
+    reaches a client;
+  - release evidence in `RELEASE_v1.0.0.md`.
+- R4 distribution, expenses, and ingredient cost simulation.
+- R3 single POS, customer credit, customer orders, and advances.
+
+### Fixed
+
+- Validation messages are now French. Zod's English defaults were reaching the
+  interface through `fieldErrors`.
+- The selected state on filter chips and list rows used an undefined CSS
+  custom property, so it rendered with no visual feedback.
+
+### Security
+
+- Every authenticated route is mechanically proven to carry a permission guard,
+  and no write route is guarded by a view-only permission.
+- Authentication failures are audited without storing attacker-supplied email
+  addresses.
+
+### Known limitations
+
+- `AS-020`, the French responsive experience, is not automated and has not been
+  reviewed on a device.
+- `OD-015`, retention and backup, remains open and was excluded from Sprint 14
+  by direction.
+- Three high-severity advisories affect the Prisma CLI toolchain only. The
+  deployed runtime does not depend on the vulnerable package; the fix needs a
+  major upgrade and is deferred to the first maintenance release.
+
 ## [0.4.0] - 2026-09-22
 
 Release R3 retail, customers, and orders. Sprints 7 and 8 merged without a
