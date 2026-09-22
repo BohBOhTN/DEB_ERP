@@ -22,6 +22,8 @@ import type { OrdersService } from "./modules/orders/orders.service.js";
 import { posRouter } from "./modules/pos/pos.routes.js";
 import type { PosService } from "./modules/pos/pos.service.js";
 import { procurementRouter } from "./modules/procurement/procurement.routes.js";
+import { simulationRouter } from "./modules/simulation/simulation.routes.js";
+import type { SimulationService } from "./modules/simulation/simulation.service.js";
 import type { ProcurementService } from "./modules/procurement/procurement.service.js";
 import { AppError } from "./shared/appError.js";
 import { correlationId } from "./shared/correlation.js";
@@ -60,6 +62,9 @@ export function createApp(params: {
   };
   pos?: {
     posService: PosService;
+  };
+  simulation?: {
+    simulationService: SimulationService;
   };
 }): express.Express {
   const app = express();
@@ -165,6 +170,17 @@ export function createApp(params: {
         authService: params.auth.authService,
         cookie: params.auth.cookie,
         posService: params.pos.posService,
+      }),
+    );
+  }
+
+  if (params.auth && params.simulation) {
+    app.use(
+      "/api",
+      simulationRouter({
+        authService: params.auth.authService,
+        cookie: params.auth.cookie,
+        simulationService: params.simulation.simulationService,
       }),
     );
   }
