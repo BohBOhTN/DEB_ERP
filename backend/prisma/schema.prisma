@@ -1069,6 +1069,70 @@ enum DistributorLedgerEntryType {
   PAYMENT_REVERSAL
 }
 
+model ExpenseCategory {
+  id              String    @id @default(cuid())
+  name            String
+  normalizedName  String    @map("normalized_name")
+  description     String?
+  isActive        Boolean   @default(true) @map("is_active")
+  version         Int       @default(1)
+  createdByUserId String    @map("created_by_user_id")
+  updatedByUserId String    @map("updated_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  expenses        Expense[]
+
+  @@index([isActive])
+  @@index([normalizedName])
+  @@map("expense_categories")
+}
+
+/// A recorded operating expense. It has no stock and no party-balance effect;
+/// it records that money left the business for a category. Treasury accounts
+/// and payroll stay deferred (EXP-009, EXP-010).
+model Expense {
+  id                 String               @id @default(cuid())
+  reference          String               @unique
+  categoryId         String               @map("category_id")
+  status             ExpenseStatus        @default(DRAFT)
+  expenseDate        DateTime             @map("expense_date")
+  amountTnd          Decimal              @map("amount_tnd") @db.Decimal(14, 3)
+  description        String
+  /// Optional supplier receipt or invoice number, distinct from the generated
+  /// document reference above.
+  externalReference  String?              @map("external_reference")
+  method             ExpensePaymentMethod @default(CASH)
+  notes              String?
+  responsibleUserId  String               @map("responsible_user_id")
+  postedAt           DateTime?            @map("posted_at")
+  postedByUserId     String?              @map("posted_by_user_id")
+  cancelledAt        DateTime?            @map("cancelled_at")
+  cancelledByUserId  String?              @map("cancelled_by_user_id")
+  cancellationReason String?              @map("cancellation_reason")
+  version            Int                  @default(1)
+  createdByUserId    String               @map("created_by_user_id")
+  updatedByUserId    String               @map("updated_by_user_id")
+  correlationId      String?              @map("correlation_id")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  category           ExpenseCategory      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([categoryId])
+  @@index([status])
+  @@index([expenseDate])
+  @@map("expenses")
+}
+
+enum ExpenseStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+enum ExpensePaymentMethod {
+  CASH
+}
+
 model IdempotencyRecord {
   id          String   @id @default(cuid())
   scope       String
