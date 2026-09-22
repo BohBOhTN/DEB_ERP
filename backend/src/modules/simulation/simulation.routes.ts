@@ -4,7 +4,7 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok } from "../../shared/apiResponse.js";
+import { okFor } from "../../shared/apiResponse.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { SimulationService } from "./simulation.service.js";
 
@@ -71,7 +71,7 @@ export function simulationRouter(params: {
         const query = pageQuerySchema.parse(request.query);
         const simulations =
           await params.simulationService.listSimulations(query);
-        response.json(ok({ simulations }, getCorrelationId(response)));
+        response.json(okFor(response, { simulations }));
       } catch (error) {
         next(error);
       }
@@ -86,7 +86,7 @@ export function simulationRouter(params: {
         const simulation = await params.simulationService.getSimulation(
           parseRouteParam(request.params.simulationId),
         );
-        response.json(ok({ simulation }, getCorrelationId(response)));
+        response.json(okFor(response, { simulation }));
       } catch (error) {
         next(error);
       }
@@ -103,7 +103,7 @@ export function simulationRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        response.status(201).json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -121,7 +121,7 @@ export function simulationRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        response.status(201).json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -139,7 +139,7 @@ export function simulationRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -155,7 +155,7 @@ export function simulationRouter(params: {
           parseRouteParam(request.params.simulationId),
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }

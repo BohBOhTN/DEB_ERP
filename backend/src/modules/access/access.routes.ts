@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
-import { ok } from "../../shared/apiResponse.js";
+import { okFor } from "../../shared/apiResponse.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
@@ -59,7 +59,7 @@ export function accessRouter(params: {
     async (_request, response, next) => {
       try {
         const permissions = await params.accessService.listPermissions();
-        response.json(ok({ permissions }, getCorrelationId(response)));
+        response.json(okFor(response, { permissions }));
       } catch (error) {
         next(error);
       }
@@ -72,9 +72,7 @@ export function accessRouter(params: {
     async (_request, response, next) => {
       try {
         const roles = await params.accessService.listRoles();
-        response.json(
-          ok({ roles: roles.map(serializeRole) }, getCorrelationId(response)),
-        );
+        response.json(okFor(response, { roles: roles.map(serializeRole) }));
       } catch (error) {
         next(error);
       }
@@ -94,7 +92,7 @@ export function accessRouter(params: {
 
         response
           .status(201)
-          .json(ok({ role: serializeRole(role) }, getCorrelationId(response)));
+          .json(okFor(response, { role: serializeRole(role) }));
       } catch (error) {
         next(error);
       }
@@ -113,9 +111,7 @@ export function accessRouter(params: {
           actorFromResponse(response),
         );
 
-        response.json(
-          ok({ role: serializeRole(role) }, getCorrelationId(response)),
-        );
+        response.json(okFor(response, { role: serializeRole(role) }));
       } catch (error) {
         next(error);
       }
@@ -134,9 +130,7 @@ export function accessRouter(params: {
           actorFromResponse(response),
         );
 
-        response.json(
-          ok({ role: serializeRole(role) }, getCorrelationId(response)),
-        );
+        response.json(okFor(response, { role: serializeRole(role) }));
       } catch (error) {
         next(error);
       }
@@ -149,9 +143,7 @@ export function accessRouter(params: {
     async (_request, response, next) => {
       try {
         const users = await params.accessService.listUsers();
-        response.json(
-          ok({ users: users.map(serializeUser) }, getCorrelationId(response)),
-        );
+        response.json(okFor(response, { users: users.map(serializeUser) }));
       } catch (error) {
         next(error);
       }
@@ -171,7 +163,7 @@ export function accessRouter(params: {
 
         response
           .status(201)
-          .json(ok({ user: serializeUser(user) }, getCorrelationId(response)));
+          .json(okFor(response, { user: serializeUser(user) }));
       } catch (error) {
         next(error);
       }
@@ -190,9 +182,7 @@ export function accessRouter(params: {
           actorFromResponse(response),
         );
 
-        response.json(
-          ok({ user: serializeUser(user) }, getCorrelationId(response)),
-        );
+        response.json(okFor(response, { user: serializeUser(user) }));
       } catch (error) {
         next(error);
       }
@@ -212,17 +202,14 @@ export function accessRouter(params: {
         );
 
         response.json(
-          ok(
-            {
-              user: {
-                id: user.id,
-                email: user.email,
-                displayName: user.displayName,
-                isActive: user.isActive,
-              },
+          okFor(response, {
+            user: {
+              id: user.id,
+              email: user.email,
+              displayName: user.displayName,
+              isActive: user.isActive,
             },
-            getCorrelationId(response),
-          ),
+          }),
         );
       } catch (error) {
         next(error);

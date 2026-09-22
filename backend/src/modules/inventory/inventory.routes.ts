@@ -6,7 +6,7 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok, sendCommandResult } from "../../shared/apiResponse.js";
+import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { InventoryService } from "./inventory.service.js";
@@ -55,7 +55,7 @@ export function inventoryRouter(params: {
     async (_request, response, next) => {
       try {
         const balances = await params.inventoryService.listBalances();
-        response.json(ok({ balances }, getCorrelationId(response)));
+        response.json(okFor(response, { balances }));
       } catch (error) {
         next(error);
       }
@@ -69,7 +69,7 @@ export function inventoryRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const movements = await params.inventoryService.listMovements(query);
-        response.json(ok({ movements }, getCorrelationId(response)));
+        response.json(okFor(response, { movements }));
       } catch (error) {
         next(error);
       }

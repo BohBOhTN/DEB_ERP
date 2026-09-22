@@ -6,7 +6,7 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok, sendCommandResult } from "../../shared/apiResponse.js";
+import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { ProcurementService } from "./procurement.service.js";
@@ -146,7 +146,7 @@ export function procurementRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const result = await params.procurementService.listSuppliers(query);
-        response.json(ok({ suppliers: result }, getCorrelationId(response)));
+        response.json(okFor(response, { suppliers: result }));
       } catch (error) {
         next(error);
       }
@@ -163,7 +163,7 @@ export function procurementRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok({ supplier }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { supplier }));
       } catch (error) {
         next(error);
       }
@@ -181,7 +181,7 @@ export function procurementRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ supplier }, getCorrelationId(response)));
+        response.json(okFor(response, { supplier }));
       } catch (error) {
         next(error);
       }
@@ -195,7 +195,7 @@ export function procurementRouter(params: {
       try {
         const query = purchaseListQuerySchema.parse(request.query);
         const result = await params.procurementService.listPurchases(query);
-        response.json(ok({ purchases: result }, getCorrelationId(response)));
+        response.json(okFor(response, { purchases: result }));
       } catch (error) {
         next(error);
       }
@@ -212,7 +212,7 @@ export function procurementRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok({ purchase }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { purchase }));
       } catch (error) {
         next(error);
       }
@@ -267,9 +267,7 @@ export function procurementRouter(params: {
         const query = supplierBalanceQuerySchema.parse(request.query);
         const result =
           await params.procurementService.listSupplierBalances(query);
-        response.json(
-          ok({ supplierBalances: result }, getCorrelationId(response)),
-        );
+        response.json(okFor(response, { supplierBalances: result }));
       } catch (error) {
         next(error);
       }
@@ -285,7 +283,7 @@ export function procurementRouter(params: {
           parseRouteParam(request.params.supplierId),
           statementQuerySchema.parse(request.query),
         );
-        response.json(ok({ statement }, getCorrelationId(response)));
+        response.json(okFor(response, { statement }));
       } catch (error) {
         next(error);
       }
@@ -300,9 +298,7 @@ export function procurementRouter(params: {
         const query = supplierPaymentListQuerySchema.parse(request.query);
         const result =
           await params.procurementService.listSupplierPayments(query);
-        response.json(
-          ok({ supplierPayments: result }, getCorrelationId(response)),
-        );
+        response.json(okFor(response, { supplierPayments: result }));
       } catch (error) {
         next(error);
       }

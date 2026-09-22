@@ -5,7 +5,7 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok } from "../../shared/apiResponse.js";
+import { okFor } from "../../shared/apiResponse.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { ExpensesService } from "./expenses.service.js";
 
@@ -102,7 +102,7 @@ export function expensesRouter(params: {
         const query = categoryListQuerySchema.parse(request.query);
         const expenseCategories =
           await params.expensesService.listCategories(query);
-        response.json(ok({ expenseCategories }, getCorrelationId(response)));
+        response.json(okFor(response, { expenseCategories }));
       } catch (error) {
         next(error);
       }
@@ -119,9 +119,7 @@ export function expensesRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response
-          .status(201)
-          .json(ok({ expenseCategory }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { expenseCategory }));
       } catch (error) {
         next(error);
       }
@@ -139,7 +137,7 @@ export function expensesRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ expenseCategory }, getCorrelationId(response)));
+        response.json(okFor(response, { expenseCategory }));
       } catch (error) {
         next(error);
       }
@@ -153,7 +151,7 @@ export function expensesRouter(params: {
       try {
         const query = expenseListQuerySchema.parse(request.query);
         const expenses = await params.expensesService.listExpenses(query);
-        response.json(ok({ expenses }, getCorrelationId(response)));
+        response.json(okFor(response, { expenses }));
       } catch (error) {
         next(error);
       }
@@ -168,7 +166,7 @@ export function expensesRouter(params: {
         const query = totalsQuerySchema.parse(request.query);
         const expenseTotals =
           await params.expensesService.getExpenseTotals(query);
-        response.json(ok({ expenseTotals }, getCorrelationId(response)));
+        response.json(okFor(response, { expenseTotals }));
       } catch (error) {
         next(error);
       }
@@ -185,7 +183,7 @@ export function expensesRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        response.status(201).json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -203,7 +201,7 @@ export function expensesRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -221,7 +219,7 @@ export function expensesRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -239,7 +237,7 @@ export function expensesRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }

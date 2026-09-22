@@ -4,7 +4,7 @@ import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import { requirePermission } from "../access/permission.middleware.js";
-import { ok } from "../../shared/apiResponse.js";
+import { okFor } from "../../shared/apiResponse.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { CatalogService } from "./catalog.service.js";
@@ -139,7 +139,7 @@ export function catalogRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const result = await params.catalogService.listUnits(query);
-        response.json(ok({ units: result }, getCorrelationId(response)));
+        response.json(okFor(response, { units: result }));
       } catch (error) {
         next(error);
       }
@@ -156,7 +156,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok({ unit }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { unit }));
       } catch (error) {
         next(error);
       }
@@ -174,7 +174,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ unit }, getCorrelationId(response)));
+        response.json(okFor(response, { unit }));
       } catch (error) {
         next(error);
       }
@@ -188,7 +188,7 @@ export function catalogRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const result = await params.catalogService.listCategories(query);
-        response.json(ok({ categories: result }, getCorrelationId(response)));
+        response.json(okFor(response, { categories: result }));
       } catch (error) {
         next(error);
       }
@@ -205,7 +205,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok({ category }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { category }));
       } catch (error) {
         next(error);
       }
@@ -223,7 +223,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ category }, getCorrelationId(response)));
+        response.json(okFor(response, { category }));
       } catch (error) {
         next(error);
       }
@@ -237,7 +237,7 @@ export function catalogRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const result = await params.catalogService.listRawMaterials(query);
-        response.json(ok({ rawMaterials: result }, getCorrelationId(response)));
+        response.json(okFor(response, { rawMaterials: result }));
       } catch (error) {
         next(error);
       }
@@ -254,9 +254,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response
-          .status(201)
-          .json(ok({ rawMaterial }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { rawMaterial }));
       } catch (error) {
         next(error);
       }
@@ -274,7 +272,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ rawMaterial }, getCorrelationId(response)));
+        response.json(okFor(response, { rawMaterial }));
       } catch (error) {
         next(error);
       }
@@ -293,7 +291,7 @@ export function catalogRouter(params: {
             body,
             actorFromResponse(response),
           );
-        response.json(ok({ rawMaterial }, getCorrelationId(response)));
+        response.json(okFor(response, { rawMaterial }));
       } catch (error) {
         next(error);
       }
@@ -312,7 +310,7 @@ export function catalogRouter(params: {
             body,
             actorFromResponse(response),
           );
-        response.json(ok({ rawMaterial }, getCorrelationId(response)));
+        response.json(okFor(response, { rawMaterial }));
       } catch (error) {
         next(error);
       }
@@ -326,7 +324,7 @@ export function catalogRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const result = await params.catalogService.listProducts(query);
-        response.json(ok({ products: result }, getCorrelationId(response)));
+        response.json(okFor(response, { products: result }));
       } catch (error) {
         next(error);
       }
@@ -343,7 +341,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok({ product }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { product }));
       } catch (error) {
         next(error);
       }
@@ -361,7 +359,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ product }, getCorrelationId(response)));
+        response.json(okFor(response, { product }));
       } catch (error) {
         next(error);
       }
@@ -379,7 +377,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ product }, getCorrelationId(response)));
+        response.json(okFor(response, { product }));
       } catch (error) {
         next(error);
       }

@@ -9,7 +9,7 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok, sendCommandResult } from "../../shared/apiResponse.js";
+import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { OrdersService } from "./orders.service.js";
@@ -101,7 +101,7 @@ export function ordersRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const orders = await params.ordersService.listOrders(query);
-        response.json(ok({ orders }, getCorrelationId(response)));
+        response.json(okFor(response, { orders }));
       } catch (error) {
         next(error);
       }
@@ -116,7 +116,7 @@ export function ordersRouter(params: {
         const order = await params.ordersService.getOrder(
           parseRouteParam(request.params.orderId),
         );
-        response.json(ok({ order }, getCorrelationId(response)));
+        response.json(okFor(response, { order }));
       } catch (error) {
         next(error);
       }
@@ -154,7 +154,7 @@ export function ordersRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -172,7 +172,7 @@ export function ordersRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }

@@ -4,8 +4,7 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok } from "../../shared/apiResponse.js";
-import { getCorrelationId } from "../../shared/correlation.js";
+import { okFor } from "../../shared/apiResponse.js";
 import type { AuditService } from "./audit.service.js";
 
 const listQuerySchema = z.object({
@@ -41,7 +40,7 @@ export function auditRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const auditEvents = await params.auditService.listEvents(query);
-        response.json(ok({ auditEvents }, getCorrelationId(response)));
+        response.json(okFor(response, { auditEvents }));
       } catch (error) {
         next(error);
       }
@@ -54,7 +53,7 @@ export function auditRouter(params: {
     async (_request, response, next) => {
       try {
         const auditFilters = await params.auditService.listFilterOptions();
-        response.json(ok({ auditFilters }, getCorrelationId(response)));
+        response.json(okFor(response, { auditFilters }));
       } catch (error) {
         next(error);
       }

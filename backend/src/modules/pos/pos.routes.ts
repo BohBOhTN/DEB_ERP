@@ -9,7 +9,7 @@ import {
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok, sendCommandResult } from "../../shared/apiResponse.js";
+import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { PosService } from "./pos.service.js";
@@ -88,7 +88,7 @@ export function posRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const products = await params.posService.listProducts(query);
-        response.json(ok({ products }, getCorrelationId(response)));
+        response.json(okFor(response, { products }));
       } catch (error) {
         next(error);
       }
@@ -104,7 +104,7 @@ export function posRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const customers = await params.posService.listCustomers(query);
-        response.json(ok({ customers }, getCorrelationId(response)));
+        response.json(okFor(response, { customers }));
       } catch (error) {
         next(error);
       }
@@ -117,7 +117,7 @@ export function posRouter(params: {
     async (_request, response, next) => {
       try {
         const session = await params.posService.getCurrentSession();
-        response.json(ok({ session }, getCorrelationId(response)));
+        response.json(okFor(response, { session }));
       } catch (error) {
         next(error);
       }
@@ -172,7 +172,7 @@ export function posRouter(params: {
       try {
         const query = saleListQuerySchema.parse(request.query);
         const sales = await params.posService.listSales(query);
-        response.json(ok({ sales }, getCorrelationId(response)));
+        response.json(okFor(response, { sales }));
       } catch (error) {
         next(error);
       }

@@ -6,7 +6,7 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok, sendCommandResult } from "../../shared/apiResponse.js";
+import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { DistributionService } from "./distribution.service.js";
@@ -181,7 +181,7 @@ export function distributionRouter(params: {
         const query = listQuerySchema.parse(request.query);
         const distributors =
           await params.distributionService.listDistributors(query);
-        response.json(ok({ distributors }, getCorrelationId(response)));
+        response.json(okFor(response, { distributors }));
       } catch (error) {
         next(error);
       }
@@ -198,9 +198,7 @@ export function distributionRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response
-          .status(201)
-          .json(ok({ distributor }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { distributor }));
       } catch (error) {
         next(error);
       }
@@ -218,7 +216,7 @@ export function distributionRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ distributor }, getCorrelationId(response)));
+        response.json(okFor(response, { distributor }));
       } catch (error) {
         next(error);
       }
@@ -253,7 +251,7 @@ export function distributionRouter(params: {
         const query = dispatchListQuerySchema.parse(request.query);
         const dispatches =
           await params.distributionService.listDispatches(query);
-        response.json(ok({ dispatches }, getCorrelationId(response)));
+        response.json(okFor(response, { dispatches }));
       } catch (error) {
         next(error);
       }
@@ -268,7 +266,7 @@ export function distributionRouter(params: {
         const dispatch = await params.distributionService.getDispatch(
           parseRouteParam(request.params.dispatchId),
         );
-        response.json(ok({ dispatch }, getCorrelationId(response)));
+        response.json(okFor(response, { dispatch }));
       } catch (error) {
         next(error);
       }
@@ -303,7 +301,7 @@ export function distributionRouter(params: {
         const query = settlementListQuerySchema.parse(request.query);
         const settlements =
           await params.distributionService.listSettlements(query);
-        response.json(ok({ settlements }, getCorrelationId(response)));
+        response.json(okFor(response, { settlements }));
       } catch (error) {
         next(error);
       }
@@ -337,7 +335,7 @@ export function distributionRouter(params: {
       try {
         const query = custodyQuerySchema.parse(request.query);
         const custody = await params.distributionService.listCustody(query);
-        response.json(ok({ custody }, getCorrelationId(response)));
+        response.json(okFor(response, { custody }));
       } catch (error) {
         next(error);
       }
@@ -352,7 +350,7 @@ export function distributionRouter(params: {
         const query = balanceListQuerySchema.parse(request.query);
         const distributorBalances =
           await params.distributionService.listDistributorBalances(query);
-        response.json(ok({ distributorBalances }, getCorrelationId(response)));
+        response.json(okFor(response, { distributorBalances }));
       } catch (error) {
         next(error);
       }
@@ -369,7 +367,7 @@ export function distributionRouter(params: {
             parseRouteParam(request.params.distributorId),
             statementQuerySchema.parse(request.query),
           );
-        response.json(ok({ statement }, getCorrelationId(response)));
+        response.json(okFor(response, { statement }));
       } catch (error) {
         next(error);
       }
@@ -384,7 +382,7 @@ export function distributionRouter(params: {
         const query = paymentListQuerySchema.parse(request.query);
         const distributorPayments =
           await params.distributionService.listDistributorPayments(query);
-        response.json(ok({ distributorPayments }, getCorrelationId(response)));
+        response.json(okFor(response, { distributorPayments }));
       } catch (error) {
         next(error);
       }

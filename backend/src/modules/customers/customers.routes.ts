@@ -5,7 +5,7 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok, sendCommandResult } from "../../shared/apiResponse.js";
+import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { CustomersService } from "./customers.service.js";
@@ -102,7 +102,7 @@ export function customersRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const customers = await params.customersService.listCustomers(query);
-        response.json(ok({ customers }, getCorrelationId(response)));
+        response.json(okFor(response, { customers }));
       } catch (error) {
         next(error);
       }
@@ -119,7 +119,7 @@ export function customersRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok({ customer }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { customer }));
       } catch (error) {
         next(error);
       }
@@ -137,7 +137,7 @@ export function customersRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ customer }, getCorrelationId(response)));
+        response.json(okFor(response, { customer }));
       } catch (error) {
         next(error);
       }
@@ -152,7 +152,7 @@ export function customersRouter(params: {
         const query = balanceListQuerySchema.parse(request.query);
         const customerBalances =
           await params.customersService.listCustomerBalances(query);
-        response.json(ok({ customerBalances }, getCorrelationId(response)));
+        response.json(okFor(response, { customerBalances }));
       } catch (error) {
         next(error);
       }
@@ -168,7 +168,7 @@ export function customersRouter(params: {
           parseRouteParam(request.params.customerId),
           statementQuerySchema.parse(request.query),
         );
-        response.json(ok({ statement }, getCorrelationId(response)));
+        response.json(okFor(response, { statement }));
       } catch (error) {
         next(error);
       }
@@ -183,7 +183,7 @@ export function customersRouter(params: {
         const query = paymentListQuerySchema.parse(request.query);
         const customerPayments =
           await params.customersService.listCustomerPayments(query);
-        response.json(ok({ customerPayments }, getCorrelationId(response)));
+        response.json(okFor(response, { customerPayments }));
       } catch (error) {
         next(error);
       }

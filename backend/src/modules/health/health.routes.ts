@@ -1,6 +1,5 @@
 import { Router, type RequestHandler } from "express";
-import { ok } from "../../shared/apiResponse.js";
-import { getCorrelationId } from "../../shared/correlation.js";
+import { okFor } from "../../shared/apiResponse.js";
 import {
   createLivenessCheck,
   type HealthCheck,
@@ -18,7 +17,7 @@ export function healthRouter(
       const health = await healthCheck();
       const statusCode = health.status === "ok" ? 200 : 503;
 
-      response.status(statusCode).json(ok(health, getCorrelationId(response)));
+      response.status(statusCode).json(okFor(response, health));
     } catch (error) {
       next(error);
     }
@@ -28,7 +27,7 @@ export function healthRouter(
   router.get("/", ready);
   router.get("/ready", ready);
   router.get("/live", (_request, response) => {
-    response.json(ok(livenessCheck(), getCorrelationId(response)));
+    response.json(okFor(response, livenessCheck()));
   });
 
   return router;
