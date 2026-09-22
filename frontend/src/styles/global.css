@@ -304,9 +304,30 @@ button:disabled {
   padding-top: 14px;
 }
 
-.orders-workspace {
+.orders-workspace,
+.distribution-workspace {
   display: grid;
   gap: 20px;
+}
+
+.distribution-grid {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+}
+
+.settlement-line {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.settlement-line legend {
+  color: var(--text-muted);
+  font-weight: 700;
+  padding: 0 6px;
 }
 
 .orders-grid {
@@ -704,7 +725,8 @@ dd {
       );
   }
 
-  .orders-grid {
+  .orders-grid,
+  .distribution-grid {
     grid-template-columns: minmax(280px, 0.85fr) minmax(320px, 1fr) minmax(
         320px,
         1fr

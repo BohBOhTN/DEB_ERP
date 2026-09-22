@@ -3,6 +3,7 @@ import { AccessManagement } from "../access/AccessManagement";
 import { logout, type CurrentUser } from "../auth/authApi";
 import { CatalogManagement } from "../catalog/CatalogManagement";
 import { CustomerManagement } from "../customers/CustomerManagement";
+import { DistributionManagement } from "../distribution/DistributionManagement";
 import { InventoryManagement } from "../inventory/InventoryManagement";
 import { OrderManagement } from "../orders/OrderManagement";
 import { PosManagement } from "../pos/PosManagement";
@@ -64,6 +65,8 @@ export function ProtectedShell({ user, onLogout }: ProtectedShellProps) {
           <InventoryManagement user={user} />
         ) : activeModule === "customers" ? (
           <CustomerManagement user={user} />
+        ) : activeModule === "distribution" ? (
+          <DistributionManagement user={user} />
         ) : activeModule === "orders" ? (
           <OrderManagement user={user} />
         ) : activeModule === "pos" ? (
@@ -142,6 +145,20 @@ function buildNavigation(user: CurrentUser) {
     user.effectivePermissions.includes("orders.cancel")
   ) {
     modules.push({ id: "orders", label: "Commandes" });
+  }
+
+  if (
+    user.effectivePermissions.includes("distributors.view") ||
+    user.effectivePermissions.includes("distributors.create") ||
+    user.effectivePermissions.includes("distribution.dispatch") ||
+    user.effectivePermissions.includes("distribution.settle") ||
+    user.effectivePermissions.includes("distribution.direct_sale") ||
+    user.effectivePermissions.includes("distribution.custody.view") ||
+    user.effectivePermissions.includes("distribution.balances.view") ||
+    user.effectivePermissions.includes("distributor_payments.view") ||
+    user.effectivePermissions.includes("distributor_payments.create")
+  ) {
+    modules.push({ id: "distribution", label: "Distribution" });
   }
 
   if (
