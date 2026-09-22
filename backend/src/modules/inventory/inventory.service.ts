@@ -47,13 +47,9 @@ export class InventoryService {
 
   public async listMovements(params: InventoryListParams) {
     const [items, total] = await this.prisma.$transaction([
+      // Item and unit names are snapshotted on the row, so no join is needed
+      // to render the list.
       this.prisma.inventoryMovement.findMany({
-        include: {
-          location: true,
-          product: true,
-          rawMaterial: true,
-          unit: true,
-        },
         orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,

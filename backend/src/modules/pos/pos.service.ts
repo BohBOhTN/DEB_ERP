@@ -185,10 +185,10 @@ export class PosService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.sale.findMany({
         where,
+        // List rows carry the sale header only; lines and payments belong to
+        // the sale detail and would multiply the payload by the line count.
         include: {
           customer: true,
-          lines: true,
-          payments: true,
         },
         // NFR-005: stable sort. The id breaks ties so paging cannot repeat or
         // skip a sale posted in the same millisecond as another.

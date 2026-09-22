@@ -293,10 +293,11 @@ export class ProcurementService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.purchase.findMany({
         where,
+        // Payments are read from the purchase detail; the list shows the
+        // header and the line count only.
         include: {
           supplier: true,
           lines: true,
-          payments: true,
         },
         // NFR-005: a stable sort, with the due list ordered by urgency.
         orderBy: params.dueState
