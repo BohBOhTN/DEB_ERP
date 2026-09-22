@@ -61,8 +61,16 @@ export class DistributionPrismaDouble {
   /// Read path used by listCustody, which queries the client directly rather
   /// than inside a posting transaction.
   public readonly distributorDispatchLine = {
+    // Mirrors the bounded custody query: open dispatches, plus any line that
+    // still carries a discrepancy.
     findMany: async (args?: {
-      where?: { dispatch?: { distributorId?: string } };
+      where?: {
+        dispatch?: { distributorId?: string };
+        OR?: Array<{
+          dispatch?: { status?: string };
+          unaccountedQuantity?: { gt: number };
+        }>;
+      };
     }) =>
       this.store.distributorDispatchLines
         .map((line) => {
@@ -87,9 +95,17 @@ export class DistributionPrismaDouble {
         })
         .filter((line) => {
           const distributorId = args?.where?.dispatch?.distributorId;
-          return (
-            !distributorId || line.dispatch.distributorId === distributorId
-          );
+          const matchesDistributor =
+            !distributorId || line.dispatch.distributorId === distributorId;
+          const matchesAny =
+            !args?.where?.OR ||
+            args.where.OR.some((clause) =>
+              clause.dispatch?.status !== undefined
+                ? (line.dispatch as Row).status === clause.dispatch.status
+                : Number((line as Row).unaccountedQuantity ?? 0) >
+                  (clause.unaccountedQuantity?.gt ?? 0),
+            );
+          return matchesDistributor && matchesAny;
         }),
   };
 
@@ -401,6 +417,54 @@ export function makeDistributionTransactionClient(store: DistributionStore) {
           id: `distributor-ledger-${store.distributorLedgerEntries.length + 1}`,
           ...args.data,
         });
+      },
+      createMany: async (args: {
+        data: Array<Row & { amountTnd: string }>;
+      }) => {
+        for (const item of args.data) {
+          store.distributorLedgerEntries.push({
+            id: `distributor-ledger-${store.distributorLedgerEntries.length + 1}`,
+            ...item,
+          });
+        }
+        return { count: args.data.length };
+      },
+      // The service sums in SQL; the double mirrors a plain sum and a sum per
+      // sale or settlement id.
+      aggregate: async (args: { where: { distributorId: string } }) => ({
+        _sum: {
+          amountTnd: store.distributorLedgerEntries
+            .filter((entry) => entry.distributorId === args.where.distributorId)
+            .reduce((sum, entry) => sum + Number(entry.amountTnd), 0)
+            .toFixed(3),
+        },
+      }),
+      groupBy: async (args: {
+        by: string[];
+        where: {
+          distributorId: string;
+          saleId?: { in: string[] };
+          settlementId?: { in: string[] };
+        };
+      }) => {
+        const keyName = args.by[0] as "saleId" | "settlementId";
+        const allowed = args.where[keyName]?.in;
+        const groups = new Map<string, number>();
+        for (const entry of store.distributorLedgerEntries) {
+          const key = entry[keyName] as string | null | undefined;
+          if (
+            entry.distributorId !== args.where.distributorId ||
+            !key ||
+            (allowed && !allowed.includes(key))
+          ) {
+            continue;
+          }
+          groups.set(key, (groups.get(key) ?? 0) + Number(entry.amountTnd));
+        }
+        return [...groups.entries()].map(([key, total]) => ({
+          [keyName]: key,
+          _sum: { amountTnd: total.toFixed(3) },
+        }));
       },
     },
     inventoryMovement: {
