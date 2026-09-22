@@ -1,5 +1,6 @@
 import { ExpenseStatus, Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { postingTransactionOptions } from "../../shared/idempotency.js";
 import { sumOrZero } from "../../shared/ledger.js";
 import { normalizeName } from "../../shared/text.js";
@@ -35,6 +36,7 @@ export interface ExpenseActor {
 const dayMs = 24 * 60 * 60 * 1000;
 
 export interface ExpenseListParams {
+  sort?: SortSpec<"expenseDate" | "amountTnd">;
   categoryId?: string;
   status?: ExpenseStatus;
   from?: Date;
@@ -163,7 +165,18 @@ export class ExpensesService {
         include: {
           category: true,
         },
-        orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
+        orderBy: orderByFor<
+          "expenseDate" | "amountTnd",
+          Prisma.ExpenseOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            expenseDate: (direction) => [{ expenseDate: direction }],
+            amountTnd: (direction) => [{ amountTnd: direction }],
+          },
+          [{ expenseDate: "desc" }, { createdAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),

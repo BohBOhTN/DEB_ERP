@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { normalizeName } from "../../shared/text.js";
 
 // Re-exported so existing importers and tests keep working.
@@ -12,6 +14,7 @@ export interface CatalogActor {
 }
 
 export interface ListParams {
+  sort?: SortSpec<"name" | "createdAt">;
   search?: string;
   isActive?: boolean;
   page: number;
@@ -75,7 +78,18 @@ export class CatalogService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.unit.findMany({
         where,
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.UnitOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -187,7 +201,18 @@ export class CatalogService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.productCategory.findMany({
         where,
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.ProductCategoryOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -333,7 +358,18 @@ export class CatalogService {
             },
           },
         },
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.RawMaterialOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -623,7 +659,18 @@ export class CatalogService {
           category: true,
           baseUnit: true,
         },
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.ProductOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),

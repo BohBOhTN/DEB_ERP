@@ -5,6 +5,7 @@ import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import { okFor } from "../../shared/apiResponse.js";
+import { pageFields, sortField } from "../../shared/listQuery.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { SimulationService } from "./simulation.service.js";
 
@@ -46,8 +47,8 @@ const duplicateSchema = z.object({
 });
 
 const pageQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  sort: sortField(["updatedAt", "name"]),
+  ...pageFields,
 });
 
 export function simulationRouter(params: {

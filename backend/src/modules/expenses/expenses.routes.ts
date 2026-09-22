@@ -6,6 +6,11 @@ import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import { okFor } from "../../shared/apiResponse.js";
+import {
+  dateRangeFields,
+  pageFields,
+  sortField,
+} from "../../shared/listQuery.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { ExpensesService } from "./expenses.service.js";
 
@@ -34,17 +39,15 @@ const updateCategorySchema = z.object({
 });
 
 const expenseListQuerySchema = z.object({
+  sort: sortField(["expenseDate", "amountTnd"]),
   categoryId: z.string().trim().min(1).optional(),
   status: z.nativeEnum(ExpenseStatus).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...dateRangeFields,
+  ...pageFields,
 });
 
 const totalsQuerySchema = z.object({
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  ...dateRangeFields,
 });
 
 const createExpenseSchema = z.object({

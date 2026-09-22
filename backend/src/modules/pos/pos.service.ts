@@ -11,6 +11,7 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
 import { sumOrZero } from "../../shared/ledger.js";
 import { normalizeName } from "../../shared/text.js";
@@ -29,6 +30,7 @@ export interface SaleLineInput {
 }
 
 export interface PosProductListParams {
+  sort?: SortSpec<"name">;
   search?: string;
   page: number;
   pageSize: number;
@@ -109,7 +111,12 @@ export class PosService {
           baseUnit: true,
           category: true,
         },
-        orderBy: [{ name: "asc" }],
+        orderBy: orderByFor<"name", Prisma.ProductOrderByWithRelationInput>(
+          params.sort,
+          { name: (direction) => [{ name: direction }] },
+          [{ name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -147,7 +154,12 @@ export class PosService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.customer.findMany({
         where,
-        orderBy: [{ name: "asc" }],
+        orderBy: orderByFor<"name", Prisma.CustomerOrderByWithRelationInput>(
+          params.sort,
+          { name: (direction) => [{ name: direction }] },
+          [{ name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -159,6 +171,7 @@ export class PosService {
 
   /// Section 18: POS sales by date, customer, payment state, and cashier.
   public async listSales(params: {
+    sort?: SortSpec<"soldAt" | "totalTnd">;
     from?: Date;
     to?: Date;
     customerId?: string;
@@ -192,7 +205,18 @@ export class PosService {
         },
         // NFR-005: stable sort. The id breaks ties so paging cannot repeat or
         // skip a sale posted in the same millisecond as another.
-        orderBy: [{ soldAt: "desc" }, { id: "desc" }],
+        orderBy: orderByFor<
+          "soldAt" | "totalTnd",
+          Prisma.SaleOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            soldAt: (direction) => [{ soldAt: direction }],
+            totalTnd: (direction) => [{ totalTnd: direction }],
+          },
+          [{ soldAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),

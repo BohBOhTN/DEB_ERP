@@ -5,18 +5,24 @@ import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import { requirePermission } from "../access/permission.middleware.js";
 import { okFor } from "../../shared/apiResponse.js";
+import {
+  pageFields,
+  searchFields,
+  sortField,
+  withSearch,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { CatalogService } from "./catalog.service.js";
 
 const listQuerySchema = z.object({
-  search: z.string().trim().optional(),
+  sort: sortField(["name", "createdAt"]),
+  ...searchFields,
   isActive: z
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
 const createUnitSchema = z.object({
@@ -137,7 +143,7 @@ export function catalogRouter(params: {
     requirePermission("units.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const result = await params.catalogService.listUnits(query);
         response.json(okFor(response, { units: result }));
       } catch (error) {
@@ -186,7 +192,7 @@ export function catalogRouter(params: {
     requirePermission("categories.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const result = await params.catalogService.listCategories(query);
         response.json(okFor(response, { categories: result }));
       } catch (error) {
@@ -235,7 +241,7 @@ export function catalogRouter(params: {
     requirePermission("raw_materials.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const result = await params.catalogService.listRawMaterials(query);
         response.json(okFor(response, { rawMaterials: result }));
       } catch (error) {
@@ -322,7 +328,7 @@ export function catalogRouter(params: {
     requirePermission("products.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const result = await params.catalogService.listProducts(query);
         response.json(okFor(response, { products: result }));
       } catch (error) {

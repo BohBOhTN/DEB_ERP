@@ -10,6 +10,7 @@ import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
+import { pageFields, sortField } from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { OrdersService } from "./orders.service.js";
@@ -30,13 +31,13 @@ const orderLineSchema = z.object({
 });
 
 const listQuerySchema = z.object({
+  sort: sortField(["requestedFulfillmentAt", "createdAt", "totalTnd"]),
   status: z.nativeEnum(CustomerOrderStatus).optional(),
   customerId: z.string().trim().min(1).optional(),
   dueBefore: z.coerce.date().optional(),
   dueAfter: z.coerce.date().optional(),
   dueState: z.enum(["OVERDUE", "UPCOMING"]).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
 const createOrderSchema = z.object({

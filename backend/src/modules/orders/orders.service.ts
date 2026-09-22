@@ -13,6 +13,7 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import {
   runIdempotentCommand,
   postingTransactionOptions,
@@ -68,6 +69,7 @@ export interface OrderLineInput {
 }
 
 export interface OrderListParams {
+  sort?: SortSpec<"requestedFulfillmentAt" | "createdAt" | "totalTnd">;
   status?: CustomerOrderStatus;
   customerId?: string;
   dueBefore?: Date;
@@ -135,7 +137,21 @@ export class OrdersService {
           customer: true,
         },
         // NFR-005: stable sort, soonest due first.
-        orderBy: [{ requestedFulfillmentAt: "asc" }, { id: "asc" }],
+        orderBy: orderByFor<
+          "requestedFulfillmentAt" | "createdAt" | "totalTnd",
+          Prisma.CustomerOrderOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            requestedFulfillmentAt: (direction) => [
+              { requestedFulfillmentAt: direction },
+            ],
+            createdAt: (direction) => [{ createdAt: direction }],
+            totalTnd: (direction) => [{ totalTnd: direction }],
+          },
+          [{ requestedFulfillmentAt: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),

@@ -1,7 +1,9 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import type { SecurityAuditRecorder } from "../auth/auth.service.js";
 
 export interface AuditListParams {
+  sort?: SortSpec<"createdAt">;
   actorUserId?: string;
   action?: string;
   entity?: string;
@@ -72,7 +74,15 @@ export class AuditService implements SecurityAuditRecorder {
         },
         // NFR-005: a stable sort. Time alone is not unique enough under load,
         // so the id breaks ties and keeps pages from repeating or skipping.
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        orderBy: orderByFor<
+          "createdAt",
+          Prisma.AuditEventOrderByWithRelationInput
+        >(
+          params.sort,
+          { createdAt: (direction) => [{ createdAt: direction }] },
+          [{ createdAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),

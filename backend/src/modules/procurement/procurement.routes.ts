@@ -7,55 +7,59 @@ import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
+import {
+  dateRangeFields,
+  pageFields,
+  searchFields,
+  sortField,
+  withSearch,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { ProcurementService } from "./procurement.service.js";
 
 const listQuerySchema = z.object({
-  search: z.string().trim().optional(),
+  sort: sortField(["name", "createdAt"]),
+  ...searchFields,
   isActive: z
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
 const purchaseListQuerySchema = z.object({
+  sort: sortField(["purchaseDate", "totalTnd", "dueDate"]),
   supplierId: z.string().trim().min(1).optional(),
   status: z.nativeEnum(PurchaseStatus).optional(),
   paymentTerms: z.nativeEnum(PurchasePaymentTerms).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  ...dateRangeFields,
   dueState: z.enum(["OVERDUE", "UPCOMING"]).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
 const supplierBalanceQuerySchema = z.object({
   dueBefore: z.coerce.date().optional(),
-  search: z.string().trim().optional(),
+  ...searchFields,
   sort: z.enum(["name", "balance"]).optional(),
   minBalance: z
     .string()
     .trim()
     .regex(/^\d+(\.\d{1,3})?$/)
     .optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
 const statementQuerySchema = z.object({
   cursor: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  ...dateRangeFields,
 });
 
 const supplierPaymentListQuerySchema = z.object({
+  sort: sortField(["paidAt", "amountTnd"]),
   supplierId: z.string().trim().min(1).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
 const createSupplierSchema = z.object({
@@ -144,7 +148,7 @@ export function procurementRouter(params: {
     requirePermission("suppliers.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const result = await params.procurementService.listSuppliers(query);
         response.json(okFor(response, { suppliers: result }));
       } catch (error) {
@@ -264,7 +268,9 @@ export function procurementRouter(params: {
     requirePermission("supplier_balances.view"),
     async (request, response, next) => {
       try {
-        const query = supplierBalanceQuerySchema.parse(request.query);
+        const query = withSearch(
+          supplierBalanceQuerySchema.parse(request.query),
+        );
         const result =
           await params.procurementService.listSupplierBalances(query);
         response.json(okFor(response, { supplierBalances: result }));

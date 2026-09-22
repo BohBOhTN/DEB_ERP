@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { postingTransactionOptions } from "../../shared/idempotency.js";
 
 export interface SimulationActor {
@@ -42,11 +43,26 @@ const simulationInclude = {
 export class SimulationService {
   public constructor(private readonly prisma: PrismaClient) {}
 
-  public async listSimulations(params: { page: number; pageSize: number }) {
+  public async listSimulations(params: {
+    page: number;
+    pageSize: number;
+    sort?: SortSpec<"updatedAt" | "name">;
+  }) {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.costSimulation.findMany({
         include: simulationInclude,
-        orderBy: [{ updatedAt: "desc" }],
+        orderBy: orderByFor<
+          "updatedAt" | "name",
+          Prisma.CostSimulationOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            updatedAt: (direction) => [{ updatedAt: direction }],
+            name: (direction) => [{ name: direction }],
+          },
+          [{ updatedAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),

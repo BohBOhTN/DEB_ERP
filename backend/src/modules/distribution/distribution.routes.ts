@@ -7,18 +7,25 @@ import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
+import {
+  dateRangeFields,
+  pageFields,
+  searchFields,
+  sortField,
+  withSearch,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { DistributionService } from "./distribution.service.js";
 
 const listQuerySchema = z.object({
-  search: z.string().trim().optional(),
+  sort: sortField(["name", "createdAt"]),
+  ...searchFields,
   isActive: z
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
 const createDistributorSchema = z.object({
@@ -56,19 +63,18 @@ const directSaleSchema = z.object({
 });
 
 const dispatchListQuerySchema = z.object({
+  sort: sortField(["dispatchedAt"]),
   distributorId: z.string().trim().min(1).optional(),
   status: z.nativeEnum(DistributorDispatchStatus).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
 const settlementListQuerySchema = z.object({
+  sort: sortField(["settledAt", "totalTnd"]),
   distributorId: z.string().trim().min(1).optional(),
   dispatchId: z.string().trim().min(1).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...dateRangeFields,
+  ...pageFields,
 });
 
 const custodyQuerySchema = z.object({
@@ -108,16 +114,16 @@ const settlementSchema = z.object({
 });
 
 const pageQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
 const paymentListQuerySchema = pageQuerySchema.extend({
+  sort: sortField(["paidAt", "amountTnd"]),
   distributorId: z.string().trim().min(1).optional(),
 });
 
 const balanceListQuerySchema = pageQuerySchema.extend({
-  search: z.string().trim().optional(),
+  ...searchFields,
   sort: z.enum(["name", "balance"]).optional(),
   minBalance: z
     .string()
@@ -129,8 +135,7 @@ const balanceListQuerySchema = pageQuerySchema.extend({
 const statementQuerySchema = z.object({
   cursor: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  ...dateRangeFields,
 });
 
 const createPaymentSchema = z.object({
@@ -178,7 +183,7 @@ export function distributionRouter(params: {
     requirePermission("distributors.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const distributors =
           await params.distributionService.listDistributors(query);
         response.json(okFor(response, { distributors }));
@@ -347,7 +352,7 @@ export function distributionRouter(params: {
     requirePermission("distribution.balances.view"),
     async (request, response, next) => {
       try {
-        const query = balanceListQuerySchema.parse(request.query);
+        const query = withSearch(balanceListQuerySchema.parse(request.query));
         const distributorBalances =
           await params.distributionService.listDistributorBalances(query);
         response.json(okFor(response, { distributorBalances }));

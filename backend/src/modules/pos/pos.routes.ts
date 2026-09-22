@@ -10,6 +10,13 @@ import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
+import {
+  dateRangeFields,
+  pageFields,
+  searchFields,
+  sortField,
+  withSearch,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { PosService } from "./pos.service.js";
@@ -25,20 +32,19 @@ const quantity = z
   .regex(/^\d+(\.\d{1,6})?$/);
 
 const listQuerySchema = z.object({
-  search: z.string().trim().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  sort: sortField(["name"]),
+  ...searchFields,
+  ...pageFields,
 });
 
 const saleListQuerySchema = z.object({
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  sort: sortField(["soldAt", "totalTnd"]),
+  ...dateRangeFields,
   customerId: z.string().trim().min(1).optional(),
   paymentState: z.nativeEnum(SalePaymentState).optional(),
   cashierUserId: z.string().trim().min(1).optional(),
   sessionId: z.string().trim().min(1).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
 const openSessionSchema = z.object({
@@ -86,7 +92,7 @@ export function posRouter(params: {
     requirePermission("pos.access"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const products = await params.posService.listProducts(query);
         response.json(okFor(response, { products }));
       } catch (error) {
@@ -102,7 +108,7 @@ export function posRouter(params: {
     requireAnyPermission(["pos.credit_sale", "orders.create"]),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const customers = await params.posService.listCustomers(query);
         response.json(okFor(response, { customers }));
       } catch (error) {

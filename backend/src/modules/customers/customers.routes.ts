@@ -6,26 +6,33 @@ import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
+import {
+  dateRangeFields,
+  pageFields,
+  searchFields,
+  sortField,
+  withSearch,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { CustomersService } from "./customers.service.js";
 
 const listQuerySchema = z.object({
-  search: z.string().trim().optional(),
+  sort: sortField(["name", "createdAt"]),
+  ...searchFields,
   isActive: z
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
 const pageQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
 const paymentListQuerySchema = pageQuerySchema.extend({
+  sort: sortField(["paidAt", "amountTnd"]),
   customerId: z.string().trim().min(1).optional(),
 });
 
@@ -35,7 +42,7 @@ const moneyTnd = z
   .regex(/^\d+(\.\d{1,3})?$/);
 
 const balanceListQuerySchema = pageQuerySchema.extend({
-  search: z.string().trim().optional(),
+  ...searchFields,
   sort: z.enum(["name", "balance"]).optional(),
   minBalance: moneyTnd.optional(),
 });
@@ -43,8 +50,7 @@ const balanceListQuerySchema = pageQuerySchema.extend({
 const statementQuerySchema = z.object({
   cursor: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  ...dateRangeFields,
 });
 
 const createCustomerSchema = z.object({
@@ -100,7 +106,7 @@ export function customersRouter(params: {
     requirePermission("customers.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const customers = await params.customersService.listCustomers(query);
         response.json(okFor(response, { customers }));
       } catch (error) {
@@ -149,7 +155,7 @@ export function customersRouter(params: {
     requirePermission("customer_balances.view"),
     async (request, response, next) => {
       try {
-        const query = balanceListQuerySchema.parse(request.query);
+        const query = withSearch(balanceListQuerySchema.parse(request.query));
         const customerBalances =
           await params.customersService.listCustomerBalances(query);
         response.json(okFor(response, { customerBalances }));

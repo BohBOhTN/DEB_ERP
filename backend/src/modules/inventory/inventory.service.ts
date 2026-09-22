@@ -5,6 +5,7 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
 
 export interface InventoryActor {
@@ -13,6 +14,7 @@ export interface InventoryActor {
 }
 
 export interface InventoryListParams {
+  sort?: SortSpec<"occurredAt">;
   page: number;
   pageSize: number;
 }
@@ -50,7 +52,15 @@ export class InventoryService {
       // Item and unit names are snapshotted on the row, so no join is needed
       // to render the list.
       this.prisma.inventoryMovement.findMany({
-        orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
+        orderBy: orderByFor<
+          "occurredAt",
+          Prisma.InventoryMovementOrderByWithRelationInput
+        >(
+          params.sort,
+          { occurredAt: (direction) => [{ occurredAt: direction }] },
+          [{ occurredAt: "desc" }, { createdAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
