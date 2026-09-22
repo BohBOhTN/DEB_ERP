@@ -1,5 +1,4 @@
 import { createRequire } from "node:module";
-import { PrismaClient } from "@prisma/client";
 import { createApp } from "./app.js";
 import { env } from "./config/env.js";
 import { AccessService } from "./modules/access/access.service.js";
@@ -22,6 +21,7 @@ import { ProcurementService } from "./modules/procurement/procurement.service.js
 import { SimulationService } from "./modules/simulation/simulation.service.js";
 import { scheduleCleanup } from "./jobs/cleanup.js";
 import { createLogger } from "./shared/logger.js";
+import { createPrismaClient } from "./shared/prisma.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -45,7 +45,10 @@ process.on("uncaughtException", (error) => {
   process.exit(1);
 });
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient({
+  logger,
+  slowQueryMs: env.SLOW_QUERY_MS,
+});
 const permissionCache = new PermissionCache(env.PERMISSION_CACHE_TTL_MS);
 const accessService = new AccessService(prisma, permissionCache);
 const auditService = new AuditService(prisma);

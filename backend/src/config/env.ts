@@ -34,6 +34,8 @@ const envSchema = z.object({
   /// which build is running.
   GIT_SHA: z.string().optional(),
   IDEMPOTENCY_TTL_DAYS: z.coerce.number().int().positive().default(7),
+  /// Queries at or above this duration are logged as slow.
+  SLOW_QUERY_MS: z.coerce.number().int().positive().default(200),
   /// Effective permissions are cached in memory this long; every access
   /// mutation invalidates the cache immediately, so this only bounds staleness
   /// across instances.
