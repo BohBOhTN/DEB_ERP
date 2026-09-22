@@ -16,38 +16,38 @@ import type { SessionCookieConfig } from "../auth/cookies.js";
 import type { AccessService } from "./access.service.js";
 import { requirePermission } from "./permission.middleware.js";
 
-const createRoleSchema = z.object({
+export const createRoleSchema = z.object({
   name: z.string().trim().min(1),
   description: z.string().optional(),
   permissionKeys: z.array(z.string()).default([]),
 });
 
-const updateRoleSchema = z.object({
+export const updateRoleSchema = z.object({
   name: z.string().trim().min(1).optional(),
   description: z.string().optional(),
   isActive: z.boolean().optional(),
 });
 
-const replacePermissionsSchema = z.object({
+export const replacePermissionsSchema = z.object({
   permissionKeys: z.array(z.string()),
 });
 
-const replaceUserRolesSchema = z.object({
+export const replaceUserRolesSchema = z.object({
   roleIds: z.array(z.string()),
 });
 
-const createUserSchema = z.object({
+export const createUserSchema = z.object({
   email: z.string().email(),
   displayName: z.string().trim().min(1),
   password: z.string().min(8),
   roleIds: z.array(z.string()).default([]),
 });
 
-const userActivationSchema = z.object({
+export const userActivationSchema = z.object({
   isActive: z.boolean(),
 });
 
-const userListQuerySchema = z.object({
+export const userListQuerySchema = z.object({
   ...pageFields,
   ...searchFields,
   sort: sortField(["displayName", "email", "createdAt"]),
@@ -58,7 +58,7 @@ const userListQuerySchema = z.object({
   roleId: z.string().trim().min(1).optional(),
 });
 
-const updateUserSchema = z
+export const updateUserSchema = z
   .object({
     displayName: z.string().trim().min(1).optional(),
     email: z.string().email().optional(),
@@ -69,7 +69,7 @@ const updateUserSchema = z
     { message: "Aucune modification fournie." },
   );
 
-const passwordResetSchema = z.object({
+export const passwordResetSchema = z.object({
   password: z.string().min(8),
 });
 

@@ -31,13 +31,13 @@ const quantity = z
   .trim()
   .regex(/^\d+(\.\d{1,6})?$/);
 
-const listQuerySchema = z.object({
+export const listQuerySchema = z.object({
   sort: sortField(["name"]),
   ...searchFields,
   ...pageFields,
 });
 
-const saleListQuerySchema = z.object({
+export const saleListQuerySchema = z.object({
   sort: sortField(["soldAt", "totalTnd"]),
   ...dateRangeFields,
   customerId: z.string().trim().min(1).optional(),
@@ -47,7 +47,7 @@ const saleListQuerySchema = z.object({
   ...pageFields,
 });
 
-const sessionListQuerySchema = z.object({
+export const sessionListQuerySchema = z.object({
   ...pageFields,
   ...dateRangeFields,
   status: z.nativeEnum(PosSessionStatus).optional(),
@@ -55,19 +55,19 @@ const sessionListQuerySchema = z.object({
   sort: sortField(["openedAt"]),
 });
 
-const openSessionSchema = z.object({
+export const openSessionSchema = z.object({
   openingCashTnd: moneyTnd,
   openedAt: z.coerce.date().default(() => new Date()),
   notes: z.string().optional(),
 });
 
-const closeSessionSchema = z.object({
+export const closeSessionSchema = z.object({
   countedCashTnd: moneyTnd,
   closedAt: z.coerce.date().default(() => new Date()),
   notes: z.string().optional(),
 });
 
-const postSaleSchema = z.object({
+export const postSaleSchema = z.object({
   sessionId: z.string().trim().min(1).optional(),
   customerId: z.string().trim().min(1).optional(),
   paidAmountTnd: moneyTnd.optional(),

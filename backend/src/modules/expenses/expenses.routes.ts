@@ -19,26 +19,26 @@ const moneyTnd = z
   .trim()
   .regex(/^\d+(\.\d{1,3})?$/);
 
-const categoryListQuerySchema = z.object({
+export const categoryListQuerySchema = z.object({
   isActive: z
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
 });
 
-const createCategorySchema = z.object({
+export const createCategorySchema = z.object({
   name: z.string().trim().min(1),
   description: z.string().optional(),
 });
 
-const updateCategorySchema = z.object({
+export const updateCategorySchema = z.object({
   version: z.number().int().positive(),
   name: z.string().trim().min(1).optional(),
   description: z.string().optional(),
   isActive: z.boolean().optional(),
 });
 
-const expenseListQuerySchema = z.object({
+export const expenseListQuerySchema = z.object({
   sort: sortField(["expenseDate", "amountTnd"]),
   categoryId: z.string().trim().min(1).optional(),
   status: z.nativeEnum(ExpenseStatus).optional(),
@@ -46,11 +46,11 @@ const expenseListQuerySchema = z.object({
   ...pageFields,
 });
 
-const totalsQuerySchema = z.object({
+export const totalsQuerySchema = z.object({
   ...dateRangeFields,
 });
 
-const createExpenseSchema = z.object({
+export const createExpenseSchema = z.object({
   categoryId: z.string().trim().min(1),
   expenseDate: z.coerce.date(),
   amountTnd: moneyTnd,
@@ -61,7 +61,7 @@ const createExpenseSchema = z.object({
   post: z.boolean().optional(),
 });
 
-const updateExpenseSchema = z.object({
+export const updateExpenseSchema = z.object({
   version: z.number().int().positive(),
   categoryId: z.string().trim().min(1).optional(),
   expenseDate: z.coerce.date().optional(),
@@ -71,12 +71,12 @@ const updateExpenseSchema = z.object({
   notes: z.string().optional(),
 });
 
-const postExpenseSchema = z.object({
+export const postExpenseSchema = z.object({
   version: z.number().int().positive(),
   postedAt: z.coerce.date(),
 });
 
-const cancelExpenseSchema = z.object({
+export const cancelExpenseSchema = z.object({
   version: z.number().int().positive(),
   cancelledAt: z.coerce.date(),
   reason: z.string().trim().min(1),

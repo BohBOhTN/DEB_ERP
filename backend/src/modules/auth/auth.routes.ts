@@ -10,7 +10,7 @@ import {
 } from "./cookies.js";
 import { createRateLimiter } from "./rateLimit.js";
 
-const loginSchema = z.object({
+export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });

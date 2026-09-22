@@ -18,7 +18,7 @@ import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { DistributionService } from "./distribution.service.js";
 
-const listQuerySchema = z.object({
+export const listQuerySchema = z.object({
   sort: sortField(["name", "createdAt"]),
   ...searchFields,
   isActive: z
@@ -28,7 +28,7 @@ const listQuerySchema = z.object({
   ...pageFields,
 });
 
-const createDistributorSchema = z.object({
+export const createDistributorSchema = z.object({
   name: z.string().trim().min(1),
   phone: z.string().optional(),
   address: z.string().optional(),
@@ -46,7 +46,7 @@ const quantity = z
   .trim()
   .regex(/^\d+(\.\d{1,6})?$/);
 
-const directSaleSchema = z.object({
+export const directSaleSchema = z.object({
   distributorId: z.string().trim().min(1),
   soldAt: z.coerce.date(),
   paidAmountTnd: moneyTnd.optional(),
@@ -62,14 +62,14 @@ const directSaleSchema = z.object({
     .min(1),
 });
 
-const dispatchListQuerySchema = z.object({
+export const dispatchListQuerySchema = z.object({
   sort: sortField(["dispatchedAt"]),
   distributorId: z.string().trim().min(1).optional(),
   status: z.nativeEnum(DistributorDispatchStatus).optional(),
   ...pageFields,
 });
 
-const settlementListQuerySchema = z.object({
+export const settlementListQuerySchema = z.object({
   sort: sortField(["settledAt", "totalTnd"]),
   distributorId: z.string().trim().min(1).optional(),
   dispatchId: z.string().trim().min(1).optional(),
@@ -77,11 +77,11 @@ const settlementListQuerySchema = z.object({
   ...pageFields,
 });
 
-const custodyQuerySchema = z.object({
+export const custodyQuerySchema = z.object({
   distributorId: z.string().trim().min(1).optional(),
 });
 
-const dispatchSchema = z.object({
+export const dispatchSchema = z.object({
   distributorId: z.string().trim().min(1),
   dispatchedAt: z.coerce.date(),
   notes: z.string().optional(),
@@ -95,7 +95,7 @@ const dispatchSchema = z.object({
     .min(1),
 });
 
-const settlementSchema = z.object({
+export const settlementSchema = z.object({
   dispatchId: z.string().trim().min(1),
   settledAt: z.coerce.date(),
   paidAmountTnd: moneyTnd.optional(),
@@ -113,16 +113,16 @@ const settlementSchema = z.object({
     .min(1),
 });
 
-const pageQuerySchema = z.object({
+export const pageQuerySchema = z.object({
   ...pageFields,
 });
 
-const paymentListQuerySchema = pageQuerySchema.extend({
+export const paymentListQuerySchema = pageQuerySchema.extend({
   sort: sortField(["paidAt", "amountTnd"]),
   distributorId: z.string().trim().min(1).optional(),
 });
 
-const balanceListQuerySchema = pageQuerySchema.extend({
+export const balanceListQuerySchema = pageQuerySchema.extend({
   ...searchFields,
   sort: z.enum(["name", "balance"]).optional(),
   minBalance: z
@@ -132,13 +132,13 @@ const balanceListQuerySchema = pageQuerySchema.extend({
     .optional(),
 });
 
-const statementQuerySchema = z.object({
+export const statementQuerySchema = z.object({
   cursor: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
   ...dateRangeFields,
 });
 
-const createPaymentSchema = z.object({
+export const createPaymentSchema = z.object({
   distributorId: z.string().trim().min(1),
   paidAt: z.coerce.date(),
   amountTnd: moneyTnd,
@@ -155,7 +155,7 @@ const createPaymentSchema = z.object({
     .default([]),
 });
 
-const updateDistributorSchema = z.object({
+export const updateDistributorSchema = z.object({
   version: z.number().int().positive(),
   name: z.string().trim().min(1).optional(),
   phone: z.string().optional(),

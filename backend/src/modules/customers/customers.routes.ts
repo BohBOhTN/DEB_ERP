@@ -17,7 +17,7 @@ import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { CustomersService } from "./customers.service.js";
 
-const listQuerySchema = z.object({
+export const listQuerySchema = z.object({
   sort: sortField(["name", "createdAt"]),
   ...searchFields,
   isActive: z
@@ -27,11 +27,11 @@ const listQuerySchema = z.object({
   ...pageFields,
 });
 
-const pageQuerySchema = z.object({
+export const pageQuerySchema = z.object({
   ...pageFields,
 });
 
-const paymentListQuerySchema = pageQuerySchema.extend({
+export const paymentListQuerySchema = pageQuerySchema.extend({
   sort: sortField(["paidAt", "amountTnd"]),
   customerId: z.string().trim().min(1).optional(),
 });
@@ -41,19 +41,19 @@ const moneyTnd = z
   .trim()
   .regex(/^\d+(\.\d{1,3})?$/);
 
-const balanceListQuerySchema = pageQuerySchema.extend({
+export const balanceListQuerySchema = pageQuerySchema.extend({
   ...searchFields,
   sort: z.enum(["name", "balance"]).optional(),
   minBalance: moneyTnd.optional(),
 });
 
-const statementQuerySchema = z.object({
+export const statementQuerySchema = z.object({
   cursor: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
   ...dateRangeFields,
 });
 
-const createCustomerSchema = z.object({
+export const createCustomerSchema = z.object({
   name: z.string().trim().min(1),
   phone: z.string().optional(),
   address: z.string().optional(),
@@ -61,7 +61,7 @@ const createCustomerSchema = z.object({
   notes: z.string().optional(),
 });
 
-const updateCustomerSchema = z.object({
+export const updateCustomerSchema = z.object({
   version: z.number().int().positive(),
   name: z.string().trim().min(1).optional(),
   phone: z.string().optional(),
@@ -71,7 +71,7 @@ const updateCustomerSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-const createCustomerPaymentSchema = z.object({
+export const createCustomerPaymentSchema = z.object({
   customerId: z.string().trim().min(1),
   paidAt: z.coerce.date(),
   amountTnd: moneyTnd,

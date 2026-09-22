@@ -20,7 +20,7 @@ import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { InventoryService } from "./inventory.service.js";
 
-const listQuerySchema = z.object({
+export const listQuerySchema = z.object({
   itemType: z.nativeEnum(InventoryItemType).optional(),
   itemId: z.string().trim().min(1).optional(),
   movementType: z.nativeEnum(InventoryMovementType).optional(),
@@ -30,20 +30,20 @@ const listQuerySchema = z.object({
   ...pageFields,
 });
 
-const inventoryCommandSchema = z.object({
+export const inventoryCommandSchema = z.object({
   itemType: z.nativeEnum(InventoryItemType),
   itemId: z.string().trim().min(1),
   reason: z.string().trim().min(3),
 });
 
-const openingStockSchema = inventoryCommandSchema.extend({
+export const openingStockSchema = inventoryCommandSchema.extend({
   quantity: z
     .string()
     .trim()
     .regex(/^\d+(\.\d{1,6})?$/),
 });
 
-const adjustmentSchema = inventoryCommandSchema.extend({
+export const adjustmentSchema = inventoryCommandSchema.extend({
   quantityDelta: z
     .string()
     .trim()

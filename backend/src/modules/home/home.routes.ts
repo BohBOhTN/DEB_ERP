@@ -7,7 +7,7 @@ import type { SessionCookieConfig } from "../auth/cookies.js";
 import { okFor } from "../../shared/apiResponse.js";
 import type { HomeService } from "./home.service.js";
 
-const summaryQuerySchema = z.object({
+export const summaryQuerySchema = z.object({
   date: z
     .string()
     .trim()

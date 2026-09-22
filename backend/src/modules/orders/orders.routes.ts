@@ -25,12 +25,12 @@ const quantity = z
   .trim()
   .regex(/^\d+(\.\d{1,6})?$/);
 
-const orderLineSchema = z.object({
+export const orderLineSchema = z.object({
   productId: z.string().trim().min(1),
   quantity,
 });
 
-const listQuerySchema = z.object({
+export const listQuerySchema = z.object({
   sort: sortField(["requestedFulfillmentAt", "createdAt", "totalTnd"]),
   status: z.nativeEnum(CustomerOrderStatus).optional(),
   customerId: z.string().trim().min(1).optional(),
@@ -40,14 +40,14 @@ const listQuerySchema = z.object({
   ...pageFields,
 });
 
-const createOrderSchema = z.object({
+export const createOrderSchema = z.object({
   customerId: z.string().trim().min(1),
   requestedFulfillmentAt: z.coerce.date(),
   notes: z.string().optional(),
   lines: z.array(orderLineSchema).min(1),
 });
 
-const updateOrderSchema = z.object({
+export const updateOrderSchema = z.object({
   version: z.number().int().positive(),
   requestedFulfillmentAt: z.coerce.date().optional(),
   notes: z.string().optional(),
@@ -56,7 +56,7 @@ const updateOrderSchema = z.object({
 
 /// COMPLETED and CANCELLED are reachable only through their own commands,
 /// which carry the stock, revenue and money effects.
-const changeStatusSchema = z.object({
+export const changeStatusSchema = z.object({
   version: z.number().int().positive(),
   status: z.enum([
     CustomerOrderStatus.CONFIRMED,
@@ -65,18 +65,18 @@ const changeStatusSchema = z.object({
   ]),
 });
 
-const advanceSchema = z.object({
+export const advanceSchema = z.object({
   amountTnd: moneyTnd,
   paidAt: z.coerce.date(),
   notes: z.string().optional(),
 });
 
-const completeOrderSchema = z.object({
+export const completeOrderSchema = z.object({
   completedAt: z.coerce.date(),
   paidAmountTnd: moneyTnd.optional(),
 });
 
-const cancelOrderSchema = z.object({
+export const cancelOrderSchema = z.object({
   cancelledAt: z.coerce.date(),
   reason: z.string().trim().min(1),
   advanceDisposition: z.nativeEnum(CustomerOrderAdvanceDisposition).optional(),

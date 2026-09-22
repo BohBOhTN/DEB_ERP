@@ -18,7 +18,7 @@ import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { ProcurementService } from "./procurement.service.js";
 
-const listQuerySchema = z.object({
+export const listQuerySchema = z.object({
   sort: sortField(["name", "createdAt"]),
   ...searchFields,
   isActive: z
@@ -28,7 +28,7 @@ const listQuerySchema = z.object({
   ...pageFields,
 });
 
-const purchaseListQuerySchema = z.object({
+export const purchaseListQuerySchema = z.object({
   sort: sortField(["purchaseDate", "totalTnd", "dueDate"]),
   supplierId: z.string().trim().min(1).optional(),
   status: z.nativeEnum(PurchaseStatus).optional(),
@@ -38,7 +38,7 @@ const purchaseListQuerySchema = z.object({
   ...pageFields,
 });
 
-const supplierBalanceQuerySchema = z.object({
+export const supplierBalanceQuerySchema = z.object({
   dueBefore: z.coerce.date().optional(),
   ...searchFields,
   sort: z.enum(["name", "balance"]).optional(),
@@ -50,19 +50,19 @@ const supplierBalanceQuerySchema = z.object({
   ...pageFields,
 });
 
-const statementQuerySchema = z.object({
+export const statementQuerySchema = z.object({
   cursor: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
   ...dateRangeFields,
 });
 
-const supplierPaymentListQuerySchema = z.object({
+export const supplierPaymentListQuerySchema = z.object({
   sort: sortField(["paidAt", "amountTnd"]),
   supplierId: z.string().trim().min(1).optional(),
   ...pageFields,
 });
 
-const createSupplierSchema = z.object({
+export const createSupplierSchema = z.object({
   name: z.string().trim().min(1),
   phone: z.string().optional(),
   address: z.string().optional(),
@@ -70,7 +70,7 @@ const createSupplierSchema = z.object({
   notes: z.string().optional(),
 });
 
-const updateSupplierSchema = z.object({
+export const updateSupplierSchema = z.object({
   version: z.number().int().positive(),
   name: z.string().trim().min(1).optional(),
   phone: z.string().optional(),
@@ -90,7 +90,7 @@ const moneyTnd = z
   .trim()
   .regex(/^\d+(\.\d{1,3})?$/);
 
-const createPurchaseSchema = z.object({
+export const createPurchaseSchema = z.object({
   supplierId: z.string().trim().min(1),
   purchaseDate: z.coerce.date(),
   supplierReference: z.string().optional(),
@@ -110,11 +110,11 @@ const createPurchaseSchema = z.object({
     .min(1),
 });
 
-const cancelPurchaseSchema = z.object({
+export const cancelPurchaseSchema = z.object({
   reason: z.string().trim().min(3),
 });
 
-const createSupplierPaymentSchema = z.object({
+export const createSupplierPaymentSchema = z.object({
   supplierId: z.string().trim().min(1),
   paidAt: z.coerce.date(),
   amountTnd: moneyTnd,

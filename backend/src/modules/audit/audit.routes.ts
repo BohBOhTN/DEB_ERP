@@ -12,7 +12,7 @@ import {
 } from "../../shared/listQuery.js";
 import type { AuditService } from "./audit.service.js";
 
-const listQuerySchema = z.object({
+export const listQuerySchema = z.object({
   sort: sortField(["createdAt"]),
   actorUserId: z.string().trim().min(1).optional(),
   action: z.string().trim().min(1).optional(),

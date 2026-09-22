@@ -19,7 +19,7 @@ const quantity = z
   .trim()
   .regex(/^\d+(\.\d{1,6})?$/);
 
-const ingredientSchema = z.object({
+export const ingredientSchema = z.object({
   rawMaterialId: z.string().trim().min(1).optional(),
   ingredientName: z.string().trim().min(1).optional(),
   enteredQuantity: quantity,
@@ -29,7 +29,7 @@ const ingredientSchema = z.object({
   conversionFactorToBase: quantity.optional(),
 });
 
-const simulationBodySchema = z.object({
+export const simulationBodySchema = z.object({
   name: z.string().trim().min(1),
   targetProductId: z.string().trim().min(1).optional(),
   outputQuantity: quantity,
@@ -38,15 +38,15 @@ const simulationBodySchema = z.object({
   ingredients: z.array(ingredientSchema).min(1),
 });
 
-const updateSimulationSchema = simulationBodySchema.extend({
+export const updateSimulationSchema = simulationBodySchema.extend({
   version: z.number().int().positive(),
 });
 
-const duplicateSchema = z.object({
+export const duplicateSchema = z.object({
   name: z.string().trim().min(1).optional(),
 });
 
-const pageQuerySchema = z.object({
+export const pageQuerySchema = z.object({
   sort: sortField(["updatedAt", "name"]),
   ...pageFields,
 });
