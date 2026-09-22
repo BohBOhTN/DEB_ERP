@@ -287,6 +287,38 @@ describe("PosService", () => {
       cashDifferenceTnd: "5.000",
     });
   });
+
+  it("counts order advances and refunds in expected closing cash", async () => {
+    const prisma = new PosPrismaDouble();
+    const service = new PosService(prisma as unknown as PrismaClient);
+    await service.openSession(
+      {
+        idempotencyKey: "open-1",
+        openingCashTnd: "20.000",
+        openedAt: new Date("2026-09-21T08:00:00.000Z"),
+      },
+      { actorUserId: "user-1" },
+    );
+    prisma.store.customerOrderAdvances.push(
+      { sessionId: "session-1", movement: "RECEIPT", amountTnd: "10.000" },
+      { sessionId: "session-1", movement: "REFUND", amountTnd: "4.000" },
+    );
+
+    const result = await service.closeSession(
+      "session-1",
+      {
+        idempotencyKey: "close-1",
+        countedCashTnd: "26.000",
+        closedAt: new Date("2026-09-21T12:00:00.000Z"),
+      },
+      { actorUserId: "user-1" },
+    );
+
+    expect(result.session).toMatchObject({
+      expectedCashTnd: "26.000",
+      cashDifferenceTnd: "0.000",
+    });
+  });
 });
 
 interface PosStore {
@@ -311,6 +343,7 @@ interface PosStore {
   sales: Array<Record<string, unknown>>;
   saleLines: Array<Record<string, unknown>>;
   salePayments: Array<Record<string, unknown>>;
+  customerOrderAdvances: Array<Record<string, unknown>>;
   customerLedgerEntries: Array<Record<string, unknown>>;
   inventoryMovements: Array<Record<string, unknown>>;
   auditEvents: Array<Record<string, unknown>>;
@@ -376,6 +409,7 @@ function createStore(): PosStore {
     sales: [],
     saleLines: [],
     salePayments: [],
+    customerOrderAdvances: [],
     customerLedgerEntries: [],
     inventoryMovements: [],
     auditEvents: [],
@@ -451,6 +485,12 @@ function makeTransactionClient(store: PosStore) {
         Object.assign(session, args.data);
         return withTerminal(store, session);
       },
+    },
+    customerOrderAdvance: {
+      findMany: async (args: { where: { sessionId: string } }) =>
+        store.customerOrderAdvances.filter(
+          (advance) => advance.sessionId === args.where.sessionId,
+        ),
     },
     salePayment: {
       findMany: async (args: { where: { sessionId: string } }) =>

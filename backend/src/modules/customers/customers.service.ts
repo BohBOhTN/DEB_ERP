@@ -1,4 +1,5 @@
 import {
+  CustomerLedgerBalanceKind,
   CustomerLedgerEntryType,
   Prisma,
   SaleStatus,
@@ -211,12 +212,11 @@ export class CustomersService {
 
     return paginated(
       customers.map((customer) => {
-        const balance = sumDecimals(
-          ledgerEntries
-            .filter((entry) => entry.customerId === customer.id)
-            .map((entry) => new Prisma.Decimal(entry.amountTnd)),
-          3,
+        const customerEntries = ledgerEntries.filter(
+          (entry) => entry.customerId === customer.id,
         );
+        const balance = sumEntryAmounts(receivableEntries(customerEntries));
+        const advanceBalance = sumEntryAmounts(advanceEntries(customerEntries));
         const openSales = sales
           .filter((sale) => sale.customerId === customer.id)
           .map((sale) => {
@@ -233,6 +233,7 @@ export class CustomersService {
         return {
           customer,
           balanceTnd: balance.toFixed(3),
+          advanceBalanceTnd: advanceBalance.toFixed(3),
           openSaleCount: openSales.length,
           openSales,
         };
@@ -244,50 +245,62 @@ export class CustomersService {
 
   public async getCustomerStatement(customerId: string) {
     const customer = await this.findCustomerOrThrow(customerId);
-    const [ledgerEntries, payments, sales] = await this.prisma.$transaction([
-      this.prisma.customerLedgerEntry.findMany({
-        where: {
-          customerId,
-        },
-        include: {
-          sale: true,
-          payment: true,
-        },
-        orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
-      }),
-      this.prisma.customerPayment.findMany({
-        where: {
-          customerId,
-        },
-        include: {
-          allocations: true,
-        },
-        orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
-      }),
-      this.prisma.sale.findMany({
-        where: {
-          customerId,
-          status: SaleStatus.POSTED,
-        },
-        include: {
-          lines: true,
-          payments: true,
-        },
-        orderBy: [{ soldAt: "desc" }, { createdAt: "desc" }],
-      }),
-    ]);
-    const balance = sumDecimals(
-      ledgerEntries.map((entry) => new Prisma.Decimal(entry.amountTnd)),
-      3,
-    );
+    const [ledgerEntries, payments, sales, orders] =
+      await this.prisma.$transaction([
+        this.prisma.customerLedgerEntry.findMany({
+          where: {
+            customerId,
+          },
+          include: {
+            sale: true,
+            payment: true,
+            order: true,
+          },
+          orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
+        }),
+        this.prisma.customerPayment.findMany({
+          where: {
+            customerId,
+          },
+          include: {
+            allocations: true,
+          },
+          orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+        }),
+        this.prisma.sale.findMany({
+          where: {
+            customerId,
+            status: SaleStatus.POSTED,
+          },
+          include: {
+            lines: true,
+            payments: true,
+          },
+          orderBy: [{ soldAt: "desc" }, { createdAt: "desc" }],
+        }),
+        this.prisma.customerOrder.findMany({
+          where: {
+            customerId,
+          },
+          include: {
+            lines: true,
+            advances: true,
+          },
+          orderBy: [{ requestedFulfillmentAt: "desc" }, { createdAt: "desc" }],
+        }),
+      ]);
+    const balance = sumEntryAmounts(receivableEntries(ledgerEntries));
+    const advanceBalance = sumEntryAmounts(advanceEntries(ledgerEntries));
 
     return {
       customer,
       balanceTnd: balance.toFixed(3),
+      advanceBalanceTnd: advanceBalance.toFixed(3),
       sales: sales.map((sale) => ({
         ...sale,
         balanceTnd: saleBalanceFromEntries(sale.id, ledgerEntries).toFixed(3),
       })),
+      orders,
       ledgerEntries,
       payments,
     };
@@ -358,12 +371,10 @@ export class CustomersService {
         const ledgerEntries = await tx.customerLedgerEntry.findMany({
           where: {
             customerId: params.customerId,
+            balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
           },
         });
-        const currentBalance = sumDecimals(
-          ledgerEntries.map((entry) => new Prisma.Decimal(entry.amountTnd)),
-          3,
-        );
+        const currentBalance = sumEntryAmounts(ledgerEntries);
 
         if (!currentBalance.greaterThan(0)) {
           throw new AppError({
@@ -464,7 +475,7 @@ export class CustomersService {
       customerId: string;
       amountTnd: Prisma.Decimal;
       allocations: CustomerPaymentAllocationInput[];
-      ledgerEntries: Array<{ saleId: string | null; amountTnd: unknown }>;
+      ledgerEntries: LedgerEntrySlice[];
     },
     client: Prisma.TransactionClient,
   ) {
@@ -676,16 +687,41 @@ export class CustomersService {
   }
 }
 
-function saleBalanceFromEntries(
-  saleId: string,
-  entries: Array<{ saleId: string | null; amountTnd: unknown }>,
-) {
+/// Only receivable entries move a sale balance. An applied order advance is
+/// recorded against the same sale but belongs to the advance balance, so it
+/// must not reduce what the customer still owes on that sale twice.
+function saleBalanceFromEntries(saleId: string, entries: LedgerEntrySlice[]) {
   return sumDecimals(
-    entries
+    receivableEntries(entries)
       .filter((entry) => entry.saleId === saleId)
       .map((entry) => new Prisma.Decimal(entry.amountTnd as string)),
     3,
   );
+}
+
+function receivableEntries<TEntry extends LedgerEntrySlice>(entries: TEntry[]) {
+  return entries.filter(
+    (entry) => entry.balanceKind === CustomerLedgerBalanceKind.RECEIVABLE,
+  );
+}
+
+function advanceEntries<TEntry extends LedgerEntrySlice>(entries: TEntry[]) {
+  return entries.filter(
+    (entry) => entry.balanceKind === CustomerLedgerBalanceKind.ADVANCE,
+  );
+}
+
+function sumEntryAmounts(entries: LedgerEntrySlice[]) {
+  return sumDecimals(
+    entries.map((entry) => new Prisma.Decimal(entry.amountTnd as string)),
+    3,
+  );
+}
+
+interface LedgerEntrySlice {
+  saleId?: string | null;
+  balanceKind: CustomerLedgerBalanceKind;
+  amountTnd: unknown;
 }
 
 function parsePositiveMoney(value: string): Prisma.Decimal {
