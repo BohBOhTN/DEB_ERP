@@ -7,6 +7,7 @@ import { AuthService } from "./modules/auth/auth.service.js";
 import { CatalogService } from "./modules/catalog/catalog.service.js";
 import { CustomersService } from "./modules/customers/customers.service.js";
 import { DistributionService } from "./modules/distribution/distribution.service.js";
+import { ExpensesService } from "./modules/expenses/expenses.service.js";
 import { createHealthCheck } from "./modules/health/health.service.js";
 import { InventoryService } from "./modules/inventory/inventory.service.js";
 import { OrdersService } from "./modules/orders/orders.service.js";
@@ -19,6 +20,7 @@ const accessService = new AccessService(prisma);
 const catalogService = new CatalogService(prisma);
 const customersService = new CustomersService(prisma);
 const distributionService = new DistributionService(prisma);
+const expensesService = new ExpensesService(prisma);
 const inventoryService = new InventoryService(prisma);
 const ordersService = new OrdersService(prisma);
 const procurementService = new ProcurementService(prisma);
@@ -33,6 +35,7 @@ await accessService.bootstrapSystemAccess();
 await catalogService.bootstrapCatalogData();
 await inventoryService.bootstrapInventoryData();
 await posService.bootstrapPosData();
+await expensesService.bootstrapExpenseData();
 
 const app = createApp({
   allowedOrigins: env.CORS_ALLOWED_ORIGINS.split(",").map((origin) =>
@@ -65,6 +68,9 @@ const app = createApp({
   },
   distribution: {
     distributionService,
+  },
+  expenses: {
+    expensesService,
   },
   inventory: {
     inventoryService,

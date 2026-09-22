@@ -12,6 +12,8 @@ import type { CatalogService } from "./modules/catalog/catalog.service.js";
 import { customersRouter } from "./modules/customers/customers.routes.js";
 import type { CustomersService } from "./modules/customers/customers.service.js";
 import { distributionRouter } from "./modules/distribution/distribution.routes.js";
+import { expensesRouter } from "./modules/expenses/expenses.routes.js";
+import type { ExpensesService } from "./modules/expenses/expenses.service.js";
 import type { DistributionService } from "./modules/distribution/distribution.service.js";
 import { healthRouter } from "./modules/health/health.routes.js";
 import type { HealthCheck } from "./modules/health/health.service.js";
@@ -50,6 +52,9 @@ export function createApp(params: {
   };
   distribution?: {
     distributionService: DistributionService;
+  };
+  expenses?: {
+    expensesService: ExpensesService;
   };
   inventory?: {
     inventoryService: InventoryService;
@@ -126,6 +131,17 @@ export function createApp(params: {
         authService: params.auth.authService,
         cookie: params.auth.cookie,
         distributionService: params.distribution.distributionService,
+      }),
+    );
+  }
+
+  if (params.auth && params.expenses) {
+    app.use(
+      "/api",
+      expensesRouter({
+        authService: params.auth.authService,
+        cookie: params.auth.cookie,
+        expensesService: params.expenses.expensesService,
       }),
     );
   }

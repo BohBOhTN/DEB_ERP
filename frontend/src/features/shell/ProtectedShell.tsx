@@ -4,6 +4,7 @@ import { logout, type CurrentUser } from "../auth/authApi";
 import { CatalogManagement } from "../catalog/CatalogManagement";
 import { CustomerManagement } from "../customers/CustomerManagement";
 import { DistributionManagement } from "../distribution/DistributionManagement";
+import { ExpenseManagement } from "../expenses/ExpenseManagement";
 import { InventoryManagement } from "../inventory/InventoryManagement";
 import { OrderManagement } from "../orders/OrderManagement";
 import { PosManagement } from "../pos/PosManagement";
@@ -68,6 +69,8 @@ export function ProtectedShell({ user, onLogout }: ProtectedShellProps) {
           <CustomerManagement user={user} />
         ) : activeModule === "distribution" ? (
           <DistributionManagement user={user} />
+        ) : activeModule === "expenses" ? (
+          <ExpenseManagement user={user} />
         ) : activeModule === "orders" ? (
           <OrderManagement user={user} />
         ) : activeModule === "pos" ? (
@@ -171,6 +174,15 @@ function buildNavigation(user: CurrentUser) {
     user.effectivePermissions.includes("simulations.delete")
   ) {
     modules.push({ id: "simulation", label: "Simulation" });
+  }
+
+  if (
+    user.effectivePermissions.includes("expenses.view") ||
+    user.effectivePermissions.includes("expenses.create") ||
+    user.effectivePermissions.includes("expenses.cancel") ||
+    user.effectivePermissions.includes("expense_categories.manage")
+  ) {
+    modules.push({ id: "expenses", label: "Depenses" });
   }
 
   if (
