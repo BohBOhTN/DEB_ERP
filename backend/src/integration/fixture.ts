@@ -45,6 +45,19 @@ export type PerformanceFixture = Awaited<
 >;
 
 const mainCode = "main";
+/// PostgreSQL accepts at most 65 535 bind parameters per statement and Prisma
+/// does not split a createMany for it, so bulk inserts go in slices small
+/// enough for the widest row.
+const chunkSize = 1_000;
+
+async function createInChunks<TRow>(
+  model: { createMany: (args: { data: TRow[] }) => Promise<unknown> },
+  args: { data: TRow[] },
+): Promise<void> {
+  for (let index = 0; index < args.data.length; index += chunkSize) {
+    await model.createMany({ data: args.data.slice(index, index + chunkSize) });
+  }
+}
 const dayMs = 24 * 60 * 60 * 1000;
 
 function daysAgo(days: number, base = Date.now()) {
@@ -81,7 +94,7 @@ export async function seedPerformanceFixture(
 
   // Products: one searchable accented name among thousands of decoys, so the
   // trigram search has something real to find.
-  await prisma.product.createMany({
+  await createInChunks(prisma.product, {
     data: Array.from({ length: sizes.products }, (_, index) => {
       const name =
         index === 0 ? `Thé à la menthe ${runId}` : `Produit ${index} ${runId}`;
@@ -131,7 +144,7 @@ export async function seedPerformanceFixture(
 
   // Customers with credit history: every customer has sales, receivable
   // entries, payments and one advance entry.
-  await prisma.customer.createMany({
+  await createInChunks(prisma.customer, {
     data: Array.from({ length: sizes.customers }, (_, index) => ({
       name: `Client ${index} ${runId}`,
       normalizedName: `client ${index} ${runId}`,
@@ -149,7 +162,7 @@ export async function seedPerformanceFixture(
     1,
     Math.floor(sizes.customerEntriesPerCustomer / 2),
   );
-  await prisma.sale.createMany({
+  await createInChunks(prisma.sale, {
     data: customers.flatMap((customer, customerIndex) =>
       Array.from({ length: salesPerCustomer }, (_, saleIndex) => {
         const total = 10 + ((customerIndex + saleIndex) % 40);
@@ -173,7 +186,7 @@ export async function seedPerformanceFixture(
     select: { id: true, customerId: true, totalTnd: true, soldAt: true },
   });
 
-  await prisma.customerLedgerEntry.createMany({
+  await createInChunks(prisma.customerLedgerEntry, {
     data: sales.flatMap((sale) => [
       {
         customerId: sale.customerId as string,
@@ -197,7 +210,7 @@ export async function seedPerformanceFixture(
   });
 
   // Suppliers with posted purchases, payables and partial payments.
-  await prisma.supplier.createMany({
+  await createInChunks(prisma.supplier, {
     data: Array.from({ length: sizes.suppliers }, (_, index) => ({
       name: `Fournisseur ${index} ${runId}`,
       normalizedName: `fournisseur ${index} ${runId}`,
@@ -209,7 +222,7 @@ export async function seedPerformanceFixture(
     where: { normalizedName: { endsWith: runId } },
     select: { id: true },
   });
-  await prisma.purchase.createMany({
+  await createInChunks(prisma.purchase, {
     data: suppliers.flatMap((supplier, supplierIndex) =>
       Array.from({ length: sizes.purchasesPerSupplier }, (_, index) => {
         const total = 100 + ((supplierIndex + index) % 50);
@@ -233,7 +246,7 @@ export async function seedPerformanceFixture(
     where: { supplierId: { in: suppliers.map((row) => row.id) } },
     select: { id: true, supplierId: true, totalTnd: true, purchaseDate: true },
   });
-  await prisma.supplierLedgerEntry.createMany({
+  await createInChunks(prisma.supplierLedgerEntry, {
     data: purchases.flatMap((purchase) => [
       {
         supplierId: purchase.supplierId,
@@ -255,7 +268,7 @@ export async function seedPerformanceFixture(
   });
 
   // Distributors with open dispatches held in custody and receivables.
-  await prisma.distributor.createMany({
+  await createInChunks(prisma.distributor, {
     data: Array.from({ length: sizes.distributors }, (_, index) => ({
       name: `Distributeur ${index} ${runId}`,
       normalizedName: `distributeur ${index} ${runId}`,
@@ -268,7 +281,7 @@ export async function seedPerformanceFixture(
     select: { id: true },
   });
   for (const [distributorIndex, distributor] of distributors.entries()) {
-    await prisma.distributorDispatch.createMany({
+    await createInChunks(prisma.distributorDispatch, {
       data: Array.from(
         { length: sizes.dispatchesPerDistributor },
         (_, index) => ({
@@ -284,7 +297,7 @@ export async function seedPerformanceFixture(
     where: { reference: { startsWith: `BL-PERF-${runId}` } },
     select: { id: true },
   });
-  await prisma.distributorDispatchLine.createMany({
+  await createInChunks(prisma.distributorDispatchLine, {
     data: dispatches.map((dispatch, index) => ({
       dispatchId: dispatch.id,
       productId: products[index % products.length]?.id as string,
@@ -295,7 +308,7 @@ export async function seedPerformanceFixture(
       unitNameSnapshot: "Pièce",
     })),
   });
-  await prisma.distributorLedgerEntry.createMany({
+  await createInChunks(prisma.distributorLedgerEntry, {
     data: distributors.flatMap((distributor, index) =>
       Array.from({ length: 200 }, (_, entryIndex) => ({
         distributorId: distributor.id,
@@ -319,7 +332,7 @@ export async function seedPerformanceFixture(
       updatedByUserId: user.id,
     },
   });
-  await prisma.expense.createMany({
+  await createInChunks(prisma.expense, {
     data: Array.from({ length: sizes.expenses }, (_, index) => ({
       reference: `DEP-PERF-${runId}-${index}`,
       categoryId: expenseCategory.id,
