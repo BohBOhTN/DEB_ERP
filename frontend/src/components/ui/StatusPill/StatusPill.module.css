@@ -1,0 +1,5 @@
+/* StatusPill composes Badge; no extra styling. Kept so every primitive has
+   the same file set (05 section 3). */
+.root {
+  display: contents;
+}
