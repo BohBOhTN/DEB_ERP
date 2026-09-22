@@ -7,7 +7,9 @@ import { DistributionService } from "./distribution.service.js";
 export type Row = Record<string, unknown>;
 
 export interface DistributionStore {
-  referenceSequence: number;
+  /// The database has one sequence per document kind, so the double keeps a
+  /// counter per sequence name rather than a single shared one.
+  referenceSequences: Record<string, number>;
   distributors: Array<{ id: string; isActive: boolean; name: string }>;
   products: Array<{
     id: string;
@@ -23,6 +25,8 @@ export interface DistributionStore {
   distributorSaleLines: Row[];
   distributorDispatches: Row[];
   distributorDispatchLines: Row[];
+  distributorSettlements: Row[];
+  distributorSettlementLines: Row[];
   distributorPayments: Row[];
   distributorPaymentAllocations: Row[];
   distributorLedgerEntries: Array<Row & { amountTnd: string }>;
@@ -54,6 +58,41 @@ export class DistributionPrismaDouble {
       ) ?? null,
   };
 
+  /// Read path used by listCustody, which queries the client directly rather
+  /// than inside a posting transaction.
+  public readonly distributorDispatchLine = {
+    findMany: async (args?: {
+      where?: { dispatch?: { distributorId?: string } };
+    }) =>
+      this.store.distributorDispatchLines
+        .map((line) => {
+          const dispatch = this.store.distributorDispatches.find(
+            (item) => item.id === line.dispatchId,
+          );
+          const distributorId = dispatch?.distributorId as string | undefined;
+
+          return {
+            ...line,
+            dispatch: {
+              ...dispatch,
+              distributorId,
+              reference: dispatch?.reference as string,
+              dispatchedAt: dispatch?.dispatchedAt as Date,
+              distributor:
+                this.store.distributors.find(
+                  (item) => item.id === distributorId,
+                ) ?? null,
+            },
+          };
+        })
+        .filter((line) => {
+          const distributorId = args?.where?.dispatch?.distributorId;
+          return (
+            !distributorId || line.dispatch.distributorId === distributorId
+          );
+        }),
+  };
+
   public async $transaction<TResult>(
     action: (
       tx: ReturnType<typeof makeDistributionTransactionClient>,
@@ -68,7 +107,7 @@ export class DistributionPrismaDouble {
 
 export function createDistributionStore(): DistributionStore {
   return {
-    referenceSequence: 0,
+    referenceSequences: {},
     distributors: [
       { id: "distributor-1", isActive: true, name: "Distributeur Nord" },
     ],
@@ -88,6 +127,8 @@ export function createDistributionStore(): DistributionStore {
     distributorSaleLines: [],
     distributorDispatches: [],
     distributorDispatchLines: [],
+    distributorSettlements: [],
+    distributorSettlementLines: [],
     distributorPayments: [],
     distributorPaymentAllocations: [],
     distributorLedgerEntries: [],
@@ -95,6 +136,19 @@ export function createDistributionStore(): DistributionStore {
     auditEvents: [],
     idempotencyRecords: [],
   };
+}
+
+function applyUpdate(row: Row, data: Row) {
+  for (const [key, value] of Object.entries(data)) {
+    if (value && typeof value === "object" && "increment" in (value as Row)) {
+      row[key] =
+        Number(row[key] ?? 0) +
+        Number((value as { increment: number }).increment);
+      continue;
+    }
+
+    row[key] = value;
+  }
 }
 
 export function makeDistributionTransactionClient(store: DistributionStore) {
@@ -114,11 +168,27 @@ export function makeDistributionTransactionClient(store: DistributionStore) {
     ),
   });
 
+  const hydrateSettlement = (settlement: Row) => ({
+    ...settlement,
+    distributor:
+      store.distributors.find((item) => item.id === settlement.distributorId) ??
+      null,
+    lines: store.distributorSettlementLines.filter(
+      (line) => line.settlementId === settlement.id,
+    ),
+  });
+
   return {
+    // The row lock has no effect in a single-threaded double; the real
+    // serialization is proven against PostgreSQL.
+    $queryRaw: async () => [],
     $queryRawUnsafe: async (sql: string) => {
-      if (sql.includes("nextval")) {
-        store.referenceSequence += 1;
-        return [{ nextval: BigInt(store.referenceSequence) }];
+      const sequence = /nextval\('([^']+)'\)/.exec(sql)?.[1];
+
+      if (sequence) {
+        const next = (store.referenceSequences[sequence] ?? 0) + 1;
+        store.referenceSequences[sequence] = next;
+        return [{ nextval: BigInt(next) }];
       }
 
       return [];
@@ -218,6 +288,13 @@ export function makeDistributionTransactionClient(store: DistributionStore) {
 
         return dispatch;
       },
+      findUnique: async (args: { where: { id: string } }) => {
+        const dispatch = store.distributorDispatches.find(
+          (item) => item.id === args.where.id,
+        );
+
+        return dispatch ? hydrateDispatch(dispatch) : null;
+      },
       findUniqueOrThrow: async (args: { where: { id: string } }) => {
         const dispatch = store.distributorDispatches.find(
           (item) => item.id === args.where.id,
@@ -228,6 +305,68 @@ export function makeDistributionTransactionClient(store: DistributionStore) {
         }
 
         return hydrateDispatch(dispatch);
+      },
+      update: async (args: { where: { id: string }; data: Row }) => {
+        const dispatch = store.distributorDispatches.find(
+          (item) => item.id === args.where.id,
+        );
+
+        if (!dispatch) {
+          throw new Error("missing distributor dispatch");
+        }
+
+        applyUpdate(dispatch, args.data);
+        return hydrateDispatch(dispatch);
+      },
+    },
+    distributorDispatchLine: {
+      findMany: async (args: { where: { dispatchId: string } }) =>
+        store.distributorDispatchLines.filter(
+          (line) => line.dispatchId === args.where.dispatchId,
+        ),
+      update: async (args: { where: { id: string }; data: Row }) => {
+        const line = store.distributorDispatchLines.find(
+          (item) => item.id === args.where.id,
+        );
+
+        if (!line) {
+          throw new Error("missing dispatch line");
+        }
+
+        applyUpdate(line, args.data);
+        return line;
+      },
+    },
+    distributorSettlement: {
+      create: async (args: {
+        data: Row & { lines: { createMany: { data: Row[] } } };
+      }) => {
+        const { lines, ...settlementData } = args.data;
+        const settlement = {
+          id: `distributor-settlement-${store.distributorSettlements.length + 1}`,
+          ...settlementData,
+        };
+        store.distributorSettlements.push(settlement);
+        lines.createMany.data.forEach((line) => {
+          store.distributorSettlementLines.push({
+            id: `settlement-line-${store.distributorSettlementLines.length + 1}`,
+            settlementId: settlement.id,
+            ...line,
+          });
+        });
+
+        return settlement;
+      },
+      findUniqueOrThrow: async (args: { where: { id: string } }) => {
+        const settlement = store.distributorSettlements.find(
+          (item) => item.id === args.where.id,
+        );
+
+        if (!settlement) {
+          throw new Error("missing distributor settlement");
+        }
+
+        return hydrateSettlement(settlement);
       },
     },
     distributorPayment: {

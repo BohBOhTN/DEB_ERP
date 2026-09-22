@@ -26,6 +26,15 @@ export interface DistributorListParams {
   pageSize: number;
 }
 
+export interface SettlementLineInput {
+  dispatchLineId: string;
+  soldQuantity?: string;
+  returnedQuantity?: string;
+  unaccountedQuantity?: string;
+  /// DST-029 is open, so the sold price is confirmed at settlement time.
+  unitPriceTnd: string;
+}
+
 export interface DistributorSaleLineInput {
   productId: string;
   quantity: string;
@@ -529,6 +538,307 @@ export class DistributionService {
     );
   }
 
+  /// DST-016 to DST-023 and AS-015. Settlement classifies dispatched quantity.
+  /// Only the sold part becomes revenue and receivable, returns re-enter main
+  /// stock, still-held quantity stays in custody, and unaccounted quantity is
+  /// recorded as a discrepancy without creating automatic debt.
+  public async postSettlement(
+    params: {
+      idempotencyKey: string;
+      dispatchId: string;
+      settledAt: Date;
+      paidAmountTnd?: string;
+      notes?: string;
+      lines: SettlementLineInput[];
+    },
+    actor: DistributionActor,
+  ) {
+    const lines = normalizeSettlementLines(params.lines);
+
+    return this.runIdempotentCommand(
+      `distributor_settlement.post.${params.dispatchId}`,
+      params.idempotencyKey,
+      {
+        ...params,
+        lines: lines.map((line) => ({
+          dispatchLineId: line.dispatchLineId,
+          soldQuantity: line.soldQuantity.toFixed(6),
+          returnedQuantity: line.returnedQuantity.toFixed(6),
+          unaccountedQuantity: line.unaccountedQuantity.toFixed(6),
+          unitPriceTnd: line.unitPriceTnd.toFixed(3),
+        })),
+      },
+      async (tx) => {
+        // Serializes concurrent settlements of the same dispatch so a
+        // quantity can never be classified twice.
+        await tx.$queryRaw`SELECT "id" FROM "distributor_dispatches" WHERE "id" = ${params.dispatchId} FOR UPDATE`;
+
+        const dispatch = await tx.distributorDispatch.findUnique({
+          where: {
+            id: params.dispatchId,
+          },
+          include: {
+            lines: true,
+          },
+        });
+
+        if (!dispatch) {
+          throw new AppError({
+            statusCode: 404,
+            code: "DISPATCH_NOT_FOUND",
+            message: "Bon de livraison introuvable.",
+          });
+        }
+
+        if (dispatch.status !== DistributorDispatchStatus.OPEN) {
+          throw new AppError({
+            statusCode: 409,
+            code: "DISPATCH_NOT_OPEN",
+            message: "Ce bon de livraison est deja solde.",
+          });
+        }
+
+        const lineRows = lines.map((line) => {
+          const dispatchLine = dispatch.lines.find(
+            (candidate) => candidate.id === line.dispatchLineId,
+          );
+
+          if (!dispatchLine) {
+            throw new AppError({
+              statusCode: 400,
+              code: "DISPATCH_LINE_REQUIRED",
+              message: "Chaque ligne doit viser une ligne du bon de livraison.",
+            });
+          }
+
+          const classified = line.soldQuantity
+            .plus(line.returnedQuantity)
+            .plus(line.unaccountedQuantity);
+          const available = stillHeldQuantity(dispatchLine);
+
+          // DST-022: a dispatched quantity cannot be settled twice.
+          if (classified.greaterThan(available)) {
+            throw new AppError({
+              statusCode: 400,
+              code: "SETTLEMENT_EXCEEDS_HELD_QUANTITY",
+              message:
+                "La quantite reglee depasse la quantite encore detenue par le distributeur.",
+            });
+          }
+
+          return {
+            ...line,
+            dispatchLine,
+            lineTotalTnd: line.soldQuantity
+              .mul(line.unitPriceTnd)
+              .toDecimalPlaces(3, Prisma.Decimal.ROUND_HALF_UP),
+          };
+        });
+        const totalTnd = sumDecimals(
+          lineRows.map((line) => line.lineTotalTnd),
+          3,
+        );
+        // DST-017: a settlement may be paid now or left as receivable, so an
+        // omitted amount means nothing was collected.
+        const paidAmountTnd =
+          params.paidAmountTnd === undefined
+            ? new Prisma.Decimal(0)
+            : parseNonNegativeMoney(params.paidAmountTnd);
+
+        if (paidAmountTnd.greaterThan(totalTnd)) {
+          throw new AppError({
+            statusCode: 400,
+            code: "DISTRIBUTOR_OVERPAYMENT_REJECTED",
+            message: "Le paiement ne peut pas depasser le montant vendu.",
+          });
+        }
+
+        const remainingDueTnd = totalTnd
+          .minus(paidAmountTnd)
+          .toDecimalPlaces(3, Prisma.Decimal.ROUND_HALF_UP);
+        const settlement = await tx.distributorSettlement.create({
+          data: {
+            reference: await nextReference(
+              tx,
+              "distributor_settlement_reference_seq",
+              "REG",
+            ),
+            distributorId: dispatch.distributorId,
+            dispatchId: dispatch.id,
+            settledAt: params.settledAt,
+            totalTnd: totalTnd.toFixed(3),
+            paidAmountTnd: paidAmountTnd.toFixed(3),
+            remainingDueTnd: remainingDueTnd.toFixed(3),
+            paymentState: derivePaymentState(totalTnd, paidAmountTnd),
+            notes: emptyToNull(params.notes),
+            postedAt: params.settledAt,
+            postedByUserId: actor.actorUserId,
+            correlationId: actor.correlationId,
+            lines: {
+              createMany: {
+                data: lineRows.map((line) => ({
+                  dispatchLineId: line.dispatchLineId,
+                  productId: line.dispatchLine.productId,
+                  unitId: line.dispatchLine.unitId,
+                  soldQuantity: line.soldQuantity.toFixed(6),
+                  returnedQuantity: line.returnedQuantity.toFixed(6),
+                  unaccountedQuantity: line.unaccountedQuantity.toFixed(6),
+                  unitPriceTnd: line.unitPriceTnd.toFixed(3),
+                  lineTotalTnd: line.lineTotalTnd.toFixed(3),
+                  productNameSnapshot: line.dispatchLine.productNameSnapshot,
+                  unitNameSnapshot: line.dispatchLine.unitNameSnapshot,
+                })),
+              },
+            },
+          },
+        });
+
+        for (const line of lineRows) {
+          await tx.distributorDispatchLine.update({
+            where: {
+              id: line.dispatchLineId,
+            },
+            data: {
+              settledSoldQuantity: new Prisma.Decimal(
+                line.dispatchLine.settledSoldQuantity,
+              )
+                .plus(line.soldQuantity)
+                .toFixed(6),
+              returnedQuantity: new Prisma.Decimal(
+                line.dispatchLine.returnedQuantity,
+              )
+                .plus(line.returnedQuantity)
+                .toFixed(6),
+              unaccountedQuantity: new Prisma.Decimal(
+                line.dispatchLine.unaccountedQuantity,
+              )
+                .plus(line.unaccountedQuantity)
+                .toFixed(6),
+            },
+          });
+        }
+
+        // DST-017: only the sold quantity is recognized.
+        if (totalTnd.greaterThan(0)) {
+          await tx.distributorLedgerEntry.create({
+            data: {
+              distributorId: dispatch.distributorId,
+              settlementId: settlement.id,
+              entryType: DistributorLedgerEntryType.SETTLEMENT_RECEIVABLE,
+              amountTnd: totalTnd.toFixed(3),
+              occurredAt: params.settledAt,
+              actorUserId: actor.actorUserId,
+              correlationId: actor.correlationId,
+            },
+          });
+        }
+
+        if (paidAmountTnd.greaterThan(0)) {
+          const payment = await tx.distributorPayment.create({
+            data: {
+              distributorId: dispatch.distributorId,
+              amountTnd: paidAmountTnd.toFixed(3),
+              paidAt: params.settledAt,
+              actorUserId: actor.actorUserId,
+              correlationId: actor.correlationId,
+              allocations: {
+                createMany: {
+                  data: [
+                    {
+                      settlementId: settlement.id,
+                      amountTnd: paidAmountTnd.toFixed(3),
+                    },
+                  ],
+                },
+              },
+            },
+          });
+
+          await tx.distributorLedgerEntry.create({
+            data: {
+              distributorId: dispatch.distributorId,
+              settlementId: settlement.id,
+              paymentId: payment.id,
+              entryType: DistributorLedgerEntryType.PAYMENT,
+              amountTnd: paidAmountTnd.negated().toFixed(3),
+              occurredAt: params.settledAt,
+              actorUserId: actor.actorUserId,
+              correlationId: actor.correlationId,
+            },
+          });
+        }
+
+        // DST-018: returned quantity re-enters main saleable stock. Sold
+        // quantity left main stock at dispatch, so it moves nothing here, and
+        // unaccounted quantity stays a discrepancy with no stock effect.
+        const returnedRows = lineRows
+          .filter((line) => line.returnedQuantity.greaterThan(0))
+          .map((line) => ({
+            productId: line.dispatchLine.productId,
+            unitId: line.dispatchLine.unitId,
+            quantity: line.returnedQuantity,
+            productNameSnapshot: line.dispatchLine.productNameSnapshot,
+            unitNameSnapshot: line.dispatchLine.unitNameSnapshot,
+          }));
+
+        await writeStockMovements(tx, {
+          rows: returnedRows,
+          movementType: InventoryMovementType.DISTRIBUTOR_RETURN_IN,
+          sourceType: "DISTRIBUTOR_SETTLEMENT",
+          sourceId: settlement.id,
+          reason: `Retour consignation ${settlement.reference}`,
+          occurredAt: params.settledAt,
+          signedQuantity: (quantity) => quantity,
+          actor,
+        });
+
+        // A dispatch closes once nothing is still held.
+        const refreshedLines = await tx.distributorDispatchLine.findMany({
+          where: {
+            dispatchId: dispatch.id,
+          },
+        });
+        const stillHeld = refreshedLines.some((line) =>
+          stillHeldQuantity(line).greaterThan(0),
+        );
+
+        if (!stillHeld) {
+          await tx.distributorDispatch.update({
+            where: {
+              id: dispatch.id,
+            },
+            data: {
+              status: DistributorDispatchStatus.CLOSED,
+              version: {
+                increment: 1,
+              },
+            },
+          });
+        }
+
+        const result = await tx.distributorSettlement.findUniqueOrThrow({
+          where: {
+            id: settlement.id,
+          },
+          include: {
+            distributor: true,
+            lines: true,
+          },
+        });
+
+        await auditWithClient(tx, {
+          actor,
+          action: "distributor_settlement.post",
+          entity: "distributor_settlement",
+          targetId: result.id,
+          after: result,
+        });
+
+        return { settlement: result };
+      },
+    );
+  }
+
   /// DST-014 and DST-021. Still-held quantity is what the distributor still
   /// has; unaccounted quantity stays visible as a discrepancy for manual
   /// follow-up and never becomes automatic debt.
@@ -783,6 +1093,51 @@ async function buildSaleLines(
   });
 }
 
+function normalizeSettlementLines(lines: SettlementLineInput[]) {
+  if (lines.length === 0) {
+    throw new AppError({
+      statusCode: 400,
+      code: "SETTLEMENT_LINES_REQUIRED",
+      message: "Ajoutez au moins une ligne au reglement.",
+    });
+  }
+
+  const normalized = lines.map((line) => ({
+    dispatchLineId: line.dispatchLineId,
+    soldQuantity: parseNonNegativeQuantity(line.soldQuantity ?? "0"),
+    returnedQuantity: parseNonNegativeQuantity(line.returnedQuantity ?? "0"),
+    unaccountedQuantity: parseNonNegativeQuantity(
+      line.unaccountedQuantity ?? "0",
+    ),
+    unitPriceTnd: parseNonNegativeMoney(line.unitPriceTnd),
+  }));
+
+  if (findDuplicate(normalized.map((line) => line.dispatchLineId))) {
+    throw new AppError({
+      statusCode: 400,
+      code: "DUPLICATE_SETTLEMENT_LINE",
+      message: "Une ligne du bon ne peut apparaitre qu'une seule fois.",
+    });
+  }
+
+  const classifiesSomething = normalized.some((line) =>
+    line.soldQuantity
+      .plus(line.returnedQuantity)
+      .plus(line.unaccountedQuantity)
+      .greaterThan(0),
+  );
+
+  if (!classifiesSomething) {
+    throw new AppError({
+      statusCode: 400,
+      code: "SETTLEMENT_QUANTITY_REQUIRED",
+      message: "Indiquez au moins une quantite vendue, retournee ou manquante.",
+    });
+  }
+
+  return normalized;
+}
+
 function normalizeDispatchLines(
   lines: Array<{ productId: string; quantity: string }>,
 ) {
@@ -1014,6 +1369,20 @@ function parsePositiveQuantity(value: string): Prisma.Decimal {
       statusCode: 400,
       code: "POSITIVE_QUANTITY_REQUIRED",
       message: "La quantite doit etre superieure a zero.",
+    });
+  }
+
+  return decimal.toDecimalPlaces(6, Prisma.Decimal.ROUND_HALF_UP);
+}
+
+function parseNonNegativeQuantity(value: string): Prisma.Decimal {
+  const decimal = new Prisma.Decimal(value);
+
+  if (decimal.lessThan(0)) {
+    throw new AppError({
+      statusCode: 400,
+      code: "NON_NEGATIVE_QUANTITY_REQUIRED",
+      message: "La quantite doit etre positive ou nulle.",
     });
   }
 

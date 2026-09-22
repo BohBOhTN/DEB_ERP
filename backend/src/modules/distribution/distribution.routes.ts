@@ -80,6 +80,24 @@ const dispatchSchema = z.object({
     .min(1),
 });
 
+const settlementSchema = z.object({
+  dispatchId: z.string().trim().min(1),
+  settledAt: z.coerce.date(),
+  paidAmountTnd: moneyTnd.optional(),
+  notes: z.string().optional(),
+  lines: z
+    .array(
+      z.object({
+        dispatchLineId: z.string().trim().min(1),
+        soldQuantity: quantity.optional(),
+        returnedQuantity: quantity.optional(),
+        unaccountedQuantity: quantity.optional(),
+        unitPriceTnd: moneyTnd,
+      }),
+    )
+    .min(1),
+});
+
 const updateDistributorSchema = z.object({
   version: z.number().int().positive(),
   name: z.string().trim().min(1).optional(),
@@ -212,6 +230,26 @@ export function distributionRouter(params: {
       try {
         const body = dispatchSchema.parse(request.body);
         const result = await params.distributionService.dispatchConsignment(
+          {
+            ...body,
+            idempotencyKey: readIdempotencyKey(request.headers),
+          },
+          actorFromResponse(response),
+        );
+        response.status(201).json(ok(result, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/distributor-settlements",
+    requirePermission("distribution.settle"),
+    async (request, response, next) => {
+      try {
+        const body = settlementSchema.parse(request.body);
+        const result = await params.distributionService.postSettlement(
           {
             ...body,
             idempotencyKey: readIdempotencyKey(request.headers),
