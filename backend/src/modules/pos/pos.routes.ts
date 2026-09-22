@@ -1,3 +1,4 @@
+import { SalePaymentState } from "@prisma/client";
 import { Router, type Response } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
@@ -25,6 +26,17 @@ const quantity = z
 
 const listQuerySchema = z.object({
   search: z.string().trim().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
+const saleListQuerySchema = z.object({
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  customerId: z.string().trim().min(1).optional(),
+  paymentState: z.nativeEnum(SalePaymentState).optional(),
+  cashierUserId: z.string().trim().min(1).optional(),
+  sessionId: z.string().trim().min(1).optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
@@ -147,6 +159,20 @@ export function posRouter(params: {
           actorFromResponse(response),
         );
         response.status(201).json(ok(result, getCorrelationId(response)));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/sales",
+    requirePermission("pos.access"),
+    async (request, response, next) => {
+      try {
+        const query = saleListQuerySchema.parse(request.query);
+        const sales = await params.posService.listSales(query);
+        response.json(ok({ sales }, getCorrelationId(response)));
       } catch (error) {
         next(error);
       }

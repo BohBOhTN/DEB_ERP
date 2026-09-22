@@ -24,6 +24,10 @@ const listQuerySchema = z.object({
 const purchaseListQuerySchema = z.object({
   supplierId: z.string().trim().min(1).optional(),
   status: z.nativeEnum(PurchaseStatus).optional(),
+  paymentTerms: z.nativeEnum(PurchasePaymentTerms).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  dueState: z.enum(["OVERDUE", "UPCOMING"]).optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });

@@ -155,6 +155,51 @@ export class PosService {
     return paginated(items, total, params);
   }
 
+  /// Section 18: POS sales by date, customer, payment state, and cashier.
+  public async listSales(params: {
+    from?: Date;
+    to?: Date;
+    customerId?: string;
+    paymentState?: SalePaymentState;
+    cashierUserId?: string;
+    sessionId?: string;
+    page: number;
+    pageSize: number;
+  }) {
+    const where = {
+      ...(params.customerId ? { customerId: params.customerId } : {}),
+      ...(params.paymentState ? { paymentState: params.paymentState } : {}),
+      ...(params.cashierUserId ? { postedByUserId: params.cashierUserId } : {}),
+      ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+      ...(params.from || params.to
+        ? {
+            soldAt: {
+              ...(params.from ? { gte: params.from } : {}),
+              ...(params.to ? { lte: params.to } : {}),
+            },
+          }
+        : {}),
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.sale.findMany({
+        where,
+        include: {
+          customer: true,
+          lines: true,
+          payments: true,
+        },
+        // NFR-005: stable sort. The id breaks ties so paging cannot repeat or
+        // skip a sale posted in the same millisecond as another.
+        orderBy: [{ soldAt: "desc" }, { id: "desc" }],
+        skip: (params.page - 1) * params.pageSize,
+        take: params.pageSize,
+      }),
+      this.prisma.sale.count({ where }),
+    ]);
+
+    return paginated(items, total, params);
+  }
+
   public async openSession(
     params: {
       idempotencyKey: string;
