@@ -140,6 +140,7 @@ const app = createApp({
   home: {
     homeService,
   },
+  serveOpenApi: env.NODE_ENV !== "production",
 });
 
 const stopCleanup = scheduleCleanup(

@@ -25,6 +25,7 @@ import type {
   LivenessCheck,
 } from "./modules/health/health.service.js";
 import { homeRouter } from "./modules/home/home.routes.js";
+import { buildOpenApiDocument } from "./openapi/document.js";
 import type { HomeService } from "./modules/home/home.service.js";
 import { inventoryRouter } from "./modules/inventory/inventory.routes.js";
 import type { InventoryService } from "./modules/inventory/inventory.service.js";
@@ -102,6 +103,9 @@ export function createApp(params: {
   home?: {
     homeService: HomeService;
   };
+  /// Serves the generated contract at `/api/v1/openapi.json`; off in
+  /// production, where the committed file is the reference.
+  serveOpenApi?: boolean;
 }): express.Express {
   const app = express();
   const logger = params.logger ?? createLogger({ level: "silent" });
@@ -268,6 +272,14 @@ export function createApp(params: {
         simulationService: params.simulation.simulationService,
       }),
     );
+  }
+
+  if (params.serveOpenApi) {
+    let document: ReturnType<typeof buildOpenApiDocument> | undefined;
+    app.get("/api/v1/openapi.json", (_request, response) => {
+      document ??= buildOpenApiDocument();
+      response.json(document);
+    });
   }
 
   // The home summary is new in V2 and has no legacy alias.

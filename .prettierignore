@@ -4,3 +4,5 @@ frontend/dist
 coverage
 internal-docs
 package-lock.json
+frontend/src/lib/api/types.gen.ts
+backend/openapi.json
