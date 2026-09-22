@@ -19,6 +19,7 @@ import { OrdersService } from "./modules/orders/orders.service.js";
 import { PosService } from "./modules/pos/pos.service.js";
 import { ProcurementService } from "./modules/procurement/procurement.service.js";
 import { SimulationService } from "./modules/simulation/simulation.service.js";
+import { scheduleCleanup } from "./jobs/cleanup.js";
 import { createLogger } from "./shared/logger.js";
 
 const require = createRequire(import.meta.url);
@@ -130,6 +131,11 @@ const app = createApp({
   },
 });
 
+const stopCleanup = scheduleCleanup(
+  { prisma, logger, idempotencyTtlDays: env.IDEMPOTENCY_TTL_DAYS },
+  6 * 60 * 60 * 1000,
+);
+
 const server = app.listen(env.PORT, () => {
   logger.info(
     { port: env.PORT, environment: env.NODE_ENV, ...build },
@@ -150,6 +156,7 @@ function shutdown(signal: NodeJS.Signals): void {
   }
   shuttingDown = true;
   logger.info({ signal }, "shutdown requested");
+  stopCleanup();
 
   // If in-flight requests do not drain in time, exit anyway: the process
   // manager will start a fresh instance and the client will retry.
