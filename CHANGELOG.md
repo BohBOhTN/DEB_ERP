@@ -8,6 +8,14 @@ Release R6 platform hardening, targeting `v1.1.0`.
 
 ### Added
 
+- Query and trigram indexes for the predicates the lists actually use, with a
+  CI drift guard for the database objects Prisma cannot express.
+- Balance lists accept `search`, `sort=name|balance` and `minBalance`;
+  statements page ledger entries by cursor and report opening and closing
+  balances for a date range.
+- A performance integration suite with a synthetic large history and a
+  latency budget.
+- Slow-query logging and documented pool settings.
 - Structured request and error logging (pino) keyed by correlation id.
 - Liveness and readiness probes under `/api/v1/health` with build version,
   git sha and latest applied migration; `/api/health` remains as an alias.
@@ -18,6 +26,19 @@ Release R6 platform hardening, targeting `v1.1.0`.
 
 ### Changed
 
+- Customer, supplier and distributor balances, statements, custody, POS
+  session close and expense totals are aggregated by the database instead of
+  summing ledger rows in JavaScript.
+- Expense totals default to the last thirty days and bucket days in the
+  `Africa/Tunis` time zone.
+- POS product search matches the accent-stripped name, like the back office.
+- Effective permissions are cached per process for one minute and invalidated
+  on every role, permission and user-role change; a session's last-used
+  timestamp is written at most every five minutes; reading the permission
+  catalogue no longer re-seeds it.
+- List endpoints return document headers only: sales and orders lists no
+  longer embed lines and payments, purchases lists no longer embed payments,
+  stock movements no longer join item and unit rows.
 - Body-parser and Prisma errors map to 400/413/415/404/409/503 with stable
   codes instead of a generic 500.
 - `VERSION_CONFLICT` is the only code for stale optimistic updates.

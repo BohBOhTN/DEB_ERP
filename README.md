@@ -39,25 +39,28 @@ Never commit real `.env` files, credentials, database passwords, tokens, or back
 
 ### Backend Environment
 
-| Variable                      | Purpose                                                                  |
-| ----------------------------- | ------------------------------------------------------------------------ |
-| `NODE_ENV`                    | Runtime environment, for example `development`                           |
-| `PORT`                        | API port                                                                 |
-| `DATABASE_URL`                | PostgreSQL connection string                                             |
-| `SESSION_COOKIE_NAME`         | HTTP-only session cookie name                                            |
-| `SESSION_TTL_MINUTES`         | Session lifetime in minutes                                              |
-| `CORS_ALLOWED_ORIGINS`        | Comma-separated browser origins allowed to call the API                  |
-| `RATE_LIMIT_MAX`              | Login attempts allowed per client address per window                     |
-| `RATE_LIMIT_WINDOW_MS`        | Login rate-limit window in milliseconds                                  |
-| `GLOBAL_RATE_LIMIT_MAX`       | Requests allowed on any route per client address per window              |
-| `GLOBAL_RATE_LIMIT_WINDOW_MS` | Global rate-limit window in milliseconds                                 |
-| `TRUST_PROXY`                 | Reverse-proxy hops to trust for the client address (`1` behind nginx)    |
-| `LOG_LEVEL`                   | pino level: `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` |
-| `LOG_PRETTY`                  | `true` for human-readable terminal logs; production emits JSON           |
-| `GIT_SHA`                     | Commit identifier reported by the health endpoints                       |
-| `IDEMPOTENCY_TTL_DAYS`        | Days an idempotency record is kept before cleanup                        |
-| `REQUEST_TIMEOUT_MS`          | Socket timeout for a single request                                      |
-| `SHUTDOWN_TIMEOUT_MS`         | Grace period for in-flight requests on SIGTERM                           |
+| Variable                      | Purpose                                                                      |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `NODE_ENV`                    | Runtime environment, for example `development`                               |
+| `PORT`                        | API port                                                                     |
+| `DATABASE_URL`                | PostgreSQL connection string                                                 |
+| `SESSION_COOKIE_NAME`         | HTTP-only session cookie name                                                |
+| `SESSION_TTL_MINUTES`         | Session lifetime in minutes                                                  |
+| `CORS_ALLOWED_ORIGINS`        | Comma-separated browser origins allowed to call the API                      |
+| `RATE_LIMIT_MAX`              | Login attempts allowed per client address per window                         |
+| `RATE_LIMIT_WINDOW_MS`        | Login rate-limit window in milliseconds                                      |
+| `GLOBAL_RATE_LIMIT_MAX`       | Requests allowed on any route per client address per window                  |
+| `GLOBAL_RATE_LIMIT_WINDOW_MS` | Global rate-limit window in milliseconds                                     |
+| `TRUST_PROXY`                 | Reverse-proxy hops to trust for the client address (`1` behind nginx)        |
+| `LOG_LEVEL`                   | pino level: `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`     |
+| `LOG_PRETTY`                  | `true` for human-readable terminal logs; production emits JSON               |
+| `GIT_SHA`                     | Commit identifier reported by the health endpoints                           |
+| `IDEMPOTENCY_TTL_DAYS`        | Days an idempotency record is kept before cleanup                            |
+| `SLOW_QUERY_MS`               | Queries at or above this duration are logged as slow                         |
+| `PERMISSION_CACHE_TTL_MS`     | In-memory lifetime of a user's effective permissions (invalidated on change) |
+| `SESSION_TOUCH_INTERVAL_MS`   | Minimum interval between two writes of a session's last-used timestamp       |
+| `REQUEST_TIMEOUT_MS`          | Socket timeout for a single request                                          |
+| `SHUTDOWN_TIMEOUT_MS`         | Grace period for in-flight requests on SIGTERM                               |
 
 ### Frontend Environment
 
@@ -122,6 +125,23 @@ under the same correlation ID the client received in the error body and in the
 
 Idempotent commands return `Idempotency-Replayed: true` when the response was
 served from the idempotency store rather than executed again.
+
+## Balances and statements
+
+Balances are summed by the database. The balance lists accept `search`,
+`sort=name|balance` and `minBalance`; with `sort=balance` or `minBalance`
+only parties with ledger activity are listed, largest balance first.
+Statements accept `from`, `to`, `limit` (default 50, max 200) and `cursor`;
+`meta.nextCursor` continues the ledger, and `meta.openingBalanceTnd` and
+`meta.closingBalanceTnd` state the balance at the range boundaries.
+
+## Schema drift guard
+
+Some invariants exist only in hand-written migration SQL (partial unique
+indexes, document-number sequences, the `pg_trgm` extension). They are listed
+in `backend/prisma/protected-objects.json`, and CI runs
+`npm run db:check-drift --workspace backend` after applying migrations so any
+other difference between the database and `schema.prisma` fails the build.
 
 ## Authentication
 
