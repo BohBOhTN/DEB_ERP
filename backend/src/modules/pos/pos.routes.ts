@@ -1,7 +1,10 @@
 import { Router, type Response } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
-import { requirePermission } from "../access/permission.middleware.js";
+import {
+  requireAnyPermission,
+  requirePermission,
+} from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
@@ -80,9 +83,11 @@ export function posRouter(params: {
     },
   );
 
+  // A cashier selects a registered customer either for a credit sale or for an
+  // order for later, so either permission opens this lookup.
   router.get(
     "/customers",
-    requirePermission("pos.credit_sale"),
+    requireAnyPermission(["pos.credit_sale", "orders.create"]),
     async (request, response, next) => {
       try {
         const query = listQuerySchema.parse(request.query);

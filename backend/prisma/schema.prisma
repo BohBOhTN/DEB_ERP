@@ -127,6 +127,7 @@ model Unit {
   purchaseLinesEntered   PurchaseLine[]              @relation("PurchaseLineEnteredUnit")
   purchaseLinesBase      PurchaseLine[]              @relation("PurchaseLineBaseUnit")
   saleLines              SaleLine[]
+  customerOrderLines     CustomerOrderLine[]
 
   @@index([isActive])
   @@map("units")
@@ -170,6 +171,7 @@ model Product {
   baseUnit           Unit                @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
   inventoryMovements InventoryMovement[]
   saleLines          SaleLine[]
+  customerOrderLines CustomerOrderLine[]
 
   @@index([categoryId])
   @@index([baseUnitId])
@@ -481,6 +483,8 @@ model Customer {
   sales           Sale[]
   payments        CustomerPayment[]
   ledgerEntries   CustomerLedgerEntry[]
+  orders          CustomerOrder[]
+  orderAdvances   CustomerOrderAdvance[]
 
   @@index([isActive])
   @@index([normalizedName])
@@ -506,6 +510,7 @@ model PosSession {
   terminal          PosTerminal      @relation(fields: [terminalId], references: [id], onDelete: Restrict)
   sales             Sale[]
   payments          SalePayment[]
+  orderAdvances     CustomerOrderAdvance[]
 
   @@index([terminalId])
   @@index([status])
@@ -534,6 +539,7 @@ model Sale {
   payments       SalePayment[]
   ledgerEntries  CustomerLedgerEntry[]
   paymentAllocations CustomerPaymentAllocation[]
+  order          CustomerOrder?
 
   @@index([sessionId])
   @@index([customerId])
@@ -617,25 +623,115 @@ model CustomerPaymentAllocation {
 }
 
 model CustomerLedgerEntry {
-  id            String                  @id @default(cuid())
-  customerId    String                  @map("customer_id")
-  saleId        String?                 @map("sale_id")
-  paymentId     String?                 @map("payment_id")
-  entryType     CustomerLedgerEntryType @map("entry_type")
-  amountTnd     Decimal                 @map("amount_tnd") @db.Decimal(14, 3)
-  occurredAt    DateTime                @map("occurred_at")
-  actorUserId   String                  @map("actor_user_id")
-  correlationId String?                 @map("correlation_id")
-  createdAt     DateTime                @default(now()) @map("created_at")
-  customer      Customer                @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  sale          Sale?                   @relation(fields: [saleId], references: [id], onDelete: Restrict)
-  payment       CustomerPayment?        @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  id            String                    @id @default(cuid())
+  customerId    String                    @map("customer_id")
+  saleId        String?                   @map("sale_id")
+  paymentId     String?                   @map("payment_id")
+  orderId       String?                   @map("order_id")
+  balanceKind   CustomerLedgerBalanceKind @default(RECEIVABLE) @map("balance_kind")
+  entryType     CustomerLedgerEntryType   @map("entry_type")
+  amountTnd     Decimal                   @map("amount_tnd") @db.Decimal(14, 3)
+  occurredAt    DateTime                  @map("occurred_at")
+  actorUserId   String                    @map("actor_user_id")
+  correlationId String?                   @map("correlation_id")
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  customer      Customer                  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  sale          Sale?                     @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  payment       CustomerPayment?          @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  order         CustomerOrder?            @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
   @@index([customerId])
   @@index([saleId])
   @@index([paymentId])
+  @@index([orderId])
+  @@index([balanceKind])
   @@index([occurredAt])
   @@map("customer_ledger_entries")
+}
+
+/// A customer order is a commitment to fulfil later. It is not a sale: it
+/// recognizes no revenue and moves no stock until completion creates exactly
+/// one linked sale.
+model CustomerOrder {
+  id                     String                           @id @default(cuid())
+  reference              String                           @unique
+  customerId             String                           @map("customer_id")
+  status                 CustomerOrderStatus              @default(DRAFT)
+  requestedFulfillmentAt DateTime                         @map("requested_fulfillment_at")
+  totalTnd               Decimal                          @map("total_tnd") @db.Decimal(14, 3)
+  advanceBalanceTnd      Decimal                          @default(0) @map("advance_balance_tnd") @db.Decimal(14, 3)
+  notes                  String?
+  version                Int                              @default(1)
+  saleId                 String?                          @unique @map("sale_id")
+  completedAt            DateTime?                        @map("completed_at")
+  completedByUserId      String?                          @map("completed_by_user_id")
+  cancelledAt            DateTime?                        @map("cancelled_at")
+  cancelledByUserId      String?                          @map("cancelled_by_user_id")
+  cancellationReason     String?                          @map("cancellation_reason")
+  advanceDisposition     CustomerOrderAdvanceDisposition? @map("advance_disposition")
+  createdByUserId        String                           @map("created_by_user_id")
+  updatedByUserId        String                           @map("updated_by_user_id")
+  correlationId          String?                          @map("correlation_id")
+  createdAt              DateTime                         @default(now()) @map("created_at")
+  updatedAt              DateTime                         @updatedAt @map("updated_at")
+  customer               Customer                         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  sale                   Sale?                            @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  lines                  CustomerOrderLine[]
+  advances               CustomerOrderAdvance[]
+  ledgerEntries          CustomerLedgerEntry[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([requestedFulfillmentAt])
+  @@map("customer_orders")
+}
+
+model CustomerOrderLine {
+  id                  String        @id @default(cuid())
+  orderId             String        @map("order_id")
+  productId           String        @map("product_id")
+  unitId              String        @map("unit_id")
+  quantity            Decimal       @db.Decimal(18, 6)
+  unitPriceTnd        Decimal       @map("unit_price_tnd") @db.Decimal(14, 3)
+  lineTotalTnd        Decimal       @map("line_total_tnd") @db.Decimal(14, 3)
+  productNameSnapshot String        @map("product_name_snapshot")
+  unitNameSnapshot    String        @map("unit_name_snapshot")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  order               CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product             Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  unit                Unit          @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, productId])
+  @@index([orderId])
+  @@index([productId])
+  @@index([unitId])
+  @@map("customer_order_lines")
+}
+
+/// Money moved before fulfilment. A RECEIPT is a customer advance, never sale
+/// revenue; a REFUND returns an advance when a paid order is cancelled.
+model CustomerOrderAdvance {
+  id            String                       @id @default(cuid())
+  orderId       String                       @map("order_id")
+  customerId    String                       @map("customer_id")
+  sessionId     String                       @map("session_id")
+  movement      CustomerOrderAdvanceMovement @default(RECEIPT)
+  amountTnd     Decimal                      @map("amount_tnd") @db.Decimal(14, 3)
+  method        CustomerPaymentMethod        @default(CASH)
+  paidAt        DateTime                     @map("paid_at")
+  notes         String?
+  actorUserId   String                       @map("actor_user_id")
+  correlationId String?                      @map("correlation_id")
+  createdAt     DateTime                     @default(now()) @map("created_at")
+  order         CustomerOrder                @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customer      Customer                     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  session       PosSession                   @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([customerId])
+  @@index([sessionId])
+  @@index([paidAt])
+  @@map("customer_order_advances")
 }
 
 enum PosSessionStatus {
@@ -667,6 +763,37 @@ enum CustomerLedgerEntryType {
   PAYMENT
   SALE_REVERSAL
   PAYMENT_REVERSAL
+  ORDER_ADVANCE
+  ORDER_ADVANCE_APPLIED
+  ORDER_ADVANCE_REFUNDED
+  ORDER_ADVANCE_CREDITED
+}
+
+/// Receivable and advance are two separate balances for the same customer.
+/// An advance is money held for the customer; it must never net against
+/// receivable implicitly.
+enum CustomerLedgerBalanceKind {
+  RECEIVABLE
+  ADVANCE
+}
+
+enum CustomerOrderStatus {
+  DRAFT
+  CONFIRMED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum CustomerOrderAdvanceMovement {
+  RECEIPT
+  REFUND
+}
+
+enum CustomerOrderAdvanceDisposition {
+  REFUNDED
+  CREDITED
 }
 
 model IdempotencyRecord {

@@ -11,6 +11,7 @@ import {
   type PosSession,
 } from "./posApi";
 import type { Customer } from "../customers/customersApi";
+import { createOrder } from "../orders/ordersApi";
 
 interface PosManagementProps {
   user: CurrentUser;
@@ -31,6 +32,9 @@ export function PosManagement({ user }: PosManagementProps) {
   const canCloseSession = permissions.has("pos.close_session");
   const canSell = permissions.has("pos.sell");
   const canCreditSale = permissions.has("pos.credit_sale");
+  const canCreateOrders = permissions.has("orders.create");
+  const [cartMode, setCartMode] = useState<"SALE" | "ORDER">("SALE");
+  const [requestedFulfillmentAt, setRequestedFulfillmentAt] = useState("");
   const [session, setSession] = useState<PosSession | null>(null);
   const [products, setProducts] = useState<PosProduct[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -58,7 +62,7 @@ export function PosManagement({ user }: PosManagementProps) {
     const [nextSession, productPage, customerPage] = await Promise.all([
       getCurrentPosSession(),
       getPosProducts(nextSearch),
-      canCreditSale
+      canCreditSale || canCreateOrders
         ? getPosCustomers(customerSearch)
         : Promise.resolve(emptyPage<Customer>()),
     ]);
@@ -157,6 +161,39 @@ export function PosManagement({ user }: PosManagementProps) {
         sale.remainingDueTnd === "0.000"
           ? `Vente encaissee: ${formatTnd(sale.totalTnd)}.`
           : `Vente enregistree: ${formatTnd(sale.remainingDueTnd)} restant.`,
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  /// ORD-003 and ORD-006: an order needs a registered customer and creates no
+  /// sale, revenue, or stock movement.
+  async function handleCreateOrder() {
+    if (cart.length === 0 || !selectedCustomerId || !requestedFulfillmentAt) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError("");
+    setStatus("");
+
+    try {
+      const order = await createOrder({
+        customerId: selectedCustomerId,
+        requestedFulfillmentAt: new Date(requestedFulfillmentAt).toISOString(),
+        lines: cart.map((line) => ({
+          productId: line.product.id,
+          quantity: line.quantity,
+        })),
+      });
+      setCart([]);
+      setRequestedFulfillmentAt("");
+      setCartMode("SALE");
+      setStatus(
+        `Commande ${order.reference} enregistree pour ${formatTnd(order.totalTnd)}. Aucune vente creee.`,
       );
     } catch (caught) {
       setError(errorMessage(caught));
@@ -398,7 +435,90 @@ export function PosManagement({ user }: PosManagementProps) {
             <span>Total</span>
             <strong>{formatTnd(totalTnd)}</strong>
           </div>
-          {canCreditSale ? (
+
+          {/* ORD-001: the same cart becomes either an immediate sale or an
+              order fulfilled later. */}
+          {canCreateOrders ? (
+            <div
+              className="mode-switch"
+              role="group"
+              aria-label="Type d'operation"
+            >
+              <button
+                aria-pressed={cartMode === "SALE"}
+                className="chip-button"
+                onClick={() => setCartMode("SALE")}
+                type="button"
+              >
+                Vente immediate
+              </button>
+              <button
+                aria-pressed={cartMode === "ORDER"}
+                className="chip-button"
+                onClick={() => setCartMode("ORDER")}
+                type="button"
+              >
+                Commande pour plus tard
+              </button>
+            </div>
+          ) : null}
+
+          {cartMode === "ORDER" ? (
+            <div className="credit-sale-box">
+              <label className="field">
+                Client enregistre
+                <select
+                  onChange={(event) =>
+                    setSelectedCustomerId(event.target.value)
+                  }
+                  required
+                  value={selectedCustomerId}
+                >
+                  <option value="">Selectionnez un client</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Date et heure souhaitees
+                <input
+                  onChange={(event) =>
+                    setRequestedFulfillmentAt(event.target.value)
+                  }
+                  required
+                  type="datetime-local"
+                  value={requestedFulfillmentAt}
+                />
+              </label>
+              <p className="status-muted">
+                Une commande ne cree ni vente, ni chiffre d'affaires, ni
+                mouvement de stock. L'acompte se saisit dans le module
+                Commandes.
+              </p>
+              {!selectedCustomerId ? (
+                <p role="alert">
+                  Un client enregistre est obligatoire pour une commande.
+                </p>
+              ) : null}
+              <button
+                disabled={
+                  isSubmitting ||
+                  cart.length === 0 ||
+                  !selectedCustomerId ||
+                  !requestedFulfillmentAt
+                }
+                onClick={handleCreateOrder}
+                type="button"
+              >
+                Enregistrer la commande
+              </button>
+            </div>
+          ) : null}
+
+          {cartMode === "SALE" && canCreditSale ? (
             <div className="credit-sale-box">
               <form className="inline-form" onSubmit={handleCustomerSearch}>
                 <label className="field">
@@ -456,22 +576,26 @@ export function PosManagement({ user }: PosManagementProps) {
               ) : null}
             </div>
           ) : null}
-          <button
-            disabled={
-              isSubmitting ||
-              !session ||
-              session.status !== "OPEN" ||
-              !canSell ||
-              cart.length === 0 ||
-              paymentExceedsTotal ||
-              creditRequiresCustomer
-            }
-            onClick={handlePostSale}
-            type="button"
-          >
-            Encaisser
-          </button>
-          {!canSell ? <p role="alert">Vente non autorisee.</p> : null}
+          {cartMode === "SALE" ? (
+            <button
+              disabled={
+                isSubmitting ||
+                !session ||
+                session.status !== "OPEN" ||
+                !canSell ||
+                cart.length === 0 ||
+                paymentExceedsTotal ||
+                creditRequiresCustomer
+              }
+              onClick={handlePostSale}
+              type="button"
+            >
+              Encaisser
+            </button>
+          ) : null}
+          {cartMode === "SALE" && !canSell ? (
+            <p role="alert">Vente non autorisee.</p>
+          ) : null}
         </div>
       </div>
     </section>

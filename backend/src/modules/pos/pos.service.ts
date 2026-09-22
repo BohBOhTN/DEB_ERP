@@ -1,7 +1,9 @@
 import {
   InventoryItemType,
   InventoryMovementType,
+  CustomerLedgerBalanceKind,
   CustomerLedgerEntryType,
+  CustomerOrderAdvanceMovement,
   PosSessionStatus,
   Prisma,
   SalePaymentState,
@@ -266,10 +268,23 @@ export class PosService {
             sessionId,
           },
         });
+        // Order advances and refunds are real cash through this drawer, so the
+        // expected close must include them alongside sale payments.
+        const orderAdvances = await tx.customerOrderAdvance.findMany({
+          where: {
+            sessionId,
+          },
+        });
         const expectedCashTnd = sumDecimals(
           [
             new Prisma.Decimal(existing.openingCashTnd),
             ...payments.map((payment) => new Prisma.Decimal(payment.amountTnd)),
+            ...orderAdvances.map((advance) => {
+              const amount = new Prisma.Decimal(advance.amountTnd);
+              return advance.movement === CustomerOrderAdvanceMovement.RECEIPT
+                ? amount
+                : amount.negated();
+            }),
           ],
           3,
         );
@@ -525,6 +540,7 @@ export class PosService {
             data: {
               customerId: customer.id,
               saleId: sale.id,
+              balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
               entryType: CustomerLedgerEntryType.SALE_RECEIVABLE,
               amountTnd: remainingDueTnd.toFixed(3),
               occurredAt: params.soldAt,

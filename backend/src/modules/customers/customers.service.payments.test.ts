@@ -148,6 +148,7 @@ interface CustomerPaymentStore {
     customerId: string;
     saleId: string | null;
     paymentId: string | null;
+    balanceKind: string;
     entryType: string;
     amountTnd: string;
   }>;
@@ -211,30 +212,31 @@ function makeCustomerPaymentTransactionClient(store: CustomerPaymentStore) {
         null,
     },
     customerLedgerEntry: {
-      findMany: async (args: { where: { customerId: string } }) =>
+      findMany: async (args: {
+        where: { customerId: string; balanceKind?: string };
+      }) =>
         store.customerLedgerEntries.filter(
-          (entry) => entry.customerId === args.where.customerId,
+          (entry) =>
+            entry.customerId === args.where.customerId &&
+            (args.where.balanceKind === undefined ||
+              entry.balanceKind === args.where.balanceKind),
         ),
-      create: async (args: {
-        data: Omit<CustomerPaymentStore["customerLedgerEntries"][number], "id">;
-      }) => {
-        const entry = {
-          ...args.data,
-          id: `ledger-${store.customerLedgerEntries.length + 1}`,
-        };
+      create: async (args: { data: LedgerEntryInput }) => {
+        const entry = withDefaultBalanceKind(
+          args.data,
+          store.customerLedgerEntries.length + 1,
+        );
         store.customerLedgerEntries.push(entry);
         return entry;
       },
-      createMany: async (args: {
-        data: Array<
-          Omit<CustomerPaymentStore["customerLedgerEntries"][number], "id">
-        >;
-      }) => {
+      createMany: async (args: { data: LedgerEntryInput[] }) => {
         for (const item of args.data) {
-          store.customerLedgerEntries.push({
-            ...item,
-            id: `ledger-${store.customerLedgerEntries.length + 1}`,
-          });
+          store.customerLedgerEntries.push(
+            withDefaultBalanceKind(
+              item,
+              store.customerLedgerEntries.length + 1,
+            ),
+          );
         }
         return { count: args.data.length };
       },
@@ -335,6 +337,7 @@ function createCustomerPaymentStore(): CustomerPaymentStore {
         customerId: "customer-1",
         saleId: "sale-1",
         paymentId: null,
+        balanceKind: "RECEIVABLE",
         entryType: "SALE_RECEIVABLE",
         amountTnd: "50.000",
       },
@@ -343,5 +346,19 @@ function createCustomerPaymentStore(): CustomerPaymentStore {
     customerPaymentAllocations: [],
     auditEvents: [],
     idempotencyRecords: [],
+  };
+}
+
+type LedgerEntryInput = Omit<
+  CustomerPaymentStore["customerLedgerEntries"][number],
+  "id" | "balanceKind"
+> & { balanceKind?: string };
+
+/// The database column defaults to RECEIVABLE, so the double must too.
+function withDefaultBalanceKind(data: LedgerEntryInput, index: number) {
+  return {
+    balanceKind: "RECEIVABLE",
+    ...data,
+    id: `ledger-${index}`,
   };
 }

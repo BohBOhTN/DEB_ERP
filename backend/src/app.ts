@@ -15,6 +15,8 @@ import { healthRouter } from "./modules/health/health.routes.js";
 import type { HealthCheck } from "./modules/health/health.service.js";
 import { inventoryRouter } from "./modules/inventory/inventory.routes.js";
 import type { InventoryService } from "./modules/inventory/inventory.service.js";
+import { ordersRouter } from "./modules/orders/orders.routes.js";
+import type { OrdersService } from "./modules/orders/orders.service.js";
 import { posRouter } from "./modules/pos/pos.routes.js";
 import type { PosService } from "./modules/pos/pos.service.js";
 import { procurementRouter } from "./modules/procurement/procurement.routes.js";
@@ -44,6 +46,9 @@ export function createApp(params: {
   };
   inventory?: {
     inventoryService: InventoryService;
+  };
+  orders?: {
+    ordersService: OrdersService;
   };
   procurement?: {
     procurementService: ProcurementService;
@@ -111,6 +116,17 @@ export function createApp(params: {
         authService: params.auth.authService,
         cookie: params.auth.cookie,
         inventoryService: params.inventory.inventoryService,
+      }),
+    );
+  }
+
+  if (params.auth && params.orders) {
+    app.use(
+      "/api",
+      ordersRouter({
+        authService: params.auth.authService,
+        cookie: params.auth.cookie,
+        ordersService: params.orders.ordersService,
       }),
     );
   }
