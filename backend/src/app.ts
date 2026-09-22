@@ -4,6 +4,8 @@ import helmet from "helmet";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { accessRouter } from "./modules/access/access.routes.js";
 import type { AccessService } from "./modules/access/access.service.js";
+import { auditRouter } from "./modules/audit/audit.routes.js";
+import type { AuditService } from "./modules/audit/audit.service.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import type { AuthService } from "./modules/auth/auth.service.js";
 import type { SessionCookieConfig } from "./modules/auth/cookies.js";
@@ -43,6 +45,9 @@ export function createApp(params: {
   };
   access?: {
     accessService: AccessService;
+  };
+  audit?: {
+    auditService: AuditService;
   };
   catalog?: {
     catalogService: CatalogService;
@@ -98,6 +103,17 @@ export function createApp(params: {
         authService: params.auth.authService,
         cookie: params.auth.cookie,
         accessService: params.access.accessService,
+      }),
+    );
+  }
+
+  if (params.auth && params.audit) {
+    app.use(
+      "/api",
+      auditRouter({
+        authService: params.auth.authService,
+        cookie: params.auth.cookie,
+        auditService: params.audit.auditService,
       }),
     );
   }

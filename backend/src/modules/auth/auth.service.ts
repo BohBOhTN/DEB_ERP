@@ -9,10 +9,25 @@ import { createSessionToken, hashSessionToken } from "./token.service.js";
 
 const genericLoginMessage = "Identifiants invalides.";
 
+/// AUD-002 asks every audited event for an actor, an action, an entity and a
+/// correlation id. Authentication events are recorded through this sink rather
+/// than by giving AuthService a database, so the service stays testable against
+/// an in-memory repository.
+export interface SecurityAuditRecorder {
+  record(event: {
+    actorUserId?: string;
+    action: string;
+    entity: string;
+    targetId?: string;
+    reason?: string;
+  }): Promise<void>;
+}
+
 export class AuthService {
   public constructor(
     private readonly repository: AuthRepository,
     private readonly sessionTtlMinutes: number,
+    private readonly securityAudit?: SecurityAuditRecorder,
   ) {}
 
   public async login(params: { email: string; password: string }): Promise<{
@@ -24,6 +39,13 @@ export class AuthService {
     const user = await this.repository.findUserByEmail(email);
 
     if (!user) {
+      // The submitted address belongs to no account. It is attacker-controlled
+      // text, so it is counted but not stored.
+      await this.recordSecurityEvent({
+        action: "auth.login_failed",
+        entity: "user",
+        reason: "unknown_email",
+      });
       throw invalidCredentials();
     }
 
@@ -33,6 +55,13 @@ export class AuthService {
     );
 
     if (!passwordMatches || !user.isActive) {
+      await this.recordSecurityEvent({
+        actorUserId: user.id,
+        action: "auth.login_failed",
+        entity: "user",
+        targetId: user.id,
+        reason: passwordMatches ? "inactive_user" : "invalid_password",
+      });
       throw invalidCredentials();
     }
 
@@ -43,6 +72,13 @@ export class AuthService {
       userId: user.id,
       tokenHash: hashSessionToken(sessionToken),
       expiresAt,
+    });
+
+    await this.recordSecurityEvent({
+      actorUserId: user.id,
+      action: "auth.login",
+      entity: "user",
+      targetId: user.id,
     });
 
     return {
@@ -82,7 +118,39 @@ export class AuthService {
       return;
     }
 
-    await this.repository.revokeSession(hashSessionToken(sessionToken));
+    const tokenHash = hashSessionToken(sessionToken);
+    const session = await this.repository.findSessionByTokenHash(tokenHash);
+
+    await this.repository.revokeSession(tokenHash);
+
+    if (session) {
+      await this.recordSecurityEvent({
+        actorUserId: session.userId,
+        action: "auth.logout",
+        entity: "user",
+        targetId: session.userId,
+      });
+    }
+  }
+
+  /// Auditing must never break the request it describes, so a recorder failure
+  /// is swallowed rather than turned into a failed login or logout.
+  private async recordSecurityEvent(event: {
+    actorUserId?: string;
+    action: string;
+    entity: string;
+    targetId?: string;
+    reason?: string;
+  }): Promise<void> {
+    if (!this.securityAudit) {
+      return;
+    }
+
+    try {
+      await this.securityAudit.record(event);
+    } catch {
+      return;
+    }
   }
 
   public async createUser(params: {
