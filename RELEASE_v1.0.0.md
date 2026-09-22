@@ -105,7 +105,7 @@ applied now.
 
 ## Database and migration review
 
-- Fifteen migrations, applied in order from an empty database by CI on every
+- Fourteen migrations, applied in order from an empty database by CI on every
   run, which is the staging-like rehearsal for this release.
 - All 54 foreign keys are indexed; this was checked by parsing the committed
   migration SQL rather than by inspection.
