@@ -39,16 +39,25 @@ Never commit real `.env` files, credentials, database passwords, tokens, or back
 
 ### Backend Environment
 
-| Variable               | Purpose                                                 |
-| ---------------------- | ------------------------------------------------------- |
-| `NODE_ENV`             | Runtime environment, for example `development`          |
-| `PORT`                 | API port                                                |
-| `DATABASE_URL`         | PostgreSQL connection string                            |
-| `SESSION_COOKIE_NAME`  | HTTP-only session cookie name                           |
-| `SESSION_TTL_MINUTES`  | Session lifetime in minutes                             |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated browser origins allowed to call the API |
-| `RATE_LIMIT_MAX`       | Placeholder for Sprint 1 rate-limit maximum             |
-| `RATE_LIMIT_WINDOW_MS` | Placeholder for Sprint 1 rate-limit window              |
+| Variable                      | Purpose                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| `NODE_ENV`                    | Runtime environment, for example `development`                           |
+| `PORT`                        | API port                                                                 |
+| `DATABASE_URL`                | PostgreSQL connection string                                             |
+| `SESSION_COOKIE_NAME`         | HTTP-only session cookie name                                            |
+| `SESSION_TTL_MINUTES`         | Session lifetime in minutes                                              |
+| `CORS_ALLOWED_ORIGINS`        | Comma-separated browser origins allowed to call the API                  |
+| `RATE_LIMIT_MAX`              | Login attempts allowed per client address per window                     |
+| `RATE_LIMIT_WINDOW_MS`        | Login rate-limit window in milliseconds                                  |
+| `GLOBAL_RATE_LIMIT_MAX`       | Requests allowed on any route per client address per window              |
+| `GLOBAL_RATE_LIMIT_WINDOW_MS` | Global rate-limit window in milliseconds                                 |
+| `TRUST_PROXY`                 | Reverse-proxy hops to trust for the client address (`1` behind nginx)    |
+| `LOG_LEVEL`                   | pino level: `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` |
+| `LOG_PRETTY`                  | `true` for human-readable terminal logs; production emits JSON           |
+| `GIT_SHA`                     | Commit identifier reported by the health endpoints                       |
+| `IDEMPOTENCY_TTL_DAYS`        | Days an idempotency record is kept before cleanup                        |
+| `REQUEST_TIMEOUT_MS`          | Socket timeout for a single request                                      |
+| `SHUTDOWN_TIMEOUT_MS`         | Grace period for in-flight requests on SIGTERM                           |
 
 ### Frontend Environment
 
@@ -92,13 +101,27 @@ npm run build
 
 ## Health Check
 
-The API exposes:
+The API exposes two probes, under both the legacy and the versioned prefix:
 
 ```text
-GET /api/health
+GET /api/v1/health/live    # process is running; touches no dependency
+GET /api/v1/health/ready   # database reachable; reports the latest migration
+GET /api/health            # alias of /ready kept for the V1 frontend
 ```
 
-The response uses the project response envelope and includes a correlation ID.
+Responses use the project envelope, include a correlation ID, and carry the
+package version and `GIT_SHA` of the running build.
+
+## Logging and errors
+
+Every request writes one structured log line (pino) with the correlation ID,
+actor, route template, status and duration; every 5xx is logged with its stack
+under the same correlation ID the client received in the error body and in the
+`X-Correlation-Id` header. Clients may send their own `X-Correlation-Id`
+(8 to 64 printable characters); anything else is replaced.
+
+Idempotent commands return `Idempotency-Replayed: true` when the response was
+served from the idempotency store rather than executed again.
 
 ## Authentication
 
