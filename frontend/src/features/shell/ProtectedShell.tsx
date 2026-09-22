@@ -8,6 +8,7 @@ import { InventoryManagement } from "../inventory/InventoryManagement";
 import { OrderManagement } from "../orders/OrderManagement";
 import { PosManagement } from "../pos/PosManagement";
 import { ProcurementManagement } from "../procurement/ProcurementManagement";
+import { SimulationManagement } from "../simulation/SimulationManagement";
 
 interface ProtectedShellProps {
   user: CurrentUser;
@@ -73,6 +74,8 @@ export function ProtectedShell({ user, onLogout }: ProtectedShellProps) {
           <PosManagement user={user} />
         ) : activeModule === "procurement" ? (
           <ProcurementManagement user={user} />
+        ) : activeModule === "simulation" ? (
+          <SimulationManagement user={user} />
         ) : activeModule === "catalog" ? (
           <CatalogManagement user={user} />
         ) : activeModule === "access" ? (
@@ -159,6 +162,15 @@ function buildNavigation(user: CurrentUser) {
     user.effectivePermissions.includes("distributor_payments.create")
   ) {
     modules.push({ id: "distribution", label: "Distribution" });
+  }
+
+  if (
+    user.effectivePermissions.includes("simulations.view") ||
+    user.effectivePermissions.includes("simulations.create") ||
+    user.effectivePermissions.includes("simulations.update") ||
+    user.effectivePermissions.includes("simulations.delete")
+  ) {
+    modules.push({ id: "simulation", label: "Simulation" });
   }
 
   if (
