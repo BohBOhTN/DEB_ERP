@@ -54,6 +54,15 @@ jobs:
         env:
           DATABASE_URL: ${{ env.CI_DATABASE_URL }}
 
+      # The migrated database must match prisma/schema.prisma, except for the
+      # partial indexes and sequences Prisma cannot express (listed in
+      # backend/prisma/protected-objects.json). Anything else is drift that
+      # the next `prisma migrate dev` would turn into a destructive migration.
+      - name: Check schema drift
+        run: npm run db:check-drift --workspace backend
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+
       - name: Check formatting
         run: npm run format:check
 

@@ -13,6 +13,7 @@
     "prisma:validate": "prisma validate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
+    "db:check-drift": "node scripts/check-schema-drift.mjs",
     "users:create": "tsx src/scripts/createUser.ts"
   },
   "dependencies": {
