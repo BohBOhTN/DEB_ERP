@@ -12,7 +12,8 @@
     "api:types": "openapi-typescript ../backend/openapi.json -o src/lib/api/types.gen.ts",
     "lint:css": "stylelint \"src/**/*.css\"",
     "api:permissions": "tsx scripts/generatePermissionKeys.ts",
-    "bundle:check": "node scripts/check-bundle-size.mjs"
+    "bundle:check": "node scripts/check-bundle-size.mjs",
+    "kit:review": "node scripts/kit-review.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
@@ -45,6 +46,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.7",

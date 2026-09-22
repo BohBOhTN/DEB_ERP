@@ -11,7 +11,7 @@ export const kit: KitEntry = {
     {
       title: "Variantes",
       render: () => (
-        <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
           <IconButton label="Modifier" icon={<Pencil />} />
           <IconButton label="Ajouter" icon={<Plus />} variant="primary" />
           <IconButton label="Fermer" icon={<X />} variant="secondary" />

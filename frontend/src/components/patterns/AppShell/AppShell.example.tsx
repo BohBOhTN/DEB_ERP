@@ -77,6 +77,9 @@ function Example() {
         border: "1px solid var(--border-subtle)",
         borderRadius: 14,
         overflow: "hidden",
+        // Makes this box the containing block of the fixed bottom navigation,
+        // so the example does not bleed over the rest of the gallery.
+        transform: "translateZ(0)",
       }}
     >
       <AppShell

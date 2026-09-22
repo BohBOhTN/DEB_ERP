@@ -15,7 +15,14 @@ export const kit: KitEntry = {
     {
       title: "Tonalités",
       render: () => (
-        <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 24,
+            alignItems: "center",
+          }}
+        >
           <Sparkline
             title="Dépenses des 30 derniers jours"
             values={values}
