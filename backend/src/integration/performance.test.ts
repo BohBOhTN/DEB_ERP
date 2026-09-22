@@ -92,8 +92,12 @@ suite("query performance on a large history", () => {
     expect(row?.balanceTnd).toBe(expected);
     expect(row?.openSaleCount).toBeGreaterThan(0);
 
+    // Each fixture supplier has 40 ledger rows, so a page of 10 must leave a
+    // cursor behind.
     const supplierId = fixture.suppliers[0].id;
-    const statement = await procurement.getSupplierStatement(supplierId);
+    const statement = await procurement.getSupplierStatement(supplierId, {
+      limit: 10,
+    });
     const supplierEntries = await prisma.supplierLedgerEntry.findMany({
       where: { supplierId },
     });
