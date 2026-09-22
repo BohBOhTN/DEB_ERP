@@ -13,6 +13,7 @@ import {
 import { AppError } from "../../shared/appError.js";
 import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
+import { nextSaleReference } from "../../shared/references.js";
 import { sumOrZero } from "../../shared/ledger.js";
 import { normalizeName } from "../../shared/text.js";
 
@@ -571,6 +572,7 @@ export class PosService {
 
         const sale = await tx.sale.create({
           data: {
+            reference: await nextSaleReference(tx),
             sessionId: session.id,
             customerId: customer?.id,
             status: SaleStatus.POSTED,

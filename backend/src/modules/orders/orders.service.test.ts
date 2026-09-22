@@ -687,6 +687,13 @@ function makeTransactionClient(store: OrdersStore) {
     });
 
   return {
+    $queryRawUnsafe: async (sql: string) => {
+      if (sql.includes("nextval")) {
+        store.referenceSequence += 1;
+        return [{ nextval: BigInt(store.referenceSequence) }];
+      }
+      return [];
+    },
     $queryRaw: async (strings: TemplateStringsArray) => {
       if (strings.join("").includes("nextval")) {
         store.referenceSequence += 1;

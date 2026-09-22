@@ -458,7 +458,10 @@ function createStore(): PosStore {
 }
 
 function makeTransactionClient(store: PosStore) {
+  let sequence = 0;
   return {
+    // Sale numbers come from a database sequence.
+    $queryRawUnsafe: async () => [{ nextval: BigInt(++sequence) }],
     idempotencyRecord: {
       create: async (args: {
         data: { scope: string; key: string; requestHash: string };

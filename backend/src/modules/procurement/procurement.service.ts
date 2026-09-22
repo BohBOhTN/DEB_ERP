@@ -10,6 +10,7 @@ import {
 import { AppError } from "../../shared/appError.js";
 import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
+import { nextPurchaseReference } from "../../shared/references.js";
 import {
   balanceOf,
   balancesByKey,
@@ -446,6 +447,7 @@ export class ProcurementService {
             id: purchase.id,
           },
           data: {
+            reference: await nextPurchaseReference(tx),
             status: PurchaseStatus.POSTED,
             postedAt,
             postedByUserId: actor.actorUserId,

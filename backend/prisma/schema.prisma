@@ -343,6 +343,8 @@ model Supplier {
 
 model Purchase {
   id                 String                      @id @default(cuid())
+  /// Human document number, AC-000001, assigned when the draft is posted.
+  reference          String?                     @unique
   supplierId         String                      @map("supplier_id")
   purchaseDate       DateTime                    @map("purchase_date")
   supplierReference  String?                     @map("supplier_reference")
@@ -556,6 +558,8 @@ model PosSession {
 
 model Sale {
   id                 String                      @id @default(cuid())
+  /// Human document number, VT-000001, assigned at posting.
+  reference          String                      @unique
   sessionId          String                      @map("session_id")
   customerId         String?                     @map("customer_id")
   status             SaleStatus                  @default(POSTED)

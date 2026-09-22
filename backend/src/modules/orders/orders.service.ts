@@ -18,6 +18,7 @@ import {
   runIdempotentCommand,
   postingTransactionOptions,
 } from "../../shared/idempotency.js";
+import { nextSaleReference } from "../../shared/references.js";
 
 const mainTerminalCode = "main";
 const mainLocationCode = "main";
@@ -606,6 +607,7 @@ export class OrdersService {
           .toDecimalPlaces(3, Prisma.Decimal.ROUND_HALF_UP);
         const sale = await tx.sale.create({
           data: {
+            reference: await nextSaleReference(tx),
             sessionId: session.id,
             customerId: customer.id,
             status: SaleStatus.POSTED,
