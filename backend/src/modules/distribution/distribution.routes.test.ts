@@ -81,6 +81,30 @@ class InMemoryAuthRepository implements AuthRepository {
   }
 }
 
+function emptyPage() {
+  return { items: [], page: 1, pageSize: 25, total: 0, pageCount: 0 };
+}
+
+const saleBody = {
+  distributorId: "distributor-1",
+  soldAt: "2026-09-22T09:00:00.000Z",
+  lines: [{ productId: "product-1", quantity: "10", unitPriceTnd: "2.000" }],
+};
+
+const dispatchBody = {
+  distributorId: "distributor-1",
+  dispatchedAt: "2026-09-22T06:00:00.000Z",
+  lines: [{ productId: "product-1", quantity: "100" }],
+};
+
+const settlementBody = {
+  dispatchId: "dispatch-1",
+  settledAt: "2026-09-22T18:00:00.000Z",
+  lines: [
+    { dispatchLineId: "line-1", soldQuantity: "80", unitPriceTnd: "2.000" },
+  ],
+};
+
 async function createTestApp(permissionKeys: string[]) {
   const repository = new InMemoryAuthRepository();
   const authService = new AuthService(repository, 30);
@@ -101,6 +125,24 @@ async function createTestApp(permissionKeys: string[]) {
     }),
     createDistributor: vi.fn().mockResolvedValue({ id: "distributor-1" }),
     updateDistributor: vi.fn().mockResolvedValue({ id: "distributor-1" }),
+    postDirectSale: vi.fn().mockResolvedValue({ sale: { id: "sale-1" } }),
+    listDispatches: vi.fn().mockResolvedValue(emptyPage()),
+    getDispatch: vi.fn().mockResolvedValue({ id: "dispatch-1" }),
+    dispatchConsignment: vi
+      .fn()
+      .mockResolvedValue({ dispatch: { id: "dispatch-1" } }),
+    postSettlement: vi
+      .fn()
+      .mockResolvedValue({ settlement: { id: "settlement-1" } }),
+    listCustody: vi.fn().mockResolvedValue({ items: [], discrepancies: [] }),
+    listDistributorBalances: vi.fn().mockResolvedValue(emptyPage()),
+    getDistributorStatement: vi
+      .fn()
+      .mockResolvedValue({ distributor: { id: "distributor-1" } }),
+    listDistributorPayments: vi.fn().mockResolvedValue(emptyPage()),
+    createDistributorPayment: vi
+      .fn()
+      .mockResolvedValue({ payment: { id: "payment-1" }, allocations: [] }),
   };
 
   const app = createApp({
@@ -270,6 +312,277 @@ describe("distribution routes", () => {
     expect(distributionService.updateDistributor).toHaveBeenCalledWith(
       "distributor-1",
       expect.objectContaining({ version: 1, isActive: false }),
+      expect.objectContaining({ actorUserId: "user-1" }),
+    );
+  });
+
+  it("rejects a direct sale without distribution.direct_sale", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distributors.view",
+    ]);
+
+    const response = await request(app)
+      .post("/api/distributor-sales")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "sale-1")
+      .send(saleBody)
+      .expect(403);
+
+    expect(response.body.error.code).toBe("PERMISSION_DENIED");
+    expect(distributionService.postDirectSale).not.toHaveBeenCalled();
+  });
+
+  it("requires an idempotency key for a direct sale", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distribution.direct_sale",
+    ]);
+
+    const response = await request(app)
+      .post("/api/distributor-sales")
+      .set("Cookie", cookie)
+      .send(saleBody)
+      .expect(400);
+
+    expect(response.body.error.code).toBe("IDEMPOTENCY_KEY_REQUIRED");
+    expect(distributionService.postDirectSale).not.toHaveBeenCalled();
+  });
+
+  it("posts a direct sale with distribution.direct_sale", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distribution.direct_sale",
+    ]);
+
+    await request(app)
+      .post("/api/distributor-sales")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "sale-1")
+      .send(saleBody)
+      .expect(201);
+
+    expect(distributionService.postDirectSale).toHaveBeenCalledWith(
+      expect.objectContaining({ idempotencyKey: "sale-1" }),
+      expect.objectContaining({ actorUserId: "user-1" }),
+    );
+  });
+
+  it("rejects a dispatch without distribution.dispatch", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distribution.custody.view",
+    ]);
+
+    const response = await request(app)
+      .post("/api/distributor-dispatches")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "dispatch-1")
+      .send(dispatchBody)
+      .expect(403);
+
+    expect(response.body.error.code).toBe("PERMISSION_DENIED");
+    expect(distributionService.dispatchConsignment).not.toHaveBeenCalled();
+  });
+
+  it("posts a dispatch with distribution.dispatch", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distribution.dispatch",
+    ]);
+
+    await request(app)
+      .post("/api/distributor-dispatches")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "dispatch-1")
+      .send(dispatchBody)
+      .expect(201);
+
+    expect(distributionService.dispatchConsignment).toHaveBeenCalledWith(
+      expect.objectContaining({ idempotencyKey: "dispatch-1" }),
+      expect.objectContaining({ actorUserId: "user-1" }),
+    );
+  });
+
+  // Dispatching must not let a user read custody, and reading custody must not
+  // let a user dispatch.
+  it("rejects reading custody without distribution.custody.view", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distribution.dispatch",
+    ]);
+
+    const response = await request(app)
+      .get("/api/distributor-custody")
+      .set("Cookie", cookie)
+      .expect(403);
+
+    expect(response.body.error.code).toBe("PERMISSION_DENIED");
+    expect(distributionService.listCustody).not.toHaveBeenCalled();
+  });
+
+  it("reads custody and dispatches with distribution.custody.view", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distribution.custody.view",
+    ]);
+
+    await request(app)
+      .get("/api/distributor-custody")
+      .set("Cookie", cookie)
+      .expect(200);
+    await request(app)
+      .get("/api/distributor-dispatches?status=OPEN")
+      .set("Cookie", cookie)
+      .expect(200);
+    await request(app)
+      .get("/api/distributor-dispatches/dispatch-1")
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(distributionService.listCustody).toHaveBeenCalled();
+    expect(distributionService.listDispatches).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "OPEN" }),
+    );
+    expect(distributionService.getDispatch).toHaveBeenCalledWith("dispatch-1");
+  });
+
+  it("rejects a settlement without distribution.settle", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distribution.dispatch",
+      "distribution.custody.view",
+    ]);
+
+    const response = await request(app)
+      .post("/api/distributor-settlements")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "settlement-1")
+      .send(settlementBody)
+      .expect(403);
+
+    expect(response.body.error.code).toBe("PERMISSION_DENIED");
+    expect(distributionService.postSettlement).not.toHaveBeenCalled();
+  });
+
+  it("requires an idempotency key for a settlement", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distribution.settle",
+    ]);
+
+    const response = await request(app)
+      .post("/api/distributor-settlements")
+      .set("Cookie", cookie)
+      .send(settlementBody)
+      .expect(400);
+
+    expect(response.body.error.code).toBe("IDEMPOTENCY_KEY_REQUIRED");
+    expect(distributionService.postSettlement).not.toHaveBeenCalled();
+  });
+
+  it("posts a settlement with distribution.settle", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distribution.settle",
+    ]);
+
+    await request(app)
+      .post("/api/distributor-settlements")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "settlement-1")
+      .send(settlementBody)
+      .expect(201);
+
+    expect(distributionService.postSettlement).toHaveBeenCalledWith(
+      expect.objectContaining({ idempotencyKey: "settlement-1" }),
+      expect.objectContaining({ actorUserId: "user-1" }),
+    );
+  });
+
+  it("rejects balances and statements without distribution.balances.view", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distributors.view",
+    ]);
+
+    await request(app)
+      .get("/api/distributor-balances")
+      .set("Cookie", cookie)
+      .expect(403);
+    await request(app)
+      .get("/api/distributors/distributor-1/statement")
+      .set("Cookie", cookie)
+      .expect(403);
+
+    expect(distributionService.listDistributorBalances).not.toHaveBeenCalled();
+    expect(distributionService.getDistributorStatement).not.toHaveBeenCalled();
+  });
+
+  it("reads balances and statements with distribution.balances.view", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distribution.balances.view",
+    ]);
+
+    await request(app)
+      .get("/api/distributor-balances")
+      .set("Cookie", cookie)
+      .expect(200);
+    await request(app)
+      .get("/api/distributors/distributor-1/statement")
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(distributionService.listDistributorBalances).toHaveBeenCalled();
+    expect(distributionService.getDistributorStatement).toHaveBeenCalledWith(
+      "distributor-1",
+    );
+  });
+
+  it("rejects listing distributor payments without distributor_payments.view", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distributor_payments.create",
+    ]);
+
+    const response = await request(app)
+      .get("/api/distributor-payments")
+      .set("Cookie", cookie)
+      .expect(403);
+
+    expect(response.body.error.code).toBe("PERMISSION_DENIED");
+    expect(distributionService.listDistributorPayments).not.toHaveBeenCalled();
+  });
+
+  it("rejects creating a distributor payment without distributor_payments.create", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distributor_payments.view",
+    ]);
+
+    const response = await request(app)
+      .post("/api/distributor-payments")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "payment-1")
+      .send({
+        distributorId: "distributor-1",
+        paidAt: "2026-09-23T09:00:00.000Z",
+        amountTnd: "30.000",
+      })
+      .expect(403);
+
+    expect(response.body.error.code).toBe("PERMISSION_DENIED");
+    expect(distributionService.createDistributorPayment).not.toHaveBeenCalled();
+  });
+
+  it("creates a distributor payment with distributor_payments.create", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distributor_payments.create",
+    ]);
+
+    await request(app)
+      .post("/api/distributor-payments")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "payment-1")
+      .send({
+        distributorId: "distributor-1",
+        paidAt: "2026-09-23T09:00:00.000Z",
+        amountTnd: "30.000",
+      })
+      .expect(201);
+
+    expect(distributionService.createDistributorPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amountTnd: "30.000",
+        idempotencyKey: "payment-1",
+      }),
       expect.objectContaining({ actorUserId: "user-1" }),
     );
   });

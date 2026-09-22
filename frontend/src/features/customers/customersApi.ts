@@ -126,6 +126,7 @@ export async function createCustomerPayment(params: {
   amountTnd: string;
   reference: string;
   notes: string;
+  collectedAtPos?: boolean;
   allocations: Array<{
     saleId: string;
     amountTnd: string;
