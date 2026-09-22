@@ -75,9 +75,18 @@ jobs:
       - name: Test
         run: npm run test
         env:
-          # Runs the database-backed concurrency suite. REQUIRE_INTEGRATION_TESTS
+          # Runs the database-backed concurrency suites. REQUIRE_INTEGRATION_TESTS
           # makes a missing database fail the build rather than silently skip
           # the test that proves one order cannot become two sales.
+          INTEGRATION_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          REQUIRE_INTEGRATION_TESTS: "1"
+
+      # The performance suite seeds a large history and runs alone, verbosely,
+      # so a failure or a crash in it is reported on its own rather than
+      # taking the unit-test run down with it.
+      - name: Performance integration suite
+        run: npm run test:integration --workspace backend
+        env:
           INTEGRATION_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
           REQUIRE_INTEGRATION_TESTS: "1"
 

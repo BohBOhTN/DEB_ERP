@@ -60,6 +60,7 @@ suite("query performance on a large history", () => {
       datasources: { db: { url: integrationDatabaseUrl as string } },
     });
     fixture = await seedPerformanceFixture(prisma, runId);
+    console.info(`[performance] fixture seeded (${runId})`);
     customers = new CustomersService(prisma);
     procurement = new ProcurementService(prisma);
     distribution = new DistributionService(prisma);
@@ -75,6 +76,7 @@ suite("query performance on a large history", () => {
   }, 120_000);
 
   it("reconciles SQL balances with the ledger rows", async () => {
+    console.info("[performance] reconciling");
     const customerId = fixture.customers[0].id;
     const page = await customers.listCustomerBalances({
       search: `Client 0 ${runId}`,
@@ -113,6 +115,7 @@ suite("query performance on a large history", () => {
   }, 60_000);
 
   it("pages a statement by cursor without repeating or skipping entries", async () => {
+    console.info("[performance] paging statement");
     const customerId = fixture.customers[1].id;
     const seen = new Set<string>();
     let cursor: string | undefined;
@@ -138,6 +141,7 @@ suite("query performance on a large history", () => {
   }, 60_000);
 
   it("keeps the busiest reads within the latency budget", async () => {
+    console.info("[performance] measuring");
     const timings = {
       customerBalances: await p95(() =>
         customers.listCustomerBalances({ page: 1, pageSize: 25 }),
@@ -194,6 +198,7 @@ suite("query performance on a large history", () => {
       `Thé à la menthe ${runId}`,
     );
 
+    console.info("[performance] explaining product search");
     const plan = await prisma.$queryRaw<Array<{ "QUERY PLAN": string }>>`
       EXPLAIN (ANALYZE, BUFFERS)
       SELECT id FROM "products"
