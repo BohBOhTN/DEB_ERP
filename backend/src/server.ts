@@ -6,6 +6,7 @@ import { PrismaAuthRepository } from "./modules/auth/auth.repository.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { CatalogService } from "./modules/catalog/catalog.service.js";
 import { CustomersService } from "./modules/customers/customers.service.js";
+import { DistributionService } from "./modules/distribution/distribution.service.js";
 import { createHealthCheck } from "./modules/health/health.service.js";
 import { InventoryService } from "./modules/inventory/inventory.service.js";
 import { OrdersService } from "./modules/orders/orders.service.js";
@@ -16,6 +17,7 @@ const prisma = new PrismaClient();
 const accessService = new AccessService(prisma);
 const catalogService = new CatalogService(prisma);
 const customersService = new CustomersService(prisma);
+const distributionService = new DistributionService(prisma);
 const inventoryService = new InventoryService(prisma);
 const ordersService = new OrdersService(prisma);
 const procurementService = new ProcurementService(prisma);
@@ -58,6 +60,9 @@ const app = createApp({
   },
   customers: {
     customersService,
+  },
+  distribution: {
+    distributionService,
   },
   inventory: {
     inventoryService,

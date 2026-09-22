@@ -11,6 +11,8 @@ import { catalogRouter } from "./modules/catalog/catalog.routes.js";
 import type { CatalogService } from "./modules/catalog/catalog.service.js";
 import { customersRouter } from "./modules/customers/customers.routes.js";
 import type { CustomersService } from "./modules/customers/customers.service.js";
+import { distributionRouter } from "./modules/distribution/distribution.routes.js";
+import type { DistributionService } from "./modules/distribution/distribution.service.js";
 import { healthRouter } from "./modules/health/health.routes.js";
 import type { HealthCheck } from "./modules/health/health.service.js";
 import { inventoryRouter } from "./modules/inventory/inventory.routes.js";
@@ -43,6 +45,9 @@ export function createApp(params: {
   };
   customers?: {
     customersService: CustomersService;
+  };
+  distribution?: {
+    distributionService: DistributionService;
   };
   inventory?: {
     inventoryService: InventoryService;
@@ -105,6 +110,17 @@ export function createApp(params: {
         authService: params.auth.authService,
         cookie: params.auth.cookie,
         customersService: params.customers.customersService,
+      }),
+    );
+  }
+
+  if (params.auth && params.distribution) {
+    app.use(
+      "/api",
+      distributionRouter({
+        authService: params.auth.authService,
+        cookie: params.auth.cookie,
+        distributionService: params.distribution.distributionService,
       }),
     );
   }
