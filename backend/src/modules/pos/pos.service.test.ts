@@ -1,7 +1,7 @@
 import {
   PosSessionStatus,
   type PrismaClient,
-  type SalePaymentMethod,
+  type PaymentMethod,
 } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import { PosService } from "./pos.service.js";
@@ -581,7 +581,7 @@ function makeTransactionClient(store: PosStore) {
       create: async (args: { data: Record<string, unknown> }) => {
         const payment = {
           id: `payment-${store.salePayments.length + 1}`,
-          method: "CASH" satisfies SalePaymentMethod,
+          method: "CASH" satisfies PaymentMethod,
           ...args.data,
         };
         store.salePayments.push(payment);

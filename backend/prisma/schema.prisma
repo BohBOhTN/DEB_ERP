@@ -420,12 +420,17 @@ model PurchaseLine {
   @@map("purchase_lines")
 }
 
+/// One method for every money movement (OD-014 keeps cash only in V1/V2).
+enum PaymentMethod {
+  CASH
+}
+
 model SupplierPayment {
   id            String                      @id @default(cuid())
   supplierId    String                      @map("supplier_id")
   purchaseId    String?                     @map("purchase_id")
   amountTnd     Decimal                     @map("amount_tnd") @db.Decimal(14, 3)
-  method        SupplierPaymentMethod       @default(CASH)
+  method        PaymentMethod               @default(CASH)
   paidAt        DateTime                    @map("paid_at")
   reference     String?
   notes         String?
@@ -489,10 +494,6 @@ enum PurchasePaymentTerms {
   PAID
   PARTIAL
   UNPAID
-}
-
-enum SupplierPaymentMethod {
-  CASH
 }
 
 enum SupplierLedgerEntryType {
@@ -627,17 +628,17 @@ model SaleLine {
 }
 
 model SalePayment {
-  id            String            @id @default(cuid())
-  saleId        String            @map("sale_id")
-  sessionId     String            @map("session_id")
-  amountTnd     Decimal           @map("amount_tnd") @db.Decimal(14, 3)
-  method        SalePaymentMethod @default(CASH)
-  paidAt        DateTime          @map("paid_at")
-  actorUserId   String            @map("actor_user_id")
-  correlationId String?           @map("correlation_id")
-  createdAt     DateTime          @default(now()) @map("created_at")
-  sale          Sale              @relation(fields: [saleId], references: [id], onDelete: Restrict)
-  session       PosSession        @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  id            String        @id @default(cuid())
+  saleId        String        @map("sale_id")
+  sessionId     String        @map("session_id")
+  amountTnd     Decimal       @map("amount_tnd") @db.Decimal(14, 3)
+  method        PaymentMethod @default(CASH)
+  paidAt        DateTime      @map("paid_at")
+  actorUserId   String        @map("actor_user_id")
+  correlationId String?       @map("correlation_id")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  sale          Sale          @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  session       PosSession    @relation(fields: [sessionId], references: [id], onDelete: Restrict)
 
   @@index([saleId])
   @@index([sessionId])
@@ -653,7 +654,7 @@ model CustomerPayment {
   /// back-office payment leaves this null and never touches the session.
   sessionId     String?                     @map("session_id")
   amountTnd     Decimal                     @map("amount_tnd") @db.Decimal(14, 3)
-  method        CustomerPaymentMethod       @default(CASH)
+  method        PaymentMethod               @default(CASH)
   paidAt        DateTime                    @map("paid_at")
   reference     String?
   notes         String?
@@ -782,7 +783,7 @@ model CustomerOrderAdvance {
   sessionId     String                       @map("session_id")
   movement      CustomerOrderAdvanceMovement @default(RECEIPT)
   amountTnd     Decimal                      @map("amount_tnd") @db.Decimal(14, 3)
-  method        CustomerPaymentMethod        @default(CASH)
+  method        PaymentMethod                @default(CASH)
   paidAt        DateTime                     @map("paid_at")
   notes         String?
   actorUserId   String                       @map("actor_user_id")
@@ -813,14 +814,6 @@ enum SalePaymentState {
   PAID
   PARTIALLY_PAID
   UNPAID
-}
-
-enum SalePaymentMethod {
-  CASH
-}
-
-enum CustomerPaymentMethod {
-  CASH
 }
 
 enum CustomerLedgerEntryType {
@@ -1051,7 +1044,7 @@ model DistributorPayment {
   id            String                         @id @default(cuid())
   distributorId String                         @map("distributor_id")
   amountTnd     Decimal                        @map("amount_tnd") @db.Decimal(14, 3)
-  method        DistributorPaymentMethod       @default(CASH)
+  method        PaymentMethod                  @default(CASH)
   paidAt        DateTime                       @map("paid_at")
   reference     String?
   notes         String?
@@ -1115,10 +1108,6 @@ model DistributorLedgerEntry {
 enum DistributorDispatchStatus {
   OPEN
   CLOSED
-}
-
-enum DistributorPaymentMethod {
-  CASH
 }
 
 enum DistributorLedgerEntryType {
@@ -1212,31 +1201,31 @@ model ExpenseCategory {
 /// it records that money left the business for a category. Treasury accounts
 /// and payroll stay deferred (EXP-009, EXP-010).
 model Expense {
-  id                 String               @id @default(cuid())
-  reference          String               @unique
-  categoryId         String               @map("category_id")
-  status             ExpenseStatus        @default(DRAFT)
-  expenseDate        DateTime             @map("expense_date")
-  amountTnd          Decimal              @map("amount_tnd") @db.Decimal(14, 3)
+  id                 String          @id @default(cuid())
+  reference          String          @unique
+  categoryId         String          @map("category_id")
+  status             ExpenseStatus   @default(DRAFT)
+  expenseDate        DateTime        @map("expense_date")
+  amountTnd          Decimal         @map("amount_tnd") @db.Decimal(14, 3)
   description        String
   /// Optional supplier receipt or invoice number, distinct from the generated
   /// document reference above.
-  externalReference  String?              @map("external_reference")
-  method             ExpensePaymentMethod @default(CASH)
+  externalReference  String?         @map("external_reference")
+  method             PaymentMethod   @default(CASH)
   notes              String?
-  responsibleUserId  String               @map("responsible_user_id")
-  postedAt           DateTime?            @map("posted_at")
-  postedByUserId     String?              @map("posted_by_user_id")
-  cancelledAt        DateTime?            @map("cancelled_at")
-  cancelledByUserId  String?              @map("cancelled_by_user_id")
-  cancellationReason String?              @map("cancellation_reason")
-  version            Int                  @default(1)
-  createdByUserId    String               @map("created_by_user_id")
-  updatedByUserId    String               @map("updated_by_user_id")
-  correlationId      String?              @map("correlation_id")
-  createdAt          DateTime             @default(now()) @map("created_at")
-  updatedAt          DateTime             @updatedAt @map("updated_at")
-  category           ExpenseCategory      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  responsibleUserId  String          @map("responsible_user_id")
+  postedAt           DateTime?       @map("posted_at")
+  postedByUserId     String?         @map("posted_by_user_id")
+  cancelledAt        DateTime?       @map("cancelled_at")
+  cancelledByUserId  String?         @map("cancelled_by_user_id")
+  cancellationReason String?         @map("cancellation_reason")
+  version            Int             @default(1)
+  createdByUserId    String          @map("created_by_user_id")
+  updatedByUserId    String          @map("updated_by_user_id")
+  correlationId      String?         @map("correlation_id")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+  category           ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
   @@index([categoryId])
   @@index([status])
@@ -1249,10 +1238,6 @@ enum ExpenseStatus {
   DRAFT
   POSTED
   CANCELLED
-}
-
-enum ExpensePaymentMethod {
-  CASH
 }
 
 model IdempotencyRecord {
