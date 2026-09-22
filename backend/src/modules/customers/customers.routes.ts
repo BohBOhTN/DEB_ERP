@@ -5,27 +5,34 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok, sendCommandResult } from "../../shared/apiResponse.js";
+import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
+import {
+  dateRangeFields,
+  pageFields,
+  searchFields,
+  sortField,
+  withSearch,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { CustomersService } from "./customers.service.js";
 
-const listQuerySchema = z.object({
-  search: z.string().trim().optional(),
+export const listQuerySchema = z.object({
+  sort: sortField(["name", "createdAt"]),
+  ...searchFields,
   isActive: z
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
-const pageQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+export const pageQuerySchema = z.object({
+  ...pageFields,
 });
 
-const paymentListQuerySchema = pageQuerySchema.extend({
+export const paymentListQuerySchema = pageQuerySchema.extend({
+  sort: sortField(["paidAt", "amountTnd"]),
   customerId: z.string().trim().min(1).optional(),
 });
 
@@ -34,20 +41,19 @@ const moneyTnd = z
   .trim()
   .regex(/^\d+(\.\d{1,3})?$/);
 
-const balanceListQuerySchema = pageQuerySchema.extend({
-  search: z.string().trim().optional(),
+export const balanceListQuerySchema = pageQuerySchema.extend({
+  ...searchFields,
   sort: z.enum(["name", "balance"]).optional(),
   minBalance: moneyTnd.optional(),
 });
 
-const statementQuerySchema = z.object({
+export const statementQuerySchema = z.object({
   cursor: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  ...dateRangeFields,
 });
 
-const createCustomerSchema = z.object({
+export const createCustomerSchema = z.object({
   name: z.string().trim().min(1),
   phone: z.string().optional(),
   address: z.string().optional(),
@@ -55,7 +61,7 @@ const createCustomerSchema = z.object({
   notes: z.string().optional(),
 });
 
-const updateCustomerSchema = z.object({
+export const updateCustomerSchema = z.object({
   version: z.number().int().positive(),
   name: z.string().trim().min(1).optional(),
   phone: z.string().optional(),
@@ -65,7 +71,7 @@ const updateCustomerSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-const createCustomerPaymentSchema = z.object({
+export const createCustomerPaymentSchema = z.object({
   customerId: z.string().trim().min(1),
   paidAt: z.coerce.date(),
   amountTnd: moneyTnd,
@@ -100,9 +106,9 @@ export function customersRouter(params: {
     requirePermission("customers.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const customers = await params.customersService.listCustomers(query);
-        response.json(ok({ customers }, getCorrelationId(response)));
+        response.json(okFor(response, { customers }));
       } catch (error) {
         next(error);
       }
@@ -119,7 +125,7 @@ export function customersRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok({ customer }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { customer }));
       } catch (error) {
         next(error);
       }
@@ -137,7 +143,7 @@ export function customersRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ customer }, getCorrelationId(response)));
+        response.json(okFor(response, { customer }));
       } catch (error) {
         next(error);
       }
@@ -149,10 +155,10 @@ export function customersRouter(params: {
     requirePermission("customer_balances.view"),
     async (request, response, next) => {
       try {
-        const query = balanceListQuerySchema.parse(request.query);
+        const query = withSearch(balanceListQuerySchema.parse(request.query));
         const customerBalances =
           await params.customersService.listCustomerBalances(query);
-        response.json(ok({ customerBalances }, getCorrelationId(response)));
+        response.json(okFor(response, { customerBalances }));
       } catch (error) {
         next(error);
       }
@@ -168,7 +174,7 @@ export function customersRouter(params: {
           parseRouteParam(request.params.customerId),
           statementQuerySchema.parse(request.query),
         );
-        response.json(ok({ statement }, getCorrelationId(response)));
+        response.json(okFor(response, { statement }));
       } catch (error) {
         next(error);
       }
@@ -183,7 +189,7 @@ export function customersRouter(params: {
         const query = paymentListQuerySchema.parse(request.query);
         const customerPayments =
           await params.customersService.listCustomerPayments(query);
-        response.json(ok({ customerPayments }, getCorrelationId(response)));
+        response.json(okFor(response, { customerPayments }));
       } catch (error) {
         next(error);
       }
@@ -204,6 +210,21 @@ export function customersRouter(params: {
           actorFromResponse(response),
         );
         sendCommandResult(response, 201, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/customers/:customerId",
+    requirePermission("customers.view"),
+    async (request, response, next) => {
+      try {
+        const customer = await params.customersService.getCustomer(
+          parseRouteParam(request.params.customerId),
+        );
+        response.json(okFor(response, { customer }));
       } catch (error) {
         next(error);
       }

@@ -10,6 +10,7 @@ export default tseslint.config(
       "coverage/**",
       "node_modules/**",
       "internal-docs/**",
+      "frontend/src/lib/api/types.gen.ts",
     ],
   },
   js.configs.recommended,

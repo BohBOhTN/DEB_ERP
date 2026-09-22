@@ -115,6 +115,28 @@ GET /api/health            # alias of /ready kept for the V1 frontend
 Responses use the project envelope, include a correlation ID, and carry the
 package version and `GIT_SHA` of the running build.
 
+## API contract
+
+Every route is served under `/api/v1` and, for the V1 frontend, under the
+legacy `/api` prefix, which answers with `Deprecation: true`. Responses are
+an envelope `{ data, meta }`; errors are
+`{ error: { code, message, fieldErrors?, correlationId } }`. On `/api/v1` a
+collection is `data: { items, page, pageSize, total, pageCount }` and every
+list accepts `page`, `pageSize`, `q`, `sort=field:asc|desc` (whitelisted
+per list) and `from`/`to` as business days in `Africa/Tunis`.
+
+The contract is generated from the route schemas and committed:
+
+```bash
+npm run openapi:generate --workspace backend   # writes backend/openapi.json
+npm run openapi:check --workspace backend      # fails when the file is stale (CI)
+npm run api:types --workspace frontend         # writes frontend/src/lib/api/types.gen.ts
+```
+
+Outside production the running server also serves it at
+`GET /api/v1/openapi.json`. A route without a record in
+`backend/src/openapi/operations.ts` fails the unit tests.
+
 ## Logging and errors
 
 Every request writes one structured log line (pino) with the correlation ID,

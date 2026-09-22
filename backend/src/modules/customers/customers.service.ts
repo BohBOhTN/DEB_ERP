@@ -7,6 +7,7 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
 import {
   balanceOf,
@@ -24,6 +25,7 @@ export interface CustomerActor {
 }
 
 export interface CustomerListParams {
+  sort?: SortSpec<"name" | "createdAt">;
   search?: string;
   isActive?: boolean;
   page: number;
@@ -50,6 +52,7 @@ export interface CustomerStatementParams {
 }
 
 export interface CustomerPaymentListParams {
+  sort?: SortSpec<"paidAt" | "amountTnd">;
   customerId?: string;
   page: number;
   pageSize: number;
@@ -97,7 +100,18 @@ export class CustomersService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.customer.findMany({
         where,
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.CustomerOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -474,7 +488,18 @@ export class CustomersService {
             },
           },
         },
-        orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+        orderBy: orderByFor<
+          "paidAt" | "amountTnd",
+          Prisma.CustomerPaymentOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            paidAt: (direction) => [{ paidAt: direction }],
+            amountTnd: (direction) => [{ amountTnd: direction }],
+          },
+          [{ paidAt: "desc" }, { createdAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -628,6 +653,25 @@ export class CustomersService {
         };
       },
     );
+  }
+
+  /// Detail for the customer page: the row plus both balances.
+  public async getCustomer(customerId: string) {
+    const customer = await this.findCustomerOrThrow(customerId);
+    const totals = await this.prisma.customerLedgerEntry.groupBy({
+      by: ["balanceKind"],
+      where: { customerId },
+      _sum: { amountTnd: true },
+    });
+    const kind = new Map(
+      totals.map((row) => [row.balanceKind, sumOrZero(row._sum.amountTnd)]),
+    );
+
+    return {
+      ...customer,
+      balanceTnd: money(kind.get(CustomerLedgerBalanceKind.RECEIVABLE)),
+      advanceBalanceTnd: money(kind.get(CustomerLedgerBalanceKind.ADVANCE)),
+    };
   }
 
   private async validateCustomerPaymentAllocations(

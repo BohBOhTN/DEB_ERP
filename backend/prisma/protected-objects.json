@@ -14,7 +14,9 @@
     "distributor_sale_reference_seq",
     "distributor_dispatch_reference_seq",
     "distributor_settlement_reference_seq",
-    "expense_reference_seq"
+    "expense_reference_seq",
+    "sale_reference_seq",
+    "purchase_reference_seq"
   ],
   "extensions": ["pg_trgm"]
 }

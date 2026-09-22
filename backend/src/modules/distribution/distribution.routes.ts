@@ -6,22 +6,29 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok, sendCommandResult } from "../../shared/apiResponse.js";
+import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
+import {
+  dateRangeFields,
+  pageFields,
+  searchFields,
+  sortField,
+  withSearch,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { DistributionService } from "./distribution.service.js";
 
-const listQuerySchema = z.object({
-  search: z.string().trim().optional(),
+export const listQuerySchema = z.object({
+  sort: sortField(["name", "createdAt"]),
+  ...searchFields,
   isActive: z
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
-const createDistributorSchema = z.object({
+export const createDistributorSchema = z.object({
   name: z.string().trim().min(1),
   phone: z.string().optional(),
   address: z.string().optional(),
@@ -39,7 +46,7 @@ const quantity = z
   .trim()
   .regex(/^\d+(\.\d{1,6})?$/);
 
-const directSaleSchema = z.object({
+export const directSaleSchema = z.object({
   distributorId: z.string().trim().min(1),
   soldAt: z.coerce.date(),
   paidAmountTnd: moneyTnd.optional(),
@@ -55,27 +62,26 @@ const directSaleSchema = z.object({
     .min(1),
 });
 
-const dispatchListQuerySchema = z.object({
+export const dispatchListQuerySchema = z.object({
+  sort: sortField(["dispatchedAt"]),
   distributorId: z.string().trim().min(1).optional(),
   status: z.nativeEnum(DistributorDispatchStatus).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
-const settlementListQuerySchema = z.object({
+export const settlementListQuerySchema = z.object({
+  sort: sortField(["settledAt", "totalTnd"]),
   distributorId: z.string().trim().min(1).optional(),
   dispatchId: z.string().trim().min(1).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...dateRangeFields,
+  ...pageFields,
 });
 
-const custodyQuerySchema = z.object({
+export const custodyQuerySchema = z.object({
   distributorId: z.string().trim().min(1).optional(),
 });
 
-const dispatchSchema = z.object({
+export const dispatchSchema = z.object({
   distributorId: z.string().trim().min(1),
   dispatchedAt: z.coerce.date(),
   notes: z.string().optional(),
@@ -89,7 +95,7 @@ const dispatchSchema = z.object({
     .min(1),
 });
 
-const settlementSchema = z.object({
+export const settlementSchema = z.object({
   dispatchId: z.string().trim().min(1),
   settledAt: z.coerce.date(),
   paidAmountTnd: moneyTnd.optional(),
@@ -107,17 +113,17 @@ const settlementSchema = z.object({
     .min(1),
 });
 
-const pageQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+export const pageQuerySchema = z.object({
+  ...pageFields,
 });
 
-const paymentListQuerySchema = pageQuerySchema.extend({
+export const paymentListQuerySchema = pageQuerySchema.extend({
+  sort: sortField(["paidAt", "amountTnd"]),
   distributorId: z.string().trim().min(1).optional(),
 });
 
-const balanceListQuerySchema = pageQuerySchema.extend({
-  search: z.string().trim().optional(),
+export const balanceListQuerySchema = pageQuerySchema.extend({
+  ...searchFields,
   sort: z.enum(["name", "balance"]).optional(),
   minBalance: z
     .string()
@@ -126,14 +132,13 @@ const balanceListQuerySchema = pageQuerySchema.extend({
     .optional(),
 });
 
-const statementQuerySchema = z.object({
+export const statementQuerySchema = z.object({
   cursor: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  ...dateRangeFields,
 });
 
-const createPaymentSchema = z.object({
+export const createPaymentSchema = z.object({
   distributorId: z.string().trim().min(1),
   paidAt: z.coerce.date(),
   amountTnd: moneyTnd,
@@ -150,7 +155,7 @@ const createPaymentSchema = z.object({
     .default([]),
 });
 
-const updateDistributorSchema = z.object({
+export const updateDistributorSchema = z.object({
   version: z.number().int().positive(),
   name: z.string().trim().min(1).optional(),
   phone: z.string().optional(),
@@ -178,10 +183,10 @@ export function distributionRouter(params: {
     requirePermission("distributors.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const distributors =
           await params.distributionService.listDistributors(query);
-        response.json(ok({ distributors }, getCorrelationId(response)));
+        response.json(okFor(response, { distributors }));
       } catch (error) {
         next(error);
       }
@@ -198,9 +203,7 @@ export function distributionRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response
-          .status(201)
-          .json(ok({ distributor }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { distributor }));
       } catch (error) {
         next(error);
       }
@@ -218,7 +221,7 @@ export function distributionRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ distributor }, getCorrelationId(response)));
+        response.json(okFor(response, { distributor }));
       } catch (error) {
         next(error);
       }
@@ -253,7 +256,7 @@ export function distributionRouter(params: {
         const query = dispatchListQuerySchema.parse(request.query);
         const dispatches =
           await params.distributionService.listDispatches(query);
-        response.json(ok({ dispatches }, getCorrelationId(response)));
+        response.json(okFor(response, { dispatches }));
       } catch (error) {
         next(error);
       }
@@ -268,7 +271,7 @@ export function distributionRouter(params: {
         const dispatch = await params.distributionService.getDispatch(
           parseRouteParam(request.params.dispatchId),
         );
-        response.json(ok({ dispatch }, getCorrelationId(response)));
+        response.json(okFor(response, { dispatch }));
       } catch (error) {
         next(error);
       }
@@ -303,7 +306,7 @@ export function distributionRouter(params: {
         const query = settlementListQuerySchema.parse(request.query);
         const settlements =
           await params.distributionService.listSettlements(query);
-        response.json(ok({ settlements }, getCorrelationId(response)));
+        response.json(okFor(response, { settlements }));
       } catch (error) {
         next(error);
       }
@@ -337,7 +340,7 @@ export function distributionRouter(params: {
       try {
         const query = custodyQuerySchema.parse(request.query);
         const custody = await params.distributionService.listCustody(query);
-        response.json(ok({ custody }, getCorrelationId(response)));
+        response.json(okFor(response, { custody }));
       } catch (error) {
         next(error);
       }
@@ -349,10 +352,10 @@ export function distributionRouter(params: {
     requirePermission("distribution.balances.view"),
     async (request, response, next) => {
       try {
-        const query = balanceListQuerySchema.parse(request.query);
+        const query = withSearch(balanceListQuerySchema.parse(request.query));
         const distributorBalances =
           await params.distributionService.listDistributorBalances(query);
-        response.json(ok({ distributorBalances }, getCorrelationId(response)));
+        response.json(okFor(response, { distributorBalances }));
       } catch (error) {
         next(error);
       }
@@ -369,7 +372,7 @@ export function distributionRouter(params: {
             parseRouteParam(request.params.distributorId),
             statementQuerySchema.parse(request.query),
           );
-        response.json(ok({ statement }, getCorrelationId(response)));
+        response.json(okFor(response, { statement }));
       } catch (error) {
         next(error);
       }
@@ -384,7 +387,7 @@ export function distributionRouter(params: {
         const query = paymentListQuerySchema.parse(request.query);
         const distributorPayments =
           await params.distributionService.listDistributorPayments(query);
-        response.json(ok({ distributorPayments }, getCorrelationId(response)));
+        response.json(okFor(response, { distributorPayments }));
       } catch (error) {
         next(error);
       }
@@ -406,6 +409,21 @@ export function distributionRouter(params: {
             actorFromResponse(response),
           );
         sendCommandResult(response, 201, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/distributors/:distributorId",
+    requirePermission("distributors.view"),
+    async (request, response, next) => {
+      try {
+        const distributor = await params.distributionService.getDistributor(
+          parseRouteParam(request.params.distributorId),
+        );
+        response.json(okFor(response, { distributor }));
       } catch (error) {
         next(error);
       }

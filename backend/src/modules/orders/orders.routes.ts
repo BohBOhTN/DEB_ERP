@@ -9,7 +9,8 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok, sendCommandResult } from "../../shared/apiResponse.js";
+import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
+import { pageFields, sortField } from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { OrdersService } from "./orders.service.js";
@@ -24,29 +25,29 @@ const quantity = z
   .trim()
   .regex(/^\d+(\.\d{1,6})?$/);
 
-const orderLineSchema = z.object({
+export const orderLineSchema = z.object({
   productId: z.string().trim().min(1),
   quantity,
 });
 
-const listQuerySchema = z.object({
+export const listQuerySchema = z.object({
+  sort: sortField(["requestedFulfillmentAt", "createdAt", "totalTnd"]),
   status: z.nativeEnum(CustomerOrderStatus).optional(),
   customerId: z.string().trim().min(1).optional(),
   dueBefore: z.coerce.date().optional(),
   dueAfter: z.coerce.date().optional(),
   dueState: z.enum(["OVERDUE", "UPCOMING"]).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
-const createOrderSchema = z.object({
+export const createOrderSchema = z.object({
   customerId: z.string().trim().min(1),
   requestedFulfillmentAt: z.coerce.date(),
   notes: z.string().optional(),
   lines: z.array(orderLineSchema).min(1),
 });
 
-const updateOrderSchema = z.object({
+export const updateOrderSchema = z.object({
   version: z.number().int().positive(),
   requestedFulfillmentAt: z.coerce.date().optional(),
   notes: z.string().optional(),
@@ -55,7 +56,7 @@ const updateOrderSchema = z.object({
 
 /// COMPLETED and CANCELLED are reachable only through their own commands,
 /// which carry the stock, revenue and money effects.
-const changeStatusSchema = z.object({
+export const changeStatusSchema = z.object({
   version: z.number().int().positive(),
   status: z.enum([
     CustomerOrderStatus.CONFIRMED,
@@ -64,18 +65,18 @@ const changeStatusSchema = z.object({
   ]),
 });
 
-const advanceSchema = z.object({
+export const advanceSchema = z.object({
   amountTnd: moneyTnd,
   paidAt: z.coerce.date(),
   notes: z.string().optional(),
 });
 
-const completeOrderSchema = z.object({
+export const completeOrderSchema = z.object({
   completedAt: z.coerce.date(),
   paidAmountTnd: moneyTnd.optional(),
 });
 
-const cancelOrderSchema = z.object({
+export const cancelOrderSchema = z.object({
   cancelledAt: z.coerce.date(),
   reason: z.string().trim().min(1),
   advanceDisposition: z.nativeEnum(CustomerOrderAdvanceDisposition).optional(),
@@ -101,7 +102,7 @@ export function ordersRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const orders = await params.ordersService.listOrders(query);
-        response.json(ok({ orders }, getCorrelationId(response)));
+        response.json(okFor(response, { orders }));
       } catch (error) {
         next(error);
       }
@@ -116,7 +117,7 @@ export function ordersRouter(params: {
         const order = await params.ordersService.getOrder(
           parseRouteParam(request.params.orderId),
         );
-        response.json(ok({ order }, getCorrelationId(response)));
+        response.json(okFor(response, { order }));
       } catch (error) {
         next(error);
       }
@@ -154,7 +155,7 @@ export function ordersRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -172,7 +173,7 @@ export function ordersRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }

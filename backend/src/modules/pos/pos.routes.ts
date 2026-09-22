@@ -1,4 +1,4 @@
-import { SalePaymentState } from "@prisma/client";
+import { PosSessionStatus, SalePaymentState } from "@prisma/client";
 import { Router, type Response } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
@@ -9,7 +9,14 @@ import {
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok, sendCommandResult } from "../../shared/apiResponse.js";
+import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
+import {
+  dateRangeFields,
+  pageFields,
+  searchFields,
+  sortField,
+  withSearch,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { PosService } from "./pos.service.js";
@@ -24,36 +31,43 @@ const quantity = z
   .trim()
   .regex(/^\d+(\.\d{1,6})?$/);
 
-const listQuerySchema = z.object({
-  search: z.string().trim().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+export const listQuerySchema = z.object({
+  sort: sortField(["name"]),
+  ...searchFields,
+  ...pageFields,
 });
 
-const saleListQuerySchema = z.object({
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+export const saleListQuerySchema = z.object({
+  sort: sortField(["soldAt", "totalTnd"]),
+  ...dateRangeFields,
   customerId: z.string().trim().min(1).optional(),
   paymentState: z.nativeEnum(SalePaymentState).optional(),
   cashierUserId: z.string().trim().min(1).optional(),
   sessionId: z.string().trim().min(1).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
-const openSessionSchema = z.object({
+export const sessionListQuerySchema = z.object({
+  ...pageFields,
+  ...dateRangeFields,
+  status: z.nativeEnum(PosSessionStatus).optional(),
+  cashierUserId: z.string().trim().min(1).optional(),
+  sort: sortField(["openedAt"]),
+});
+
+export const openSessionSchema = z.object({
   openingCashTnd: moneyTnd,
   openedAt: z.coerce.date().default(() => new Date()),
   notes: z.string().optional(),
 });
 
-const closeSessionSchema = z.object({
+export const closeSessionSchema = z.object({
   countedCashTnd: moneyTnd,
   closedAt: z.coerce.date().default(() => new Date()),
   notes: z.string().optional(),
 });
 
-const postSaleSchema = z.object({
+export const postSaleSchema = z.object({
   sessionId: z.string().trim().min(1).optional(),
   customerId: z.string().trim().min(1).optional(),
   paidAmountTnd: moneyTnd.optional(),
@@ -86,9 +100,9 @@ export function posRouter(params: {
     requirePermission("pos.access"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const products = await params.posService.listProducts(query);
-        response.json(ok({ products }, getCorrelationId(response)));
+        response.json(okFor(response, { products }));
       } catch (error) {
         next(error);
       }
@@ -102,9 +116,9 @@ export function posRouter(params: {
     requireAnyPermission(["pos.credit_sale", "orders.create"]),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const customers = await params.posService.listCustomers(query);
-        response.json(ok({ customers }, getCorrelationId(response)));
+        response.json(okFor(response, { customers }));
       } catch (error) {
         next(error);
       }
@@ -117,7 +131,7 @@ export function posRouter(params: {
     async (_request, response, next) => {
       try {
         const session = await params.posService.getCurrentSession();
-        response.json(ok({ session }, getCorrelationId(response)));
+        response.json(okFor(response, { session }));
       } catch (error) {
         next(error);
       }
@@ -172,7 +186,7 @@ export function posRouter(params: {
       try {
         const query = saleListQuerySchema.parse(request.query);
         const sales = await params.posService.listSales(query);
-        response.json(ok({ sales }, getCorrelationId(response)));
+        response.json(okFor(response, { sales }));
       } catch (error) {
         next(error);
       }
@@ -194,6 +208,52 @@ export function posRouter(params: {
           actorFromResponse(response),
         );
         sendCommandResult(response, 201, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/sales/:saleId",
+    requirePermission("pos.access"),
+    async (request, response, next) => {
+      try {
+        const sale = await params.posService.getSale(
+          parseRouteParam(request.params.saleId),
+        );
+        response.json(okFor(response, { sale }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  // Registered after /sessions/current and /sessions/open so those literal
+  // paths win over the parameter.
+  router.get(
+    "/sessions",
+    requirePermission("pos.access"),
+    async (request, response, next) => {
+      try {
+        const query = sessionListQuerySchema.parse(request.query);
+        const sessions = await params.posService.listSessions(query);
+        response.json(okFor(response, { sessions }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/sessions/:sessionId",
+    requirePermission("pos.access"),
+    async (request, response, next) => {
+      try {
+        const result = await params.posService.getSession(
+          parseRouteParam(request.params.sessionId),
+        );
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -249,4 +309,18 @@ function assertCreditSalePermission(
       message: "Vous n'avez pas l'autorisation nécessaire.",
     });
   }
+}
+
+function parseRouteParam(value: string | string[] | undefined): string {
+  const id = Array.isArray(value) ? value[0] : value;
+
+  if (!id || !id.trim()) {
+    throw new AppError({
+      statusCode: 400,
+      code: "VALIDATION_ERROR",
+      message: "Identifiant invalide.",
+    });
+  }
+
+  return id;
 }

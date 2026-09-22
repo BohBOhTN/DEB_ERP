@@ -4,20 +4,23 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok } from "../../shared/apiResponse.js";
-import { getCorrelationId } from "../../shared/correlation.js";
+import { okFor } from "../../shared/apiResponse.js";
+import {
+  dateRangeFields,
+  pageFields,
+  sortField,
+} from "../../shared/listQuery.js";
 import type { AuditService } from "./audit.service.js";
 
-const listQuerySchema = z.object({
+export const listQuerySchema = z.object({
+  sort: sortField(["createdAt"]),
   actorUserId: z.string().trim().min(1).optional(),
   action: z.string().trim().min(1).optional(),
   entity: z.string().trim().min(1).optional(),
   targetId: z.string().trim().min(1).optional(),
   correlationId: z.string().trim().min(1).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...dateRangeFields,
+  ...pageFields,
 });
 
 export function auditRouter(params: {
@@ -41,7 +44,7 @@ export function auditRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const auditEvents = await params.auditService.listEvents(query);
-        response.json(ok({ auditEvents }, getCorrelationId(response)));
+        response.json(okFor(response, { auditEvents }));
       } catch (error) {
         next(error);
       }
@@ -54,7 +57,7 @@ export function auditRouter(params: {
     async (_request, response, next) => {
       try {
         const auditFilters = await params.auditService.listFilterOptions();
-        response.json(ok({ auditFilters }, getCorrelationId(response)));
+        response.json(okFor(response, { auditFilters }));
       } catch (error) {
         next(error);
       }

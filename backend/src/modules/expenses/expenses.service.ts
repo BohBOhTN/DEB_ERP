@@ -1,5 +1,6 @@
 import { ExpenseStatus, Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { postingTransactionOptions } from "../../shared/idempotency.js";
 import { sumOrZero } from "../../shared/ledger.js";
 import { normalizeName } from "../../shared/text.js";
@@ -35,6 +36,7 @@ export interface ExpenseActor {
 const dayMs = 24 * 60 * 60 * 1000;
 
 export interface ExpenseListParams {
+  sort?: SortSpec<"expenseDate" | "amountTnd">;
   categoryId?: string;
   status?: ExpenseStatus;
   from?: Date;
@@ -163,7 +165,18 @@ export class ExpensesService {
         include: {
           category: true,
         },
-        orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
+        orderBy: orderByFor<
+          "expenseDate" | "amountTnd",
+          Prisma.ExpenseOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            expenseDate: (direction) => [{ expenseDate: direction }],
+            amountTnd: (direction) => [{ amountTnd: direction }],
+          },
+          [{ expenseDate: "desc" }, { createdAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -240,6 +253,23 @@ export class ExpensesService {
   /// Days are bucketed in the bakery's time zone by the database, so an
   /// expense entered at 00:30 in Tunis counts on that day and not the day
   /// before in UTC.
+  public async getExpense(expenseId: string) {
+    const expense = await this.prisma.expense.findUnique({
+      where: { id: expenseId },
+      include: { category: true },
+    });
+
+    if (!expense) {
+      throw new AppError({
+        statusCode: 404,
+        code: "EXPENSE_NOT_FOUND",
+        message: "Dépense introuvable.",
+      });
+    }
+
+    return expense;
+  }
+
   private async sumExpensesByBusinessDay(params: {
     from?: Date;
     to: Date;

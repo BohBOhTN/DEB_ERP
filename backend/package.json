@@ -15,6 +15,8 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "db:check-drift": "node scripts/check-schema-drift.mjs",
+    "openapi:generate": "tsx src/scripts/generateOpenApi.ts",
+    "openapi:check": "tsx src/scripts/generateOpenApi.ts --check",
     "users:create": "tsx src/scripts/createUser.ts"
   },
   "dependencies": {

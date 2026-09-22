@@ -1,7 +1,7 @@
 import {
   PosSessionStatus,
   type PrismaClient,
-  type SalePaymentMethod,
+  type PaymentMethod,
 } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import { PosService } from "./pos.service.js";
@@ -458,7 +458,10 @@ function createStore(): PosStore {
 }
 
 function makeTransactionClient(store: PosStore) {
+  let sequence = 0;
   return {
+    // Sale numbers come from a database sequence.
+    $queryRawUnsafe: async () => [{ nextval: BigInt(++sequence) }],
     idempotencyRecord: {
       create: async (args: {
         data: { scope: string; key: string; requestHash: string };
@@ -578,7 +581,7 @@ function makeTransactionClient(store: PosStore) {
       create: async (args: { data: Record<string, unknown> }) => {
         const payment = {
           id: `payment-${store.salePayments.length + 1}`,
-          method: "CASH" satisfies SalePaymentMethod,
+          method: "CASH" satisfies PaymentMethod,
           ...args.data,
         };
         store.salePayments.push(payment);

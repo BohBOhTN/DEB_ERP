@@ -321,3 +321,56 @@ describe("customer routes", () => {
     );
   });
 });
+
+/// AS-V2-07: every router serves both prefixes. The v1 contract returns a
+/// list as the data itself; the legacy prefix keeps the V1 wrapper and says
+/// it is deprecated.
+describe("api versioning", () => {
+  it("serves the v1 list envelope under /api/v1", async () => {
+    const { app, cookie } = await createTestApp(["customers.view"]);
+
+    const response = await request(app)
+      .get("/api/v1/customers")
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(response.body.data).toMatchObject({
+      items: [{ id: "customer-1" }],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+      pageCount: 1,
+    });
+    expect(response.body.data.customers).toBeUndefined();
+    expect(response.headers.deprecation).toBeUndefined();
+    expect(response.body.meta.correlationId).toEqual(expect.any(String));
+  });
+
+  it("keeps the legacy wrapper under /api and marks it deprecated", async () => {
+    const { app, cookie } = await createTestApp(["customers.view"]);
+
+    const response = await request(app)
+      .get("/api/customers")
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(response.body.data.customers.items).toHaveLength(1);
+    expect(response.headers.deprecation).toBe("true");
+  });
+
+  it("keeps single resources under their key on both prefixes", async () => {
+    const { app, cookie } = await createTestApp(["customer_balances.view"]);
+
+    const v1 = await request(app)
+      .get("/api/v1/customers/customer-1/statement")
+      .set("Cookie", cookie)
+      .expect(200);
+    const legacy = await request(app)
+      .get("/api/customers/customer-1/statement")
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(v1.body.data.statement.balanceTnd).toBe("30.000");
+    expect(legacy.body.data.statement.balanceTnd).toBe("30.000");
+  });
+});

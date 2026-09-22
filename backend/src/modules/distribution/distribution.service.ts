@@ -3,12 +3,14 @@ import {
   DistributorLedgerEntryType,
   InventoryItemType,
   InventoryMovementType,
+  InventorySourceType,
   Prisma,
   SalePaymentState,
   SaleStatus,
   type PrismaClient,
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
 import {
   balanceOf,
@@ -42,6 +44,7 @@ export interface DistributionActor {
 }
 
 export interface DistributorListParams {
+  sort?: SortSpec<"name" | "createdAt">;
   search?: string;
   isActive?: boolean;
   page: number;
@@ -110,7 +113,18 @@ export class DistributionService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.distributor.findMany({
         where,
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.DistributorOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -407,6 +421,7 @@ export class DistributionService {
   }
 
   public async listDispatches(params: {
+    sort?: SortSpec<"dispatchedAt">;
     distributorId?: string;
     status?: DistributorDispatchStatus;
     page: number;
@@ -423,7 +438,15 @@ export class DistributionService {
           distributor: true,
           lines: true,
         },
-        orderBy: [{ dispatchedAt: "desc" }, { createdAt: "desc" }],
+        orderBy: orderByFor<
+          "dispatchedAt",
+          Prisma.DistributorDispatchOrderByWithRelationInput
+        >(
+          params.sort,
+          { dispatchedAt: (direction) => [{ dispatchedAt: direction }] },
+          [{ dispatchedAt: "desc" }, { createdAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -443,6 +466,7 @@ export class DistributionService {
   /// Section 18: distributor settlement history as its own list, not only
   /// nested under a dispatch.
   public async listSettlements(params: {
+    sort?: SortSpec<"settledAt" | "totalTnd">;
     distributorId?: string;
     dispatchId?: string;
     from?: Date;
@@ -471,7 +495,18 @@ export class DistributionService {
           lines: true,
         },
         // NFR-005: stable sort.
-        orderBy: [{ settledAt: "desc" }, { id: "desc" }],
+        orderBy: orderByFor<
+          "settledAt" | "totalTnd",
+          Prisma.DistributorSettlementOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            settledAt: (direction) => [{ settledAt: direction }],
+            totalTnd: (direction) => [{ totalTnd: direction }],
+          },
+          [{ settledAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -1102,6 +1137,7 @@ export class DistributionService {
   }
 
   public async listDistributorPayments(params: {
+    sort?: SortSpec<"paidAt" | "amountTnd">;
     distributorId?: string;
     page: number;
     pageSize: number;
@@ -1116,7 +1152,18 @@ export class DistributionService {
           distributor: true,
           allocations: true,
         },
-        orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+        orderBy: orderByFor<
+          "paidAt" | "amountTnd",
+          Prisma.DistributorPaymentOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            paidAt: (direction) => [{ paidAt: direction }],
+            amountTnd: (direction) => [{ amountTnd: direction }],
+          },
+          [{ paidAt: "desc" }, { createdAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -1329,6 +1376,29 @@ export class DistributionService {
         basis:
           "Solde = somme des écritures du grand livre distributeur (ventes et règlements validés moins paiements) jusqu'à la date de fin.",
       },
+    };
+  }
+
+  /// Detail for the distributor page: the row, its receivable balance and how
+  /// many dispatch lines it still holds.
+  public async getDistributor(distributorId: string) {
+    const distributor = await this.findDistributorOrThrow(distributorId);
+    const [receivable, heldLines] = await Promise.all([
+      this.prisma.distributorLedgerEntry.aggregate({
+        where: { distributorId },
+        _sum: { amountTnd: true },
+      }),
+      this.prisma.distributorDispatchLine.count({
+        where: {
+          dispatch: { distributorId, status: DistributorDispatchStatus.OPEN },
+        },
+      }),
+    ]);
+
+    return {
+      ...distributor,
+      balanceTnd: sumOrZero(receivable._sum.amountTnd).toFixed(3),
+      heldLineCount: heldLines,
     };
   }
 
@@ -1643,7 +1713,7 @@ async function writeStockMovements(
       unitNameSnapshot: string;
     }>;
     movementType: InventoryMovementType;
-    sourceType: string;
+    sourceType: InventorySourceType;
     sourceId: string;
     reason: string;
     occurredAt: Date;

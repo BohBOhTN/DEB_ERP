@@ -4,7 +4,8 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok } from "../../shared/apiResponse.js";
+import { okFor } from "../../shared/apiResponse.js";
+import { pageFields, sortField } from "../../shared/listQuery.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { SimulationService } from "./simulation.service.js";
 
@@ -18,7 +19,7 @@ const quantity = z
   .trim()
   .regex(/^\d+(\.\d{1,6})?$/);
 
-const ingredientSchema = z.object({
+export const ingredientSchema = z.object({
   rawMaterialId: z.string().trim().min(1).optional(),
   ingredientName: z.string().trim().min(1).optional(),
   enteredQuantity: quantity,
@@ -28,7 +29,7 @@ const ingredientSchema = z.object({
   conversionFactorToBase: quantity.optional(),
 });
 
-const simulationBodySchema = z.object({
+export const simulationBodySchema = z.object({
   name: z.string().trim().min(1),
   targetProductId: z.string().trim().min(1).optional(),
   outputQuantity: quantity,
@@ -37,17 +38,17 @@ const simulationBodySchema = z.object({
   ingredients: z.array(ingredientSchema).min(1),
 });
 
-const updateSimulationSchema = simulationBodySchema.extend({
+export const updateSimulationSchema = simulationBodySchema.extend({
   version: z.number().int().positive(),
 });
 
-const duplicateSchema = z.object({
+export const duplicateSchema = z.object({
   name: z.string().trim().min(1).optional(),
 });
 
-const pageQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+export const pageQuerySchema = z.object({
+  sort: sortField(["updatedAt", "name"]),
+  ...pageFields,
 });
 
 export function simulationRouter(params: {
@@ -71,7 +72,7 @@ export function simulationRouter(params: {
         const query = pageQuerySchema.parse(request.query);
         const simulations =
           await params.simulationService.listSimulations(query);
-        response.json(ok({ simulations }, getCorrelationId(response)));
+        response.json(okFor(response, { simulations }));
       } catch (error) {
         next(error);
       }
@@ -86,7 +87,7 @@ export function simulationRouter(params: {
         const simulation = await params.simulationService.getSimulation(
           parseRouteParam(request.params.simulationId),
         );
-        response.json(ok({ simulation }, getCorrelationId(response)));
+        response.json(okFor(response, { simulation }));
       } catch (error) {
         next(error);
       }
@@ -103,7 +104,7 @@ export function simulationRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        response.status(201).json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -121,7 +122,7 @@ export function simulationRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        response.status(201).json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -139,7 +140,7 @@ export function simulationRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -155,7 +156,7 @@ export function simulationRouter(params: {
           parseRouteParam(request.params.simulationId),
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }

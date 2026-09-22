@@ -5,7 +5,12 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok } from "../../shared/apiResponse.js";
+import { okFor } from "../../shared/apiResponse.js";
+import {
+  dateRangeFields,
+  pageFields,
+  sortField,
+} from "../../shared/listQuery.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { ExpensesService } from "./expenses.service.js";
 
@@ -14,40 +19,38 @@ const moneyTnd = z
   .trim()
   .regex(/^\d+(\.\d{1,3})?$/);
 
-const categoryListQuerySchema = z.object({
+export const categoryListQuerySchema = z.object({
   isActive: z
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
 });
 
-const createCategorySchema = z.object({
+export const createCategorySchema = z.object({
   name: z.string().trim().min(1),
   description: z.string().optional(),
 });
 
-const updateCategorySchema = z.object({
+export const updateCategorySchema = z.object({
   version: z.number().int().positive(),
   name: z.string().trim().min(1).optional(),
   description: z.string().optional(),
   isActive: z.boolean().optional(),
 });
 
-const expenseListQuerySchema = z.object({
+export const expenseListQuerySchema = z.object({
+  sort: sortField(["expenseDate", "amountTnd"]),
   categoryId: z.string().trim().min(1).optional(),
   status: z.nativeEnum(ExpenseStatus).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...dateRangeFields,
+  ...pageFields,
 });
 
-const totalsQuerySchema = z.object({
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+export const totalsQuerySchema = z.object({
+  ...dateRangeFields,
 });
 
-const createExpenseSchema = z.object({
+export const createExpenseSchema = z.object({
   categoryId: z.string().trim().min(1),
   expenseDate: z.coerce.date(),
   amountTnd: moneyTnd,
@@ -58,7 +61,7 @@ const createExpenseSchema = z.object({
   post: z.boolean().optional(),
 });
 
-const updateExpenseSchema = z.object({
+export const updateExpenseSchema = z.object({
   version: z.number().int().positive(),
   categoryId: z.string().trim().min(1).optional(),
   expenseDate: z.coerce.date().optional(),
@@ -68,12 +71,12 @@ const updateExpenseSchema = z.object({
   notes: z.string().optional(),
 });
 
-const postExpenseSchema = z.object({
+export const postExpenseSchema = z.object({
   version: z.number().int().positive(),
   postedAt: z.coerce.date(),
 });
 
-const cancelExpenseSchema = z.object({
+export const cancelExpenseSchema = z.object({
   version: z.number().int().positive(),
   cancelledAt: z.coerce.date(),
   reason: z.string().trim().min(1),
@@ -102,7 +105,7 @@ export function expensesRouter(params: {
         const query = categoryListQuerySchema.parse(request.query);
         const expenseCategories =
           await params.expensesService.listCategories(query);
-        response.json(ok({ expenseCategories }, getCorrelationId(response)));
+        response.json(okFor(response, { expenseCategories }));
       } catch (error) {
         next(error);
       }
@@ -119,9 +122,7 @@ export function expensesRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response
-          .status(201)
-          .json(ok({ expenseCategory }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { expenseCategory }));
       } catch (error) {
         next(error);
       }
@@ -139,7 +140,7 @@ export function expensesRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ expenseCategory }, getCorrelationId(response)));
+        response.json(okFor(response, { expenseCategory }));
       } catch (error) {
         next(error);
       }
@@ -153,7 +154,7 @@ export function expensesRouter(params: {
       try {
         const query = expenseListQuerySchema.parse(request.query);
         const expenses = await params.expensesService.listExpenses(query);
-        response.json(ok({ expenses }, getCorrelationId(response)));
+        response.json(okFor(response, { expenses }));
       } catch (error) {
         next(error);
       }
@@ -168,7 +169,7 @@ export function expensesRouter(params: {
         const query = totalsQuerySchema.parse(request.query);
         const expenseTotals =
           await params.expensesService.getExpenseTotals(query);
-        response.json(ok({ expenseTotals }, getCorrelationId(response)));
+        response.json(okFor(response, { expenseTotals }));
       } catch (error) {
         next(error);
       }
@@ -185,7 +186,7 @@ export function expensesRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        response.status(201).json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -203,7 +204,7 @@ export function expensesRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -221,7 +222,7 @@ export function expensesRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
       } catch (error) {
         next(error);
       }
@@ -239,7 +240,22 @@ export function expensesRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok(result, getCorrelationId(response)));
+        response.json(okFor(response, result));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/expenses/:expenseId",
+    requirePermission("expenses.view"),
+    async (request, response, next) => {
+      try {
+        const expense = await params.expensesService.getExpense(
+          parseRouteParam(request.params.expenseId),
+        );
+        response.json(okFor(response, { expense }));
       } catch (error) {
         next(error);
       }

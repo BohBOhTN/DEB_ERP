@@ -1,7 +1,10 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import type { SecurityAuditRecorder } from "../auth/auth.service.js";
+import { actionLabel, entityLabel, entityModule } from "./labels.js";
 
 export interface AuditListParams {
+  sort?: SortSpec<"createdAt">;
   actorUserId?: string;
   action?: string;
   entity?: string;
@@ -72,7 +75,15 @@ export class AuditService implements SecurityAuditRecorder {
         },
         // NFR-005: a stable sort. Time alone is not unique enough under load,
         // so the id breaks ties and keeps pages from repeating or skipping.
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        orderBy: orderByFor<
+          "createdAt",
+          Prisma.AuditEventOrderByWithRelationInput
+        >(
+          params.sort,
+          { createdAt: (direction) => [{ createdAt: direction }] },
+          [{ createdAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -80,7 +91,12 @@ export class AuditService implements SecurityAuditRecorder {
     ]);
 
     return {
-      items,
+      items: items.map((event) => ({
+        ...event,
+        actionLabelFr: actionLabel(event.action),
+        entityLabelFr: entityLabel(event.entity),
+        targetModule: entityModule(event.entity),
+      })),
       page: params.page,
       pageSize: params.pageSize,
       total,
@@ -117,6 +133,14 @@ export class AuditService implements SecurityAuditRecorder {
     return {
       actions: actions.map((row) => row.action),
       entities: entities.map((row) => row.entity),
+      actionOptions: actions.map((row) => ({
+        value: row.action,
+        labelFr: actionLabel(row.action),
+      })),
+      entityOptions: entities.map((row) => ({
+        value: row.entity,
+        labelFr: entityLabel(row.entity),
+      })),
     };
   }
 }

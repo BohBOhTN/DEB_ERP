@@ -8,7 +8,9 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
+import { nextPurchaseReference } from "../../shared/references.js";
 import {
   balanceOf,
   balancesByKey,
@@ -24,6 +26,7 @@ export interface ProcurementActor {
 }
 
 export interface SupplierListParams {
+  sort?: SortSpec<"name" | "createdAt">;
   search?: string;
   isActive?: boolean;
   page: number;
@@ -31,6 +34,7 @@ export interface SupplierListParams {
 }
 
 export interface PurchaseListParams {
+  sort?: SortSpec<"purchaseDate" | "totalTnd" | "dueDate">;
   supplierId?: string;
   status?: PurchaseStatus;
   paymentTerms?: PurchasePaymentTerms;
@@ -63,6 +67,7 @@ export interface SupplierStatementParams {
 }
 
 export interface SupplierPaymentListParams {
+  sort?: SortSpec<"paidAt" | "amountTnd">;
   supplierId?: string;
   page: number;
   pageSize: number;
@@ -138,7 +143,18 @@ export class ProcurementService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.supplier.findMany({
         where,
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.SupplierOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -300,9 +316,19 @@ export class ProcurementService {
           lines: true,
         },
         // NFR-005: a stable sort, with the due list ordered by urgency.
-        orderBy: params.dueState
-          ? [{ dueDate: "asc" as const }, { id: "asc" as const }]
-          : [{ purchaseDate: "desc" as const }, { id: "desc" as const }],
+        orderBy: orderByFor<
+          "purchaseDate" | "totalTnd" | "dueDate",
+          Prisma.PurchaseOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            purchaseDate: (direction) => [{ purchaseDate: direction }],
+            totalTnd: (direction) => [{ totalTnd: direction }],
+            dueDate: (direction) => [{ dueDate: direction }],
+          },
+          params.dueState ? [{ dueDate: "asc" }] : [{ purchaseDate: "desc" }],
+          { id: params.dueState ? "asc" : "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -421,6 +447,7 @@ export class ProcurementService {
             id: purchase.id,
           },
           data: {
+            reference: await nextPurchaseReference(tx),
             status: PurchaseStatus.POSTED,
             postedAt,
             postedByUserId: actor.actorUserId,
@@ -874,7 +901,18 @@ export class ProcurementService {
             },
           },
         },
-        orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+        orderBy: orderByFor<
+          "paidAt" | "amountTnd",
+          Prisma.SupplierPaymentOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            paidAt: (direction) => [{ paidAt: direction }],
+            amountTnd: (direction) => [{ amountTnd: direction }],
+          },
+          [{ paidAt: "desc" }, { createdAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -1022,6 +1060,47 @@ export class ProcurementService {
         };
       },
     );
+  }
+
+  /// Detail for the supplier page: the row plus its payable balance.
+  public async getSupplier(supplierId: string) {
+    const supplier = await this.findSupplierOrThrow(supplierId);
+    const payable = await this.prisma.supplierLedgerEntry.aggregate({
+      where: { supplierId },
+      _sum: { amountTnd: true },
+    });
+
+    return {
+      ...supplier,
+      balanceTnd: sumOrZero(payable._sum.amountTnd).toFixed(3),
+    };
+  }
+
+  public async getPurchase(purchaseId: string) {
+    const purchase = await this.prisma.purchase.findUnique({
+      where: { id: purchaseId },
+      include: purchaseInclude,
+    });
+
+    if (!purchase) {
+      throw new AppError({
+        statusCode: 404,
+        code: "PURCHASE_NOT_FOUND",
+        message: "Achat introuvable.",
+      });
+    }
+
+    const balance = await this.prisma.supplierLedgerEntry.aggregate({
+      where: { purchaseId },
+      _sum: { amountTnd: true },
+    });
+    const balanceTnd = sumOrZero(balance._sum.amountTnd);
+
+    return {
+      ...purchase,
+      balanceTnd: balanceTnd.toFixed(3),
+      paymentState: derivePaymentState(purchase, balanceTnd),
+    };
   }
 
   private async findSupplierOrThrow(supplierId: string) {
@@ -1609,7 +1688,7 @@ function emptyToNull(value: string | undefined): string | null | undefined {
 function paginated<TItem>(
   items: TItem[],
   total: number,
-  params: SupplierListParams,
+  params: { page: number; pageSize: number },
 ) {
   return {
     items,

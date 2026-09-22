@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { ok } from "../../shared/apiResponse.js";
-import { getCorrelationId } from "../../shared/correlation.js";
+import { okFor } from "../../shared/apiResponse.js";
 import type { AuthService } from "./auth.service.js";
 import {
   clearSessionCookie,
@@ -11,7 +10,7 @@ import {
 } from "./cookies.js";
 import { createRateLimiter } from "./rateLimit.js";
 
-const loginSchema = z.object({
+export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
@@ -35,13 +34,10 @@ export function authRouter(params: {
       setSessionCookie(response, params.cookie, result.sessionToken);
 
       response.json(
-        ok(
-          {
-            user: result.user,
-            expiresAt: result.expiresAt.toISOString(),
-          },
-          getCorrelationId(response),
-        ),
+        okFor(response, {
+          user: result.user,
+          expiresAt: result.expiresAt.toISOString(),
+        }),
       );
     } catch (error) {
       next(error);
@@ -54,7 +50,7 @@ export function authRouter(params: {
         readCookie(request, params.cookie.name),
       );
 
-      response.json(ok({ user }, getCorrelationId(response)));
+      response.json(okFor(response, { user }));
     } catch (error) {
       clearSessionCookie(response, params.cookie);
       next(error);
@@ -65,7 +61,7 @@ export function authRouter(params: {
     try {
       await params.authService.logout(readCookie(request, params.cookie.name));
       clearSessionCookie(response, params.cookie);
-      response.json(ok({ success: true }, getCorrelationId(response)));
+      response.json(okFor(response, { success: true }));
     } catch (error) {
       next(error);
     }

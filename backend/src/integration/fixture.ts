@@ -171,6 +171,7 @@ export async function seedPerformanceFixture(
       Array.from({ length: salesPerCustomer }, (_, saleIndex) => {
         const total = 10 + ((customerIndex + saleIndex) % 40);
         return {
+          reference: `VT-PERF-${runId}-${customerIndex}-${saleIndex}`,
           sessionId: session.id,
           customerId: customer.id,
           status: SaleStatus.POSTED,

@@ -63,6 +63,17 @@ jobs:
         env:
           DATABASE_URL: ${{ env.CI_DATABASE_URL }}
 
+      # The committed contract must match the route catalogue, and the
+      # frontend types must match the contract, so a route change that was not
+      # regenerated into both files fails here rather than at integration time.
+      - name: Check the OpenAPI document
+        run: npm run openapi:check --workspace backend
+
+      - name: Check the generated API types
+        run: |
+          npm run api:types --workspace frontend
+          git diff --exit-code -- frontend/src/lib/api/types.gen.ts
+
       - name: Check formatting
         run: npm run format:check
 

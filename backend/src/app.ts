@@ -24,6 +24,9 @@ import type {
   HealthCheck,
   LivenessCheck,
 } from "./modules/health/health.service.js";
+import { homeRouter } from "./modules/home/home.routes.js";
+import { buildOpenApiDocument } from "./openapi/document.js";
+import type { HomeService } from "./modules/home/home.service.js";
 import { inventoryRouter } from "./modules/inventory/inventory.routes.js";
 import type { InventoryService } from "./modules/inventory/inventory.service.js";
 import { ordersRouter } from "./modules/orders/orders.routes.js";
@@ -38,6 +41,7 @@ import { createRateLimiter } from "./modules/auth/rateLimit.js";
 import { AppError } from "./shared/appError.js";
 import { correlationId } from "./shared/correlation.js";
 import { createLogger, type Logger } from "./shared/logger.js";
+import { markApiVersion, markDeprecated } from "./shared/apiVersion.js";
 
 export function createApp(params: {
   allowedOrigins: string[];
@@ -96,6 +100,12 @@ export function createApp(params: {
   simulation?: {
     simulationService: SimulationService;
   };
+  home?: {
+    homeService: HomeService;
+  };
+  /// Serves the generated contract at `/api/v1/openapi.json`; off in
+  /// production, where the committed file is the reference.
+  serveOpenApi?: boolean;
 }): express.Express {
   const app = express();
   const logger = params.logger ?? createLogger({ level: "silent" });
@@ -127,16 +137,24 @@ export function createApp(params: {
   app.use(compression());
   app.use(express.json({ limit: "1mb" }));
 
-  const health = healthRouter(params.healthCheck, params.livenessCheck);
-  app.use("/api/health", health);
-  app.use("/api/v1/health", health);
+  // Every router is mounted twice: under /api/v1, the contract the new
+  // frontend builds against, and under the legacy /api prefix the V1 screens
+  // still call. Legacy responses carry a Deprecation header until the aliases
+  // are removed in Sprint 28 (BE-46).
+  const mount = (legacyPrefix: string, router: express.Router) => {
+    const suffix = legacyPrefix.replace(/^\/api/, "");
+    app.use(`/api/v1${suffix}`, markApiVersion(1), router);
+    app.use(legacyPrefix, markDeprecated, router);
+  };
+
+  mount("/api/health", healthRouter(params.healthCheck, params.livenessCheck));
 
   if (params.auth) {
-    app.use("/api/auth", authRouter(params.auth));
+    mount("/api/auth", authRouter(params.auth));
   }
 
   if (params.auth && params.access) {
-    app.use(
+    mount(
       "/api/access",
       accessRouter({
         authService: params.auth.authService,
@@ -147,7 +165,7 @@ export function createApp(params: {
   }
 
   if (params.auth && params.audit) {
-    app.use(
+    mount(
       "/api",
       auditRouter({
         authService: params.auth.authService,
@@ -158,7 +176,7 @@ export function createApp(params: {
   }
 
   if (params.auth && params.catalog) {
-    app.use(
+    mount(
       "/api/catalog",
       catalogRouter({
         authService: params.auth.authService,
@@ -169,7 +187,7 @@ export function createApp(params: {
   }
 
   if (params.auth && params.customers) {
-    app.use(
+    mount(
       "/api",
       customersRouter({
         authService: params.auth.authService,
@@ -180,7 +198,7 @@ export function createApp(params: {
   }
 
   if (params.auth && params.distribution) {
-    app.use(
+    mount(
       "/api",
       distributionRouter({
         authService: params.auth.authService,
@@ -191,7 +209,7 @@ export function createApp(params: {
   }
 
   if (params.auth && params.expenses) {
-    app.use(
+    mount(
       "/api",
       expensesRouter({
         authService: params.auth.authService,
@@ -202,7 +220,7 @@ export function createApp(params: {
   }
 
   if (params.auth && params.inventory) {
-    app.use(
+    mount(
       "/api/inventory",
       inventoryRouter({
         authService: params.auth.authService,
@@ -213,7 +231,7 @@ export function createApp(params: {
   }
 
   if (params.auth && params.orders) {
-    app.use(
+    mount(
       "/api",
       ordersRouter({
         authService: params.auth.authService,
@@ -224,7 +242,7 @@ export function createApp(params: {
   }
 
   if (params.auth && params.procurement) {
-    app.use(
+    mount(
       "/api/procurement",
       procurementRouter({
         authService: params.auth.authService,
@@ -235,7 +253,7 @@ export function createApp(params: {
   }
 
   if (params.auth && params.pos) {
-    app.use(
+    mount(
       "/api/pos",
       posRouter({
         authService: params.auth.authService,
@@ -246,12 +264,33 @@ export function createApp(params: {
   }
 
   if (params.auth && params.simulation) {
-    app.use(
+    mount(
       "/api",
       simulationRouter({
         authService: params.auth.authService,
         cookie: params.auth.cookie,
         simulationService: params.simulation.simulationService,
+      }),
+    );
+  }
+
+  if (params.serveOpenApi) {
+    let document: ReturnType<typeof buildOpenApiDocument> | undefined;
+    app.get("/api/v1/openapi.json", (_request, response) => {
+      document ??= buildOpenApiDocument();
+      response.json(document);
+    });
+  }
+
+  // The home summary is new in V2 and has no legacy alias.
+  if (params.auth && params.home) {
+    app.use(
+      "/api/v1/home",
+      markApiVersion(1),
+      homeRouter({
+        authService: params.auth.authService,
+        cookie: params.auth.cookie,
+        homeService: params.home.homeService,
       }),
     );
   }

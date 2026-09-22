@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { normalizeName } from "../../shared/text.js";
 
 // Re-exported so existing importers and tests keep working.
@@ -12,6 +14,7 @@ export interface CatalogActor {
 }
 
 export interface ListParams {
+  sort?: SortSpec<"name" | "createdAt">;
   search?: string;
   isActive?: boolean;
   page: number;
@@ -75,7 +78,18 @@ export class CatalogService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.unit.findMany({
         where,
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.UnitOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -187,7 +201,18 @@ export class CatalogService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.productCategory.findMany({
         where,
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.ProductCategoryOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -333,7 +358,18 @@ export class CatalogService {
             },
           },
         },
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.RawMaterialOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -623,7 +659,18 @@ export class CatalogService {
           category: true,
           baseUnit: true,
         },
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.ProductOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -804,6 +851,43 @@ export class CatalogService {
     });
 
     return product;
+  }
+
+  public async getProduct(productId: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: { category: true, baseUnit: true },
+    });
+
+    if (!product) {
+      throw new AppError({
+        statusCode: 404,
+        code: "PRODUCT_NOT_FOUND",
+        message: "Produit introuvable.",
+      });
+    }
+
+    return product;
+  }
+
+  public async getRawMaterial(rawMaterialId: string) {
+    const rawMaterial = await this.prisma.rawMaterial.findUnique({
+      where: { id: rawMaterialId },
+      include: {
+        baseUnit: true,
+        conversions: { include: { unit: true }, orderBy: { createdAt: "asc" } },
+      },
+    });
+
+    if (!rawMaterial) {
+      throw new AppError({
+        statusCode: 404,
+        code: "RAW_MATERIAL_NOT_FOUND",
+        message: "Matière première introuvable.",
+      });
+    }
+
+    return rawMaterial;
   }
 
   private async findUnitOrThrow(unitId: string) {

@@ -1,4 +1,8 @@
-import { InventoryItemType } from "@prisma/client";
+import {
+  InventoryItemType,
+  InventoryMovementType,
+  InventorySourceType,
+} from "@prisma/client";
 import { Router, type Response } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
@@ -6,30 +10,40 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok, sendCommandResult } from "../../shared/apiResponse.js";
+import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
+import {
+  dateRangeFields,
+  pageFields,
+  sortField,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { InventoryService } from "./inventory.service.js";
 
-const listQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+export const listQuerySchema = z.object({
+  itemType: z.nativeEnum(InventoryItemType).optional(),
+  itemId: z.string().trim().min(1).optional(),
+  movementType: z.nativeEnum(InventoryMovementType).optional(),
+  sourceType: z.nativeEnum(InventorySourceType).optional(),
+  ...dateRangeFields,
+  sort: sortField(["occurredAt"]),
+  ...pageFields,
 });
 
-const inventoryCommandSchema = z.object({
+export const inventoryCommandSchema = z.object({
   itemType: z.nativeEnum(InventoryItemType),
   itemId: z.string().trim().min(1),
   reason: z.string().trim().min(3),
 });
 
-const openingStockSchema = inventoryCommandSchema.extend({
+export const openingStockSchema = inventoryCommandSchema.extend({
   quantity: z
     .string()
     .trim()
     .regex(/^\d+(\.\d{1,6})?$/),
 });
 
-const adjustmentSchema = inventoryCommandSchema.extend({
+export const adjustmentSchema = inventoryCommandSchema.extend({
   quantityDelta: z
     .string()
     .trim()
@@ -55,7 +69,7 @@ export function inventoryRouter(params: {
     async (_request, response, next) => {
       try {
         const balances = await params.inventoryService.listBalances();
-        response.json(ok({ balances }, getCorrelationId(response)));
+        response.json(okFor(response, { balances }));
       } catch (error) {
         next(error);
       }
@@ -69,7 +83,7 @@ export function inventoryRouter(params: {
       try {
         const query = listQuerySchema.parse(request.query);
         const movements = await params.inventoryService.listMovements(query);
-        response.json(ok({ movements }, getCorrelationId(response)));
+        response.json(okFor(response, { movements }));
       } catch (error) {
         next(error);
       }
