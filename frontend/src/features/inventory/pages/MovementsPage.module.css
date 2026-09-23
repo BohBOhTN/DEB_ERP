@@ -1,0 +1,23 @@
+.quantity {
+  font-weight: var(--weight-title);
+}
+
+.positive {
+  color: var(--success);
+}
+
+.negative {
+  color: var(--danger);
+}
+
+.cardTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.muted {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}

@@ -3589,6 +3589,8 @@ export interface operations {
                 isActive?: "true" | "false";
                 page?: number;
                 pageSize?: number;
+                categoryId?: string;
+                isStockable?: "true" | "false";
             };
             header?: never;
             path?: never;
@@ -4544,6 +4546,7 @@ export interface operations {
                 supplierId?: string;
                 status?: "DRAFT" | "POSTED" | "CANCELLED";
                 paymentTerms?: "PAID" | "PARTIAL" | "UNPAID";
+                rawMaterialId?: string;
                 from?: string;
                 to?: string;
                 dueState?: "OVERDUE" | "UPCOMING";

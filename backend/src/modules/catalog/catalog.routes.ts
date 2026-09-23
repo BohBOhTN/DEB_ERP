@@ -25,6 +25,15 @@ export const listQuerySchema = z.object({
   ...pageFields,
 });
 
+export const productListQuerySchema = listQuerySchema.extend({
+  sort: sortField(["name", "createdAt", "salePriceTnd", "isActive"]),
+  categoryId: z.string().trim().min(1).optional(),
+  isStockable: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+});
+
 export const createUnitSchema = z.object({
   code: z.string().trim().min(1),
   name: z.string().trim().min(1),
@@ -328,7 +337,7 @@ export function catalogRouter(params: {
     requirePermission("products.view"),
     async (request, response, next) => {
       try {
-        const query = withSearch(listQuerySchema.parse(request.query));
+        const query = withSearch(productListQuerySchema.parse(request.query));
         const result = await params.catalogService.listProducts(query);
         response.json(okFor(response, { products: result }));
       } catch (error) {

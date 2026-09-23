@@ -20,6 +20,16 @@ export const ownerPermissions = [
   "supplier_payments.view",
   "supplier_balances.view",
   "products.view",
+  "products.create",
+  "products.update",
+  "products.activate",
+  "raw_materials.create",
+  "raw_materials.update",
+  "raw_materials.activate",
+  "categories.manage",
+  "units.manage",
+  "inventory.adjust",
+  "inventory.opening_stock",
   "raw_materials.view",
   "categories.view",
   "units.view",
@@ -187,14 +197,10 @@ export async function mockApi(
       );
     }
 
-    // Every V1 screen lists something on mount; an empty page keeps it quiet.
+    // Every screen lists something on mount; an empty page keeps it quiet.
     if (method === "GET") {
       return route.fulfill(
-        envelope(
-          path.includes("/v1/")
-            ? { items: [], page: 1, pageSize: 25, total: 0, pageCount: 1 }
-            : {},
-        ),
+        envelope({ items: [], page: 1, pageSize: 25, total: 0, pageCount: 1 }),
       );
     }
 

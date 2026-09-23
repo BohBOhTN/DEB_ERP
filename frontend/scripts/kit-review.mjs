@@ -1,28 +1,13 @@
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 
 /// AS-V2-10: opens the component gallery at the four review widths, fails on
-/// any horizontal page scroll, exercises the dialogs' focus trap, and writes
-/// one screenshot per width. Needs the dev server (`npm run dev`) and a
-/// Chromium from `npx playwright install chromium`.
+/// any horizontal page scroll and exercises the dialogs' focus trap. No
+/// images are written: the assertions are the evidence (owner decision).
+/// Needs the dev server (`npm run dev`); `KIT_BROWSER` points at a system
+/// Chromium on machines Playwright cannot download for.
 const baseUrl = process.env.KIT_URL ?? "http://localhost:5173/_kit?embed=1";
-const outDir =
-  process.env.KIT_OUT ??
-  path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "../kit-screenshots",
-  );
 const widths = [360, 430, 768, 1280];
-const sectionShots = (
-  process.env.KIT_SECTIONS ??
-  "Button,FormField,DataTable,KpiTile,AppShell,ConfirmDialog"
-).split(",");
 
-fs.mkdirSync(outDir, { recursive: true });
-// A system Chromium (Brave, Chrome) can stand in for the Playwright build
-// on machines Playwright no longer downloads for.
 const browser = await chromium.launch(
   process.env.KIT_BROWSER ? { executablePath: process.env.KIT_BROWSER } : {},
 );
@@ -113,22 +98,6 @@ for (const width of widths) {
     await dialog.waitFor({ state: "detached" });
   }
 
-  await page.screenshot({
-    path: path.join(outDir, `kit-${width}.png`),
-    fullPage: true,
-  });
-
-  // Section crops for the PR brief (full pages are 30 000 px tall).
-  if (width === 360 || width === 1280) {
-    for (const name of sectionShots) {
-      const section = page.locator(`#kit-${name}`);
-      if (await section.count()) {
-        await section.screenshot({
-          path: path.join(outDir, `section-${name}-${width}.png`),
-        });
-      }
-    }
-  }
   console.log(
     `${width}px: ${metrics.sections} components, page width ${metrics.scrollWidth}/${metrics.clientWidth}, focus ring ${metrics.focusRing ? "set" : "MISSING"}`,
   );
@@ -142,4 +111,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`Screenshots written to ${outDir}`);
+console.log("Gallery review passed at 360, 430, 768 and 1280 px.");
