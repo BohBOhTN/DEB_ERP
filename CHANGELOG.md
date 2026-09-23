@@ -8,6 +8,20 @@ Release R7 design system and application shell, targeting `v1.2.0`.
 
 ### Added
 
+- New application shell (Sprint 19): router with French paths and lazy
+  route groups, permission guards, session bootstrap with a brand splash,
+  401 and 403 handling, an expiry warning ten minutes before the fixed
+  session end, the brand login page, the sidebar with a collapsible rail,
+  the top bar with breadcrumbs and user menu, the phone bottom navigation
+  with a `Plus` sheet, and the `Accueil` home page with live figures,
+  alerts, quick actions, recent activity and the month's expenses.
+- Every V1 screen is mounted unchanged inside the new shell at its new path,
+  flagged "Ancienne interface"; its stylesheet is scoped to that wrapper by
+  the build.
+- `GET /api/v1/auth/me` and the login response now carry the user's role
+  names and the session expiry.
+- Playwright smoke at 360 px and 1280 px (login, every module, logout)
+  against the dev server with the API mocked in the browser, run in CI.
 - Frontend design system as code: brand and semantic tokens in
   `src/styles/tokens.css`, reset and base styles, Inter and Fraunces
   fonts, favicons and theme colour.
@@ -72,6 +86,11 @@ only; the V1 frontend keeps working on the `/api` prefix. See
 - Cleanup job for expired idempotency records and sessions.
 - Global per-client rate limit, gzip compression, request timeouts, graceful
   shutdown with forced exit, and `trust proxy` configuration.
+
+### Removed
+
+- The V1 shell (`ProtectedShell.tsx`) and login form, replaced by the new
+  shell and login page.
 
 ### Changed
 
