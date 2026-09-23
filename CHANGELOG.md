@@ -21,6 +21,14 @@ Release R9 module redesign wave 2, targeting `v1.4.0`.
   workspace whose four quantities per line must reconcile before posting,
   a direct sale dialog and distributor payments with allocations; an
   `Accordion` pattern and a price-less mode of the line editor.
+- Expenses and cost simulation rebuilt on the kit (Sprint 25): a monthly
+  expenses report with the total, the top categories and the day by day
+  line, the table with its dialogs, immediate posting and cancellation
+  with a reason, the categories page; simulations with a line editor of
+  catalogue or free ingredients, live line and unit costs, an indicative
+  margin, duplication, edition and deletion, and the statement that
+  nothing touches stock or accounting.
+- Backend: expense categories carry their expense count.
 - Backend: distributor rows carry their balance and held lines; balance
   rows carry the last payment date.
 - Backend: POS sessions and sales carry the actors' display names; session
@@ -30,6 +38,7 @@ Release R9 module redesign wave 2, targeting `v1.4.0`.
 
 - The V1 POS screen and its API client.
 - The V1 distribution screen and its API client.
+- The V1 expenses and simulation screens and their API clients.
 
 ## [1.3.0] - 2026-09-23
 
