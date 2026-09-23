@@ -209,7 +209,7 @@ export async function handleCustomersOrders(
     );
   }
 
-  if (path === "/customers/customer-balances") {
+  if (path === "/customer-balances") {
     const q = url.searchParams.get("q")?.toLowerCase() ?? "";
     return (
       route.fulfill(
@@ -234,9 +234,7 @@ export async function handleCustomersOrders(
     );
   }
 
-  const customerMatch = /^\/customers\/customers\/([^/]+)(\/statement)?$/.exec(
-    path,
-  );
+  const customerMatch = /^\/customers\/([^/]+)(\/statement)?$/.exec(path);
   if (customerMatch) {
     const customer = state.customers.find((row) => row.id === customerMatch[1]);
     if (!customer)
@@ -289,10 +287,10 @@ export async function handleCustomersOrders(
     );
   }
 
-  if (path === "/customers/customer-payments" && method === "GET")
+  if (path === "/customer-payments" && method === "GET")
     return (route.fulfill(page([])), true);
 
-  if (path === "/orders/orders" && method === "GET") {
+  if (path === "/orders" && method === "GET") {
     const status = url.searchParams.get("status");
     const dueState = url.searchParams.get("dueState");
     const now = Date.now();
@@ -310,7 +308,7 @@ export async function handleCustomersOrders(
     return (route.fulfill(page(rows)), true);
   }
 
-  if (path === "/orders/orders" && method === "POST") {
+  if (path === "/orders" && method === "POST") {
     if (!hasKey())
       return (
         route.fulfill(
@@ -368,9 +366,7 @@ export async function handleCustomersOrders(
   }
 
   const orderMatch =
-    /^\/orders\/orders\/([^/]+)(\/status|\/advances|\/complete|\/cancel)?$/.exec(
-      path,
-    );
+    /^\/orders\/([^/]+)(\/status|\/advances|\/complete|\/cancel)?$/.exec(path);
   if (orderMatch) {
     const order = state.orders.find((row) => row.id === orderMatch[1]);
     if (!order)
@@ -481,10 +477,10 @@ export async function mockCustomersOrders(
   page: Page,
   state: CustomersOrdersState,
 ): Promise<void> {
-  await page.route("**/api/v1/customers/**", (route) =>
+  await page.route("**/api/v1/customer**", (route) =>
     handleCustomersOrders(route, state),
   );
-  await page.route("**/api/v1/orders/**", (route) =>
+  await page.route("**/api/v1/orders**", (route) =>
     handleCustomersOrders(route, state),
   );
   await page.route("**/api/v1/pos/**", (route) =>

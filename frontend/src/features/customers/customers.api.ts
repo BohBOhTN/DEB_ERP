@@ -126,7 +126,7 @@ export function listCustomerBalances(
 ): Promise<PageResult<CustomerBalanceRow>> {
   // The balances endpoint sorts by a plain name, not `field:direction`.
   const { sort, ...rest } = query;
-  return apiClient.list<CustomerBalanceRow>("/customers/customer-balances", {
+  return apiClient.list<CustomerBalanceRow>("/customer-balances", {
     query: { ...toSearchParams(rest), ...(sort ? { sort } : {}) },
   });
 }
@@ -134,7 +134,7 @@ export function listCustomerBalances(
 export async function getCustomer(customerId: string): Promise<CustomerDetail> {
   return (
     await apiClient.get<{ customer: CustomerDetail }>(
-      `/customers/customers/${customerId}`,
+      `/customers/${customerId}`,
     )
   ).customer;
 }
@@ -148,9 +148,8 @@ export interface CustomerInput {
 }
 
 export async function createCustomer(input: CustomerInput): Promise<Customer> {
-  return (
-    await apiClient.post<{ customer: Customer }>("/customers/customers", input)
-  ).customer;
+  return (await apiClient.post<{ customer: Customer }>("/customers", input))
+    .customer;
 }
 
 export async function updateCustomer(
@@ -159,7 +158,7 @@ export async function updateCustomer(
 ): Promise<Customer> {
   return (
     await apiClient.patch<{ customer: Customer }>(
-      `/customers/customers/${customerId}`,
+      `/customers/${customerId}`,
       input,
     )
   ).customer;
@@ -178,7 +177,7 @@ export async function getCustomerStatement(
 ): Promise<CustomerStatement> {
   return (
     await apiClient.get<{ statement: CustomerStatement }>(
-      `/customers/customers/${customerId}/statement`,
+      `/customers/${customerId}/statement`,
       { query: toSearchParams({ page: 1, pageSize: 1, ...query } as never) },
     )
   ).statement;
@@ -194,7 +193,7 @@ export interface PaymentListQuery {
 export function listCustomerPayments(
   query: PaymentListQuery,
 ): Promise<PageResult<CustomerPayment>> {
-  return apiClient.list<CustomerPayment>("/customers/customer-payments", {
+  return apiClient.list<CustomerPayment>("/customer-payments", {
     query: toSearchParams({ ...query }),
   });
 }
@@ -215,7 +214,7 @@ export async function createCustomerPayment(
 ): Promise<CustomerPayment> {
   return (
     await apiClient.post<{ payment: CustomerPayment }>(
-      "/customers/customer-payments",
+      "/customer-payments",
       input,
       { idempotencyKey },
     )

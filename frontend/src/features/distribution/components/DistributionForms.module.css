@@ -1,0 +1,111 @@
+.twoColumns {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.muted {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+
+.custodyTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.custodyTable th,
+.custodyTable td {
+  padding: var(--space-2) var(--space-2);
+  text-align: right;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.custodyTable th:first-child,
+.custodyTable td:first-child {
+  text-align: left;
+  white-space: normal;
+}
+
+.scroller {
+  overflow-x: auto;
+}
+
+.settlementLine {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.settlementLine.invalid {
+  border-color: var(--danger);
+}
+
+.settlementHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.quantities {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.equation {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.equation strong.ok {
+  color: var(--success);
+}
+
+.equation strong.ko {
+  color: var(--danger);
+}
+
+.priceRow {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.lineTotal {
+  font-weight: var(--weight-title);
+  white-space: nowrap;
+}
+
+@media (min-width: 600px) {
+  .twoColumns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quantities {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

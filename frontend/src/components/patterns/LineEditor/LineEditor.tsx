@@ -30,6 +30,8 @@ export interface LineEditorProps {
   addLabel?: string;
   /// Unit price editable (purchases, simulation) or fixed from the catalogue (POS).
   priceEditable?: boolean;
+  /// Hide the price and total columns for quantity-only documents (dispatch).
+  showPrice?: boolean;
   errors?: Record<string, string | undefined>;
   disabled?: boolean;
   /// Helper text under a line (a normalised quantity such as "= 50,000 kg").
@@ -86,6 +88,7 @@ export function LineEditor({
   itemLabel = fr.product,
   addLabel = "Ajouter une ligne",
   priceEditable = true,
+  showPrice = true,
   errors = {},
   disabled = false,
   lineHint,
@@ -103,14 +106,22 @@ export function LineEditor({
   return (
     <div className={cx(styles.root, className)}>
       <div
-        className={cx(styles.header, unitsFor && styles.withUnit)}
+        className={cx(
+          styles.header,
+          unitsFor && styles.withUnit,
+          !showPrice && styles.noPrice,
+        )}
         aria-hidden="true"
       >
         <span>{itemLabel}</span>
         <span>{fr.quantity}</span>
         {unitsFor ? <span>{fr.unit}</span> : null}
-        <span className={styles.right}>{fr.unitPrice}</span>
-        <span className={styles.right}>{fr.lineTotal}</span>
+        {showPrice ? (
+          <>
+            <span className={styles.right}>{fr.unitPrice}</span>
+            <span className={styles.right}>{fr.lineTotal}</span>
+          </>
+        ) : null}
         <span />
       </div>
       <ul className={styles.lines}>
@@ -121,7 +132,11 @@ export function LineEditor({
           return (
             <li
               key={line.key}
-              className={cx(styles.line, unitsFor && styles.withUnit)}
+              className={cx(
+                styles.line,
+                unitsFor && styles.withUnit,
+                !showPrice && styles.noPrice,
+              )}
             >
               <div className={styles.cell}>
                 <Combobox
@@ -167,31 +182,35 @@ export function LineEditor({
                   />
                 </div>
               ) : null}
-              <div className={styles.cell}>
-                {priceEditable ? (
-                  <MoneyInput
-                    aria-label={`${fr.unitPrice} ${index + 1}`}
-                    value={line.unitPriceTnd}
-                    onChange={(unitPriceTnd) =>
-                      update(line.key, { unitPriceTnd })
-                    }
-                    disabled={disabled}
-                    invalid={Boolean(errorFor("unitPriceTnd"))}
-                  />
-                ) : (
-                  <span className={cx(styles.readonly, "tabular-nums")}>
-                    {formatMoney(line.unitPriceTnd || 0)}
-                  </span>
-                )}
-              </div>
-              <div className={cx(styles.cell, styles.total)}>
-                <span className={styles.mobileLabel}>{fr.lineTotal}</span>
-                <span className="tabular-nums">
-                  {formatMoney(
-                    lineTotalFor ? lineTotalFor(line) : lineTotal(line),
+              {showPrice ? (
+                <div className={styles.cell}>
+                  {priceEditable ? (
+                    <MoneyInput
+                      aria-label={`${fr.unitPrice} ${index + 1}`}
+                      value={line.unitPriceTnd}
+                      onChange={(unitPriceTnd) =>
+                        update(line.key, { unitPriceTnd })
+                      }
+                      disabled={disabled}
+                      invalid={Boolean(errorFor("unitPriceTnd"))}
+                    />
+                  ) : (
+                    <span className={cx(styles.readonly, "tabular-nums")}>
+                      {formatMoney(line.unitPriceTnd || 0)}
+                    </span>
                   )}
-                </span>
-              </div>
+                </div>
+              ) : null}
+              {showPrice ? (
+                <div className={cx(styles.cell, styles.total)}>
+                  <span className={styles.mobileLabel}>{fr.lineTotal}</span>
+                  <span className="tabular-nums">
+                    {formatMoney(
+                      lineTotalFor ? lineTotalFor(line) : lineTotal(line),
+                    )}
+                  </span>
+                </div>
+              ) : null}
               <div className={cx(styles.cell, styles.remove)}>
                 <IconButton
                   label={`${fr.remove} la ligne ${index + 1}`}

@@ -1,3 +1,4 @@
+export { Accordion, type AccordionItem } from "./Accordion/Accordion.js";
 export {
   AllocationTable,
   allocatedTotal,

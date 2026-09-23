@@ -130,8 +130,52 @@ export class DistributionService {
       }),
       this.prisma.distributor.count({ where }),
     ]);
+    // The directory shows what each distributor owes and holds (07 section
+    // 4.7): one ledger aggregate and one dispatch scan for the page.
+    const ids = items.map((distributor) => distributor.id);
+    const [balances, openDispatches] = await Promise.all([
+      ids.length === 0
+        ? []
+        : this.prisma.distributorLedgerEntry.groupBy({
+            by: ["distributorId"],
+            where: { distributorId: { in: ids } },
+            _sum: { amountTnd: true },
+          }),
+      ids.length === 0
+        ? []
+        : this.prisma.distributorDispatch.findMany({
+            where: {
+              distributorId: { in: ids },
+              status: DistributorDispatchStatus.OPEN,
+            },
+            select: {
+              distributorId: true,
+              _count: { select: { lines: true } },
+            },
+          }),
+    ]);
+    const balance = balancesByKey(
+      balances,
+      (row) => row.distributorId,
+      (row) => row._sum.amountTnd,
+    );
+    const heldLines = new Map<string, number>();
+    for (const dispatch of openDispatches) {
+      heldLines.set(
+        dispatch.distributorId,
+        (heldLines.get(dispatch.distributorId) ?? 0) + dispatch._count.lines,
+      );
+    }
 
-    return paginated(items, total, params);
+    return paginated(
+      items.map((distributor) => ({
+        ...distributor,
+        balanceTnd: balanceOf(balance, distributor.id).toFixed(3),
+        heldLineCount: heldLines.get(distributor.id) ?? 0,
+      })),
+      total,
+      params,
+    );
   }
 
   public async createDistributor(
@@ -1238,10 +1282,25 @@ export class DistributionService {
       (row) => row._sum.amountTnd,
     );
 
+    const lastPayments =
+      distributors.length === 0
+        ? []
+        : await this.prisma.distributorPayment.groupBy({
+            by: ["distributorId"],
+            where: {
+              distributorId: { in: distributors.map((row) => row.id) },
+            },
+            _max: { paidAt: true },
+          });
+    const lastPaymentAt = new Map(
+      lastPayments.map((row) => [row.distributorId, row._max.paidAt]),
+    );
+
     return paginated(
       distributors.map((distributor) => ({
         distributor,
         balanceTnd: balanceOf(balance, distributor.id).toFixed(3),
+        lastPaymentAt: lastPaymentAt.get(distributor.id) ?? null,
       })),
       total,
       params,

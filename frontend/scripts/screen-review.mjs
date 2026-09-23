@@ -79,11 +79,30 @@ const screens = [
     ready: "heading",
   },
   {
-    name: "distributeurs-v1",
+    name: "distributeurs",
     path: "/distributeurs",
     signedIn: true,
-    ready: "legacy",
+    ready: "heading",
   },
+  {
+    name: "depot-vente",
+    path: "/distribution/depot-vente",
+    signedIn: true,
+    ready: "heading",
+  },
+  {
+    name: "sortie-nouvelle",
+    path: "/distribution/sorties/nouvelle",
+    signedIn: true,
+    ready: "heading",
+  },
+  {
+    name: "reglements-distributeurs",
+    path: "/distribution/reglements",
+    signedIn: true,
+    ready: "heading",
+  },
+  { name: "depenses-v1", path: "/depenses", signedIn: true, ready: "legacy" },
 ];
 
 const server = spawn(

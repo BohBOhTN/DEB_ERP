@@ -186,7 +186,7 @@ export function customersOrdersHandlers(
         ),
       );
     }),
-    http.get(`${apiV1}/customers/customer-balances`, ({ request }) => {
+    http.get(`${apiV1}/customer-balances`, ({ request }) => {
       const q = new URL(request.url).searchParams.get("q")?.toLowerCase() ?? "";
       return ok(
         makePage(
@@ -200,7 +200,7 @@ export function customersOrdersHandlers(
         ),
       );
     }),
-    http.get(`${apiV1}/customers/customers/:id/statement`, ({ params }) => {
+    http.get(`${apiV1}/customers/:id/statement`, ({ params }) => {
       const customer = store.customers.find((row) => row.id === params.id);
       if (!customer)
         return apiError(404, "CUSTOMER_NOT_FOUND", "Client introuvable.");
@@ -255,7 +255,7 @@ export function customersOrdersHandlers(
         },
       });
     }),
-    http.get(`${apiV1}/customers/customers/:id`, ({ params }) => {
+    http.get(`${apiV1}/customers/:id`, ({ params }) => {
       const customer = store.customers.find((row) => row.id === params.id);
       return customer
         ? ok({
@@ -267,7 +267,7 @@ export function customersOrdersHandlers(
           })
         : apiError(404, "CUSTOMER_NOT_FOUND", "Client introuvable.");
     }),
-    http.post(`${apiV1}/customers/customers`, async ({ request }) => {
+    http.post(`${apiV1}/customers`, async ({ request }) => {
       const body = (await request.json()) as Partial<Customer>;
       if (!body.name)
         return apiError(
@@ -285,26 +285,23 @@ export function customersOrdersHandlers(
       store.customers.push(customer);
       return ok({ customer }, 201);
     }),
-    http.patch(
-      `${apiV1}/customers/customers/:id`,
-      async ({ params, request }) => {
-        const body = (await request.json()) as Partial<Customer> & {
-          version: number;
-        };
-        const customer = store.customers.find((row) => row.id === params.id);
-        if (!customer)
-          return apiError(404, "CUSTOMER_NOT_FOUND", "Client introuvable.");
-        if (body.version !== customer.version)
-          return apiError(
-            409,
-            "VERSION_CONFLICT",
-            "Cette fiche a été modifiée. Rechargez puis réessayez.",
-          );
-        Object.assign(customer, body, { version: customer.version + 1 });
-        return ok({ customer });
-      },
-    ),
-    http.get(`${apiV1}/customers/customer-payments`, ({ request }) => {
+    http.patch(`${apiV1}/customers/:id`, async ({ params, request }) => {
+      const body = (await request.json()) as Partial<Customer> & {
+        version: number;
+      };
+      const customer = store.customers.find((row) => row.id === params.id);
+      if (!customer)
+        return apiError(404, "CUSTOMER_NOT_FOUND", "Client introuvable.");
+      if (body.version !== customer.version)
+        return apiError(
+          409,
+          "VERSION_CONFLICT",
+          "Cette fiche a été modifiée. Rechargez puis réessayez.",
+        );
+      Object.assign(customer, body, { version: customer.version + 1 });
+      return ok({ customer });
+    }),
+    http.get(`${apiV1}/customer-payments`, ({ request }) => {
       const customerId = new URL(request.url).searchParams.get("customerId");
       return ok(
         makePage(
@@ -314,7 +311,7 @@ export function customersOrdersHandlers(
         ),
       );
     }),
-    http.post(`${apiV1}/customers/customer-payments`, async ({ request }) => {
+    http.post(`${apiV1}/customer-payments`, async ({ request }) => {
       if (!request.headers.get("Idempotency-Key"))
         return apiError(
           400,
@@ -361,7 +358,7 @@ export function customersOrdersHandlers(
       store.payments.unshift(payment);
       return ok({ payment }, 201);
     }),
-    http.get(`${apiV1}/orders/orders`, ({ request }) => {
+    http.get(`${apiV1}/orders`, ({ request }) => {
       const url = new URL(request.url);
       const status = url.searchParams.get("status");
       const customerId = url.searchParams.get("customerId");
@@ -398,7 +395,7 @@ export function customersOrdersHandlers(
         .map(summary);
       return ok(makePage(rows));
     }),
-    http.post(`${apiV1}/orders/orders`, async ({ request }) => {
+    http.post(`${apiV1}/orders`, async ({ request }) => {
       if (!request.headers.get("Idempotency-Key"))
         return apiError(
           400,
@@ -452,197 +449,185 @@ export function customersOrdersHandlers(
       store.orders.unshift(order);
       return ok({ order }, 201);
     }),
-    http.get(`${apiV1}/orders/orders/:id`, ({ params }) => {
+    http.get(`${apiV1}/orders/:id`, ({ params }) => {
       const order = store.orders.find((row) => row.id === params.id);
       return order
         ? ok({ order })
         : apiError(404, "ORDER_NOT_FOUND", "Commande introuvable.");
     }),
-    http.post(
-      `${apiV1}/orders/orders/:id/status`,
-      async ({ params, request }) => {
-        const body = (await request.json()) as {
-          version: number;
-          status: Order["status"];
-        };
-        const order = store.orders.find((row) => row.id === params.id);
-        if (!order)
-          return apiError(404, "ORDER_NOT_FOUND", "Commande introuvable.");
-        if (body.version !== order.version)
-          return apiError(
-            409,
-            "VERSION_CONFLICT",
-            "Cette commande a été modifiée. Rechargez puis réessayez.",
-          );
-        Object.assign(order, {
-          status: body.status,
-          version: order.version + 1,
-        });
-        return ok({ order });
-      },
-    ),
-    http.post(
-      `${apiV1}/orders/orders/:id/advances`,
-      async ({ params, request }) => {
-        if (!request.headers.get("Idempotency-Key"))
-          return apiError(
-            400,
-            "IDEMPOTENCY_KEY_REQUIRED",
-            "Une clé d'idempotence est requise.",
-          );
-        const body = (await request.json()) as {
-          amountTnd: string;
-          paidAt: string;
-          notes?: string;
-        };
-        const order = store.orders.find((row) => row.id === params.id);
-        if (!order)
-          return apiError(404, "ORDER_NOT_FOUND", "Commande introuvable.");
-        if (!store.session)
-          return apiError(
-            409,
-            "POS_SESSION_NOT_OPEN",
-            "Ouvrez une session de caisse avant cette opération.",
-          );
-        if (
-          new Decimal(order.advanceBalanceTnd)
-            .plus(body.amountTnd)
-            .greaterThan(order.totalTnd)
-        )
-          return apiError(
-            409,
-            "ORDER_ADVANCE_EXCEEDS_TOTAL",
-            "L'acompte dépasse le total de la commande.",
-          );
-        sequence += 1;
-        const advance = {
-          id: `advance-${sequence}`,
-          movement: "RECEIPT" as const,
-          amountTnd: new Decimal(body.amountTnd).toFixed(3),
-          paidAt: new Date(body.paidAt).toISOString(),
-          notes: body.notes ?? null,
-        };
-        order.advances = [...(order.advances ?? []), advance];
-        order.advanceBalanceTnd = new Decimal(order.advanceBalanceTnd)
-          .plus(advance.amountTnd)
-          .toFixed(3);
-        order.version += 1;
-        return ok({ order, advance }, 201);
-      },
-    ),
-    http.post(
-      `${apiV1}/orders/orders/:id/complete`,
-      async ({ params, request }) => {
-        if (!request.headers.get("Idempotency-Key"))
-          return apiError(
-            400,
-            "IDEMPOTENCY_KEY_REQUIRED",
-            "Une clé d'idempotence est requise.",
-          );
-        const body = (await request.json()) as {
-          completedAt: string;
-          paidAmountTnd?: string;
-        };
-        const order = store.orders.find((row) => row.id === params.id);
-        if (!order)
-          return apiError(404, "ORDER_NOT_FOUND", "Commande introuvable.");
-        if (order.saleId || !openStatuses.has(order.status))
-          return apiError(
-            409,
-            "ORDER_NOT_COMPLETABLE",
-            "Cette commande ne peut pas être terminée.",
-          );
-        if (!store.session)
-          return apiError(
-            409,
-            "POS_SESSION_NOT_OPEN",
-            "Ouvrez une session de caisse avant cette opération.",
-          );
-        const paid = new Decimal(body.paidAmountTnd ?? 0);
-        const remaining = new Decimal(order.totalTnd)
-          .minus(order.advanceBalanceTnd)
-          .minus(paid);
-        if (remaining.lessThan(0))
-          return apiError(
-            409,
-            "SALE_OVERPAYMENT_REJECTED",
-            "Le montant payé dépasse le reste dû.",
-          );
-        sequence += 1;
-        const sale = makeSale({
-          id: `sale-${sequence}`,
-          reference: `VT-${String(sequence).padStart(6, "0")}`,
-          customerId: order.customerId,
-          soldAt: new Date(body.completedAt).toISOString(),
-          totalTnd: order.totalTnd,
-          paidAmountTnd: new Decimal(order.advanceBalanceTnd)
-            .plus(paid)
-            .toFixed(3),
-          remainingDueTnd: remaining.toFixed(3),
-          paymentState: remaining.isZero()
-            ? "PAID"
-            : paid.plus(order.advanceBalanceTnd).greaterThan(0)
-              ? "PARTIALLY_PAID"
-              : "UNPAID",
-        });
-        store.sales.unshift(sale);
-        Object.assign(order, {
-          status: "COMPLETED",
-          saleId: sale.id,
-          completedAt: sale.soldAt,
-          advanceBalanceTnd: "0.000",
-          version: order.version + 1,
-          sale: {
-            ...sale,
-            lines: (order.lines ?? []).map((line) => ({
-              id: line.id,
-              productNameSnapshot: line.productNameSnapshot,
-              quantity: line.quantity,
-              lineTotalTnd: line.lineTotalTnd,
-            })),
-          },
-        });
-        return ok({ order }, 201);
-      },
-    ),
-    http.post(
-      `${apiV1}/orders/orders/:id/cancel`,
-      async ({ params, request }) => {
-        if (!request.headers.get("Idempotency-Key"))
-          return apiError(
-            400,
-            "IDEMPOTENCY_KEY_REQUIRED",
-            "Une clé d'idempotence est requise.",
-          );
-        const body = (await request.json()) as {
-          cancelledAt: string;
-          reason: string;
-          advanceDisposition?: AdvanceDisposition;
-        };
-        const order = store.orders.find((row) => row.id === params.id);
-        if (!order)
-          return apiError(404, "ORDER_NOT_FOUND", "Commande introuvable.");
-        if (!openStatuses.has(order.status))
-          return apiError(
-            409,
-            "ORDER_NOT_CANCELLABLE",
-            "Cette commande ne peut pas être annulée.",
-          );
-        if (Number(order.advanceBalanceTnd) > 0 && !body.advanceDisposition)
-          return apiError(
-            400,
-            "ORDER_ADVANCE_DISPOSITION_REQUIRED",
-            "Indiquez le sort de l'acompte.",
-          );
-        Object.assign(order, {
-          status: "CANCELLED",
-          cancelledAt: new Date(body.cancelledAt).toISOString(),
-          cancellationReason: body.reason,
-          advanceDisposition: body.advanceDisposition ?? null,
-          version: order.version + 1,
-        });
-        return ok({ order });
-      },
-    ),
+    http.post(`${apiV1}/orders/:id/status`, async ({ params, request }) => {
+      const body = (await request.json()) as {
+        version: number;
+        status: Order["status"];
+      };
+      const order = store.orders.find((row) => row.id === params.id);
+      if (!order)
+        return apiError(404, "ORDER_NOT_FOUND", "Commande introuvable.");
+      if (body.version !== order.version)
+        return apiError(
+          409,
+          "VERSION_CONFLICT",
+          "Cette commande a été modifiée. Rechargez puis réessayez.",
+        );
+      Object.assign(order, {
+        status: body.status,
+        version: order.version + 1,
+      });
+      return ok({ order });
+    }),
+    http.post(`${apiV1}/orders/:id/advances`, async ({ params, request }) => {
+      if (!request.headers.get("Idempotency-Key"))
+        return apiError(
+          400,
+          "IDEMPOTENCY_KEY_REQUIRED",
+          "Une clé d'idempotence est requise.",
+        );
+      const body = (await request.json()) as {
+        amountTnd: string;
+        paidAt: string;
+        notes?: string;
+      };
+      const order = store.orders.find((row) => row.id === params.id);
+      if (!order)
+        return apiError(404, "ORDER_NOT_FOUND", "Commande introuvable.");
+      if (!store.session)
+        return apiError(
+          409,
+          "POS_SESSION_NOT_OPEN",
+          "Ouvrez une session de caisse avant cette opération.",
+        );
+      if (
+        new Decimal(order.advanceBalanceTnd)
+          .plus(body.amountTnd)
+          .greaterThan(order.totalTnd)
+      )
+        return apiError(
+          409,
+          "ORDER_ADVANCE_EXCEEDS_TOTAL",
+          "L'acompte dépasse le total de la commande.",
+        );
+      sequence += 1;
+      const advance = {
+        id: `advance-${sequence}`,
+        movement: "RECEIPT" as const,
+        amountTnd: new Decimal(body.amountTnd).toFixed(3),
+        paidAt: new Date(body.paidAt).toISOString(),
+        notes: body.notes ?? null,
+      };
+      order.advances = [...(order.advances ?? []), advance];
+      order.advanceBalanceTnd = new Decimal(order.advanceBalanceTnd)
+        .plus(advance.amountTnd)
+        .toFixed(3);
+      order.version += 1;
+      return ok({ order, advance }, 201);
+    }),
+    http.post(`${apiV1}/orders/:id/complete`, async ({ params, request }) => {
+      if (!request.headers.get("Idempotency-Key"))
+        return apiError(
+          400,
+          "IDEMPOTENCY_KEY_REQUIRED",
+          "Une clé d'idempotence est requise.",
+        );
+      const body = (await request.json()) as {
+        completedAt: string;
+        paidAmountTnd?: string;
+      };
+      const order = store.orders.find((row) => row.id === params.id);
+      if (!order)
+        return apiError(404, "ORDER_NOT_FOUND", "Commande introuvable.");
+      if (order.saleId || !openStatuses.has(order.status))
+        return apiError(
+          409,
+          "ORDER_NOT_COMPLETABLE",
+          "Cette commande ne peut pas être terminée.",
+        );
+      if (!store.session)
+        return apiError(
+          409,
+          "POS_SESSION_NOT_OPEN",
+          "Ouvrez une session de caisse avant cette opération.",
+        );
+      const paid = new Decimal(body.paidAmountTnd ?? 0);
+      const remaining = new Decimal(order.totalTnd)
+        .minus(order.advanceBalanceTnd)
+        .minus(paid);
+      if (remaining.lessThan(0))
+        return apiError(
+          409,
+          "SALE_OVERPAYMENT_REJECTED",
+          "Le montant payé dépasse le reste dû.",
+        );
+      sequence += 1;
+      const sale = makeSale({
+        id: `sale-${sequence}`,
+        reference: `VT-${String(sequence).padStart(6, "0")}`,
+        customerId: order.customerId,
+        soldAt: new Date(body.completedAt).toISOString(),
+        totalTnd: order.totalTnd,
+        paidAmountTnd: new Decimal(order.advanceBalanceTnd)
+          .plus(paid)
+          .toFixed(3),
+        remainingDueTnd: remaining.toFixed(3),
+        paymentState: remaining.isZero()
+          ? "PAID"
+          : paid.plus(order.advanceBalanceTnd).greaterThan(0)
+            ? "PARTIALLY_PAID"
+            : "UNPAID",
+      });
+      store.sales.unshift(sale);
+      Object.assign(order, {
+        status: "COMPLETED",
+        saleId: sale.id,
+        completedAt: sale.soldAt,
+        advanceBalanceTnd: "0.000",
+        version: order.version + 1,
+        sale: {
+          ...sale,
+          lines: (order.lines ?? []).map((line) => ({
+            id: line.id,
+            productNameSnapshot: line.productNameSnapshot,
+            quantity: line.quantity,
+            lineTotalTnd: line.lineTotalTnd,
+          })),
+        },
+      });
+      return ok({ order }, 201);
+    }),
+    http.post(`${apiV1}/orders/:id/cancel`, async ({ params, request }) => {
+      if (!request.headers.get("Idempotency-Key"))
+        return apiError(
+          400,
+          "IDEMPOTENCY_KEY_REQUIRED",
+          "Une clé d'idempotence est requise.",
+        );
+      const body = (await request.json()) as {
+        cancelledAt: string;
+        reason: string;
+        advanceDisposition?: AdvanceDisposition;
+      };
+      const order = store.orders.find((row) => row.id === params.id);
+      if (!order)
+        return apiError(404, "ORDER_NOT_FOUND", "Commande introuvable.");
+      if (!openStatuses.has(order.status))
+        return apiError(
+          409,
+          "ORDER_NOT_CANCELLABLE",
+          "Cette commande ne peut pas être annulée.",
+        );
+      if (Number(order.advanceBalanceTnd) > 0 && !body.advanceDisposition)
+        return apiError(
+          400,
+          "ORDER_ADVANCE_DISPOSITION_REQUIRED",
+          "Indiquez le sort de l'acompte.",
+        );
+      Object.assign(order, {
+        status: "CANCELLED",
+        cancelledAt: new Date(body.cancelledAt).toISOString(),
+        cancellationReason: body.reason,
+        advanceDisposition: body.advanceDisposition ?? null,
+        version: order.version + 1,
+      });
+      return ok({ order });
+    }),
   ];
 }

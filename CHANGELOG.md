@@ -15,13 +15,21 @@ Release R9 module redesign wave 2, targeting `v1.4.0`.
   the payment box with change and the credit rule, one confirmation with
   one idempotency key per cart intent, the receipt view, the sales list
   and the session history with totals; desktop keyboard shortcuts.
+- Distribution rebuilt on the kit (Sprint 24): distributor directory with
+  custody and balance, distributor detail with five tabs, the custody board
+  by distributor with discrepancy badges, a dispatch editor, a settlement
+  workspace whose four quantities per line must reconcile before posting,
+  a direct sale dialog and distributor payments with allocations; an
+  `Accordion` pattern and a price-less mode of the line editor.
+- Backend: distributor rows carry their balance and held lines; balance
+  rows carry the last payment date.
 - Backend: POS sessions and sales carry the actors' display names; session
   rows carry their sales count and total.
 
 ### Removed
 
-- The V1 POS screen and its API client (a product lookup shim remains for
-  the V1 distribution screen).
+- The V1 POS screen and its API client.
+- The V1 distribution screen and its API client.
 
 ## [1.3.0] - 2026-09-23
 
