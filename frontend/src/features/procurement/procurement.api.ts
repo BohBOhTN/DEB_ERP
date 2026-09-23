@@ -200,6 +200,7 @@ export interface PurchaseListQuery {
   status?: PurchaseStatus;
   paymentTerms?: PurchasePaymentTerms;
   dueState?: "OVERDUE" | "UPCOMING";
+  rawMaterialId?: string;
   from?: string;
   to?: string;
 }
