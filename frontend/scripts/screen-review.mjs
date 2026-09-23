@@ -1,33 +1,46 @@
-import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { mockApi, ownerPermissions } from "../e2e/mockApi.js";
 
-/// UX acceptance evidence (09 section H): screenshots of the login page, the
-/// home page and a mounted V1 screen at the four review widths, with the
-/// horizontal-scroll check, against the dev server and the browser-side API
-/// mock. `E2E_BROWSER` points at a system Chromium when needed.
+/// Responsive check (09 section A): opens the login page, the home page and
+/// the module screens at the four review widths against the dev server and
+/// the browser-side API mock, and fails on any horizontal page scroll. No
+/// images are written: the assertions are the evidence (owner decision).
+/// Runs through `tsx`; `E2E_BROWSER` points at a system Chromium when needed.
 const frontendDir = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
 const port = Number(process.env.SCREEN_PORT ?? 5175);
-const outDir =
-  process.env.SCREEN_OUT ??
-  path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "../screen-review",
-  );
 const widths = [360, 430, 768, 1280];
 const screens = [
   { name: "connexion", path: "/connexion", signedIn: false, ready: "heading" },
   { name: "accueil", path: "/", signedIn: true, ready: "heading" },
+  { name: "produits", path: "/produits", signedIn: true, ready: "heading" },
+  {
+    name: "matieres-premieres",
+    path: "/matieres-premieres",
+    signedIn: true,
+    ready: "heading",
+  },
+  {
+    name: "catalogue-parametres",
+    path: "/catalogue/parametres",
+    signedIn: true,
+    ready: "heading",
+  },
+  { name: "stock", path: "/stock", signedIn: true, ready: "heading" },
+  {
+    name: "stock-mouvements",
+    path: "/stock/mouvements",
+    signedIn: true,
+    ready: "heading",
+  },
   { name: "commandes-v1", path: "/commandes", signedIn: true, ready: "legacy" },
 ];
 
-fs.mkdirSync(outDir, { recursive: true });
 const server = spawn(
   "npm",
   ["run", "dev", "--", "--port", String(port), "--strictPort"],
@@ -72,10 +85,6 @@ for (const width of widths) {
       failures.push(`${screen.name} at ${width}px overflows by ${overflow}px`);
     }
 
-    await page.screenshot({
-      path: path.join(outDir, `${screen.name}-${width}.png`),
-      fullPage: false,
-    });
     console.log(`${screen.name} ${width}px: overflow ${overflow}px`);
     await page.close();
   }
@@ -89,7 +98,7 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`Screenshots written to ${outDir}`);
+console.log("Responsive check passed at 360, 430, 768 and 1280 px.");
 
 async function waitForServer(url) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
