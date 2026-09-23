@@ -3741,6 +3741,25 @@
               "minimum": 1,
               "maximum": 100
             }
+          },
+          {
+            "name": "categoryId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "isStockable",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
           }
         ],
         "responses": {
@@ -5518,6 +5537,14 @@
                 "PARTIAL",
                 "UNPAID"
               ]
+            }
+          },
+          {
+            "name": "rawMaterialId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1
             }
           },
           {
