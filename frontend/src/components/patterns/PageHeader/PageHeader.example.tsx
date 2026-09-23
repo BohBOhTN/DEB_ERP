@@ -34,11 +34,11 @@ export const kit: KitEntry = {
       ),
     },
     {
-      title: "Écran V1 monté",
+      title: "Avec badge",
       render: () => (
         <PageHeader
           title="Simulations"
-          badge={<Badge tone="warning">Ancienne interface</Badge>}
+          badge={<Badge tone="warning">Lecture seule</Badge>}
         />
       ),
     },

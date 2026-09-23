@@ -28,6 +28,15 @@ Release R9 module redesign wave 2, targeting `v1.4.0`.
   catalogue or free ingredients, live line and unit costs, an indicative
   margin, duplication, edition and deletion, and the statement that
   nothing touches stock or accounting.
+- Users, roles, audit and settings rebuilt on the kit (Sprint 26): a
+  users table with role chips, creation with a generated temporary
+  password, role assignment, password reset and activation with the
+  last-Super-Admin refusal explained; a roles master-detail with the
+  permission matrix grouped by module in French, search, select-all per
+  group, a sticky save bar and an unsaved-changes guard; the audit journal
+  with French labels, URL filters, target links and an event sheet with
+  the before / after diff and a copyable correlation id; a settings page
+  with the profile, the application identity and the build.
 - Backend: expense categories carry their expense count.
 - Backend: distributor rows carry their balance and held lines; balance
   rows carry the last payment date.
@@ -39,6 +48,10 @@ Release R9 module redesign wave 2, targeting `v1.4.0`.
 - The V1 POS screen and its API client.
 - The V1 distribution screen and its API client.
 - The V1 expenses and simulation screens and their API clients.
+- The last V1 frontend files (Sprint 26): the access and audit screens and
+  their API clients, the V1 stylesheet, the legacy screen wrapper and its
+  "Ancienne interface" badge, the health service, the V1 auth and catalogue
+  API shims, and the CSS prefixing build step.
 
 ## [1.3.0] - 2026-09-23
 

@@ -5,7 +5,6 @@ export const fr = {
   // Brand
   appName: "Dar El Barka",
   appTagline: "Gestion de la boulangerie",
-  legacyInterface: "Ancienne interface",
 
   // Modules (V1 vocabulary table)
   home: "Accueil",

@@ -89,7 +89,7 @@ function Example() {
         user={{ displayName: "Amine Trabelsi", roleNames: ["Caissier"] }}
         badge={
           active === "stock" ? (
-            <Badge tone="warning">Ancienne interface</Badge>
+            <Badge tone="warning">Lecture seule</Badge>
           ) : undefined
         }
         onNavigate={(item) => setActive(item.id)}

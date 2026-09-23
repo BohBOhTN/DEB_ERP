@@ -1,4 +1,0 @@
-.root {
-  margin: calc(-1 * var(--page-gutter));
-  min-height: 100%;
-}

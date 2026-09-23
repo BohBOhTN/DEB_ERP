@@ -1,4 +1,5 @@
 import { setupServer } from "msw/node";
+import { accessHandlers } from "./handlers/access.js";
 import { authHandlers } from "./handlers/auth.js";
 import { catalogHandlers } from "./handlers/catalog.js";
 import { homeHandlers } from "./handlers/home.js";
@@ -23,4 +24,5 @@ export const server = setupServer(
   ...distributionHandlers(),
   ...expensesHandlers(),
   ...simulationHandlers(),
+  ...accessHandlers(),
 );

@@ -12,7 +12,6 @@ import {
   writeCollapsedPreference,
   type ShellNavItem,
 } from "../components/patterns/AppShell/AppShell.js";
-import { Badge } from "../components/ui/Badge/Badge.js";
 import { ErrorState } from "../components/ui/ErrorState/ErrorState.js";
 import { useToast } from "../components/ui/Toast/useToast.js";
 import { SplashScreen } from "../features/shell/SplashScreen.js";
@@ -29,7 +28,6 @@ import { SessionContext, sessionContextFor } from "./sessionContext.js";
 
 interface RouteHandle {
   title?: string;
-  legacy?: boolean;
 }
 
 /// Session bootstrap and the shell (UI-06, UI-07). Anonymous visitors go to
@@ -125,13 +123,9 @@ export function ProtectedLayout() {
           displayName: user.displayName,
           roleNames: user.roles.map((role) => role.name),
         }}
-        badge={
-          handle.legacy ? (
-            <Badge tone="warning">{fr.legacyInterface}</Badge>
-          ) : undefined
-        }
         onNavigate={(item) => navigate(item.href)}
         onLogout={() => logout.mutate()}
+        onSettings={() => navigate("/parametres")}
         collapsed={collapsed}
         onCollapsedChange={(next) => {
           setCollapsed(next);

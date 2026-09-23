@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider } from "react-router-dom";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AppProviders, createQueryClient } from "../../app/providers";
 import { createTestRouter } from "../../app/router";
 import { makeOrder } from "../../test/factories/customers";
@@ -223,7 +223,15 @@ describe("Orders", () => {
     });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("shows the board with the today queue and hides transitions without permission", async () => {
+    // Pinned at 10:00 in Africa/Tunis so "now plus two hours" is still on
+    // today's board whatever the hour the suite runs at.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-23T09:00:00.000Z"));
     const store = makeCustomersOrdersStore({
       orders: [
         makeOrder({

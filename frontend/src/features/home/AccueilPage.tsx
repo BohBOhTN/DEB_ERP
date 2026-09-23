@@ -3,7 +3,7 @@ import { ErrorState } from "../../components/ui/ErrorState/ErrorState.js";
 import { Skeleton } from "../../components/ui/Skeleton/Skeleton.js";
 import { describeError } from "../../i18n/errors.js";
 import { toPermissionSet } from "../../lib/auth/permissions.js";
-import { useSessionUser } from "../legacy/useSessionUser.js";
+import { useSessionContext } from "../../app/sessionContext.js";
 import { useHomeSummary } from "./home.queries.js";
 import { periodDate, type HomePeriod } from "./homePeriod.js";
 import { AlertsCard } from "./widgets/AlertsCard.js";
@@ -17,7 +17,7 @@ import styles from "./AccueilPage.module.css";
 /// `Accueil` (UI-08, 07 section 3.1): operational summary, blocks by
 /// permission, no profitability (OD-V2-001).
 export function AccueilPage() {
-  const user = useSessionUser();
+  const { user } = useSessionContext();
   const permissions = toPermissionSet(user.effectivePermissions);
   const [period, setPeriod] = useState<HomePeriod>("today");
   const query = useHomeSummary(periodDate(period));

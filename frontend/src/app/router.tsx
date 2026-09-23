@@ -2,13 +2,10 @@ import { lazy, Suspense, type ReactNode } from "react";
 import {
   createBrowserRouter,
   createMemoryRouter,
-  Navigate,
   Outlet,
   type RouteObject,
 } from "react-router-dom";
 import { Skeleton } from "../components/ui/Skeleton/Skeleton.js";
-import { legacyRoutes } from "../features/legacy/legacyRoutes.js";
-import { LegacyScreen } from "../features/legacy/LegacyScreen.js";
 import { AccessDeniedPage } from "../features/shell/AccessDeniedPage.js";
 import { NotFoundPage } from "../features/shell/NotFoundPage.js";
 import { ProtectedLayout } from "./ProtectedLayout.js";
@@ -188,6 +185,26 @@ const SimulationDetailPage = lazy(() =>
     default: m.SimulationDetailPage,
   })),
 );
+const UsersPage = lazy(() =>
+  import("../features/access/pages/UsersPage.js").then((m) => ({
+    default: m.UsersPage,
+  })),
+);
+const RolesPage = lazy(() =>
+  import("../features/access/pages/RolesPage.js").then((m) => ({
+    default: m.RolesPage,
+  })),
+);
+const AuditPage = lazy(() =>
+  import("../features/audit/pages/AuditPage.js").then((m) => ({
+    default: m.AuditPage,
+  })),
+);
+const SettingsPage = lazy(() =>
+  import("../features/settings/pages/SettingsPage.js").then((m) => ({
+    default: m.SettingsPage,
+  })),
+);
 const AccueilPage = lazy(() =>
   import("../features/home/AccueilPage.js").then((m) => ({
     default: m.AccueilPage,
@@ -215,26 +232,9 @@ function Guarded({
   );
 }
 
-function GuardedLegacy({ index }: { index: number }) {
-  const route = legacyRoutes[index];
-  const permissions = useSessionPermissions();
-
-  if (!route) {
-    return <NotFoundPage />;
-  }
-
-  return (
-    <RequirePermission permissions={permissions} anyOf={route.anyOf}>
-      <Suspense fallback={<PageFallback />}>
-        <LegacyScreen screen={route.screen} />
-      </Suspense>
-    </RequirePermission>
-  );
-}
-
 /// The route tree (06 section 3.7): a root layout that owns the session, a
-/// public login, and the protected layout with the shell. Every V1 screen
-/// is mounted at its French path behind its permission group.
+/// public login, and the protected layout with the shell. Every screen is
+/// rebuilt and mounted at its French path behind its permission group.
 export const routes: RouteObject[] = [
   {
     element: <RootLayout />,
@@ -592,17 +592,56 @@ export const routes: RouteObject[] = [
             ),
             handle: { title: "Modifier la simulation" },
           },
-          ...legacyRoutes.map((route, index) => ({
-            path: route.path,
-            element: <GuardedLegacy index={index} />,
-            handle: { title: route.title, legacy: true },
-          })),
+          {
+            path: "/utilisateurs",
+            element: (
+              <Guarded anyOf={["users.view"]}>
+                <UsersPage />
+              </Guarded>
+            ),
+            handle: { title: "Utilisateurs" },
+          },
+          {
+            path: "/roles",
+            element: (
+              <Guarded anyOf={["roles.view"]}>
+                <RolesPage />
+              </Guarded>
+            ),
+            handle: { title: "Rôles et autorisations" },
+          },
+          {
+            path: "/roles/:roleId",
+            element: (
+              <Guarded anyOf={["roles.view"]}>
+                <RolesPage />
+              </Guarded>
+            ),
+            handle: { title: "Rôle" },
+          },
+          {
+            path: "/audit",
+            element: (
+              <Guarded anyOf={["audit.view"]}>
+                <AuditPage />
+              </Guarded>
+            ),
+            handle: { title: "Journal d'audit" },
+          },
+          {
+            path: "/parametres",
+            element: (
+              <Suspense fallback={<PageFallback />}>
+                <SettingsPage />
+              </Suspense>
+            ),
+            handle: { title: "Paramètres" },
+          },
           {
             path: "/acces-refuse",
             element: <AccessDeniedPage />,
             handle: { title: "Accès refusé" },
           },
-          { path: "/parametres", element: <Navigate to="/" replace /> },
           {
             path: "*",
             element: <NotFoundPage />,
