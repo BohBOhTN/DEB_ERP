@@ -4,7 +4,31 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
-Release R7 design system and application shell, targeting `v1.2.0`.
+Release R8 module redesign wave 1, targeting `v1.3.0`.
+
+### Added
+
+- Catalogue and stock rebuilt on the kit (Sprint 20): product, raw
+  material, category and unit lists with search, filters and sort in the
+  URL, creation and edition dialogs with version conflict handling,
+  activation with impact, product and raw material detail pages with stock,
+  movements, history and purchases tabs; stock balances with the negative
+  banner and filter, movements with French labels and document references,
+  opening stock and adjustments through an item picker with an impact
+  confirmation.
+- Backend: balances report the unit symbol and the last movement date;
+  movements report the actor and the source document reference; the product
+  list filters by category and stockability and sorts by price and status;
+  the purchase list filters by raw material.
+
+### Removed
+
+- The V1 catalogue and inventory screens and the inventory API client.
+
+## [1.2.0] - 2026-09-23
+
+Release R7 design system and application shell (Sprints 18 and 19),
+untagged by owner decision.
 
 ### Added
 
