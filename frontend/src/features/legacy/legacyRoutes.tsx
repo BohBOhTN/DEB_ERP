@@ -31,14 +31,6 @@ const procurement = lazyScreen(
   () => import("../procurement/ProcurementManagement"),
   "ProcurementManagement",
 );
-const catalog = lazyScreen(
-  () => import("../catalog/CatalogManagement"),
-  "CatalogManagement",
-);
-const inventory = lazyScreen(
-  () => import("../inventory/InventoryManagement"),
-  "InventoryManagement",
-);
 const expenses = lazyScreen(
   () => import("../expenses/ExpenseManagement"),
   "ExpenseManagement",
@@ -63,9 +55,8 @@ export interface LegacyRoute {
   title: string;
 }
 
-/// Every V1 screen at its new French path (06 section 3.7, 07 section 2).
-/// A V1 screen covers a whole module, so several paths share one screen
-/// until the module is rebuilt in R8 or R9.
+/// The V1 screens not yet rebuilt, at their new French paths (06 section
+/// 3.7, 07 section 2). Catalogue and stock left this table in Sprint 20.
 export const legacyRoutes: readonly LegacyRoute[] = [
   { path: "/caisse", screen: pos, anyOf: ["pos.access"], title: "Caisse" },
   {
@@ -127,36 +118,6 @@ export const legacyRoutes: readonly LegacyRoute[] = [
     screen: procurement,
     anyOf: ["supplier_payments.view"],
     title: "Paiements fournisseurs",
-  },
-  {
-    path: "/produits",
-    screen: catalog,
-    anyOf: ["products.view"],
-    title: "Produits",
-  },
-  {
-    path: "/matieres-premieres",
-    screen: catalog,
-    anyOf: ["raw_materials.view"],
-    title: "Matières premières",
-  },
-  {
-    path: "/catalogue/parametres",
-    screen: catalog,
-    anyOf: ["categories.view", "units.view"],
-    title: "Catégories et unités",
-  },
-  {
-    path: "/stock",
-    screen: inventory,
-    anyOf: ["inventory.view"],
-    title: "Stock",
-  },
-  {
-    path: "/stock/mouvements",
-    screen: inventory,
-    anyOf: ["inventory.movements.view"],
-    title: "Mouvements",
   },
   {
     path: "/depenses",
