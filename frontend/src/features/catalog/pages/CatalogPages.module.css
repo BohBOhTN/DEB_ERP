@@ -1,0 +1,36 @@
+.nameCell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.summaryGrid {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.tabBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.stockRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.muted {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+@media (min-width: 900px) {
+  .summaryGrid {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
