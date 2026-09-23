@@ -16,6 +16,19 @@ Release R8 module redesign wave 1, targeting `v1.3.0`.
   banner and filter, movements with French labels and document references,
   opening stock and adjustments through an item picker with an impact
   confirmation.
+- Procurement rebuilt on the kit (Sprint 21): supplier directory with the
+  amount owed and open purchases, supplier detail with the balance, the
+  Achats, Relevé and Paiements tabs and a cursor-paged statement; purchase
+  list with paid, remaining and overdue columns and filters in the URL; a
+  full-page purchase editor with unit conversions, payment terms, the due
+  date rule and a posting confirmation stating the stock, payable and
+  payment impact; purchase detail with cancellation by reason; supplier
+  payments with allocations across open purchases and the unallocated
+  remainder live.
+- Backend: a draft purchase can be replaced before posting
+  (`PATCH /procurement/purchases/{id}`); purchase rows carry their ledger
+  balance and payment state; supplier balance rows carry the reference and
+  total of each open purchase.
 - Backend: balances report the unit symbol and the last movement date;
   movements report the actor and the source document reference; the product
   list filters by category and stockability and sorts by price and status;
@@ -24,6 +37,7 @@ Release R8 module redesign wave 1, targeting `v1.3.0`.
 ### Removed
 
 - The V1 catalogue and inventory screens and the inventory API client.
+- The V1 procurement screen and its API client.
 
 ## [1.2.0] - 2026-09-23
 
