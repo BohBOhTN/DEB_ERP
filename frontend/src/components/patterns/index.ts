@@ -1,4 +1,9 @@
 export {
+  AllocationTable,
+  allocatedTotal,
+  type AllocationRow,
+} from "./AllocationTable/AllocationTable.js";
+export {
   AppShell,
   readCollapsedPreference,
   writeCollapsedPreference,

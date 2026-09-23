@@ -9,7 +9,11 @@ import { TextArea } from "../../../components/ui/TextArea/TextArea.js";
 import { TextInput } from "../../../components/ui/TextInput/TextInput.js";
 import { useToast } from "../../../components/ui/Toast/useToast.js";
 import { createIdempotencyKey } from "../../../lib/api/idempotency.js";
-import { formatMoney, toBusinessDate } from "../../../i18n/format.js";
+import {
+  formatDate,
+  formatMoney,
+  toBusinessDate,
+} from "../../../i18n/format.js";
 import type { SupplierPayment } from "../procurement.api.js";
 import {
   useCreateSupplierPayment,
@@ -21,7 +25,7 @@ import {
   type SupplierPaymentFormInput,
   type SupplierPaymentFormOutput,
 } from "../procurement.schemas.js";
-import { AllocationTable } from "./AllocationTable.js";
+import { AllocationTable } from "../../../components/patterns/AllocationTable/AllocationTable.js";
 import { SupplierCombobox } from "./SupplierCombobox.js";
 
 export interface SupplierPaymentDialogProps {
@@ -98,7 +102,7 @@ export function SupplierPaymentDialog({
     ) ?? [];
   const allocations = form.watch("allocations") ?? [];
   useEffect(() => {
-    if (!openPurchases.data) return;
+    if (!open || !openPurchases.data) return;
     const current = form.getValues("allocations") ?? [];
     const next = rows.map((purchase) => ({
       purchaseId: purchase.id,
@@ -111,7 +115,7 @@ export function SupplierPaymentDialog({
     if (JSON.stringify(next) !== JSON.stringify(current)) {
       form.setValue("allocations", next);
     }
-  }, [openPurchases.data]);
+  }, [open, openPurchases.data]);
 
   const allocationErrors: Record<string, string | undefined> = {};
   const allocationErrorList = errors.allocations as unknown as
@@ -238,9 +242,11 @@ export function SupplierPaymentDialog({
           <AllocationTable
             amountTnd={amountTnd}
             rows={allocations.map((row) => ({
-              purchaseId: row.purchaseId,
-              reference: row.reference,
-              dueDate: row.dueDate,
+              id: row.purchaseId,
+              label: row.reference ?? "Achat",
+              meta: row.dueDate
+                ? `échéance ${formatDate(row.dueDate)}`
+                : undefined,
               balanceTnd: row.balanceTnd,
               amountTnd: row.amountTnd ?? "",
               overdue:
@@ -250,11 +256,8 @@ export function SupplierPaymentDialog({
             onChange={(next) =>
               form.setValue(
                 "allocations",
-                next.map((row) => ({
-                  purchaseId: row.purchaseId,
-                  reference: row.reference,
-                  dueDate: row.dueDate,
-                  balanceTnd: row.balanceTnd,
+                next.map((row, index) => ({
+                  ...(allocations[index] as (typeof allocations)[number]),
                   amountTnd: row.amountTnd,
                 })),
                 { shouldValidate: form.formState.isSubmitted },

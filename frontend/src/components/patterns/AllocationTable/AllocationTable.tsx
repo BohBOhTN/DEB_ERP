@@ -1,26 +1,33 @@
 import Decimal from "decimal.js-light";
-import { Badge } from "../../../components/ui/Badge/Badge.js";
-import { MoneyInput } from "../../../components/ui/MoneyInput/MoneyInput.js";
 import { cx } from "../../../lib/cx.js";
-import { formatDate, formatMoney } from "../../../i18n/format.js";
-import { safeDecimal } from "../procurement.schemas.js";
-import styles from "./ProcurementForms.module.css";
+import { formatMoney } from "../../../i18n/format.js";
+import { Badge } from "../../ui/Badge/Badge.js";
+import { MoneyInput } from "../../ui/MoneyInput/MoneyInput.js";
+import styles from "./AllocationTable.module.css";
 
+/// One open document a payment can be allocated to: a purchase for a
+/// supplier, a sale for a customer.
 export interface AllocationRow {
-  purchaseId: string;
-  reference: string | null;
-  dueDate: string | null;
+  id: string;
+  /// Document reference shown as the row title ("AC-000012", "VT-000034").
+  label: string;
+  /// Secondary line: due date, sale date, whatever helps recognise the row.
+  meta?: string;
   balanceTnd: string;
   amountTnd: string;
   overdue?: boolean;
 }
 
 export interface AllocationTableProps {
+  /// The amount being paid, decimal string.
   amountTnd: string;
   rows: AllocationRow[];
   onChange: (rows: AllocationRow[]) => void;
+  /// Keys `allocations` (whole table) and `allocations.<index>.amountTnd`.
   errors?: Record<string, string | undefined>;
   disabled?: boolean;
+  emptyText?: string;
+  className?: string;
 }
 
 export function allocatedTotal(rows: Array<{ amountTnd: string }>): Decimal {
@@ -30,46 +37,47 @@ export function allocatedTotal(rows: Array<{ amountTnd: string }>): Decimal {
   );
 }
 
-/// Allocations of a payment to open purchases (07 section 4.3): one money
-/// input per open purchase, the remaining due beside it, and the
-/// unallocated remainder recomputed on every keystroke. Generalised for
-/// customers in Sprint 22.
+/// Allocations of a payment to open documents (05 section 3.2): one money
+/// input per document, the remaining due beside it, and the unallocated
+/// remainder recomputed on every keystroke. Shared by supplier, customer
+/// and distributor payments.
 export function AllocationTable({
   amountTnd,
   rows,
   onChange,
   errors = {},
   disabled = false,
+  emptyText = "Aucun document ouvert : le paiement restera non affecté.",
+  className,
 }: AllocationTableProps) {
   const allocated = allocatedTotal(rows);
   const unallocated = safeDecimal(amountTnd).minus(allocated);
   const over = unallocated.lessThan(0);
 
   return (
-    <div className={styles.allocations} role="group" aria-label="Affectations">
-      {rows.length === 0 ? (
-        <p className={styles.error}>
-          Aucun achat ouvert : le paiement restera non affecté.
-        </p>
-      ) : null}
+    <div
+      className={cx(styles.root, className)}
+      role="group"
+      aria-label="Affectations"
+    >
+      {rows.length === 0 ? <p className={styles.error}>{emptyText}</p> : null}
       {rows.map((row, index) => {
         const error = errors[`allocations.${index}.amountTnd`];
-        const label = row.reference ?? "Achat";
 
         return (
-          <div key={row.purchaseId} className={styles.allocationRow}>
-            <div className={styles.allocationMeta}>
-              <strong>{label}</strong>
+          <div key={row.id} className={styles.row}>
+            <div className={styles.meta}>
+              <strong>{row.label}</strong>
               <small>
                 Reste dû {formatMoney(row.balanceTnd)}
-                {row.dueDate ? ` · échéance ${formatDate(row.dueDate)}` : ""}
+                {row.meta ? ` · ${row.meta}` : ""}
               </small>
               {row.overdue ? <Badge tone="danger">En retard</Badge> : null}
               {error ? <span className={styles.error}>{error}</span> : null}
             </div>
             <MoneyInput
-              aria-label={`Affectation ${label}`}
-              className={styles.allocationInput}
+              aria-label={`Affectation ${row.label}`}
+              className={styles.input}
               value={row.amountTnd}
               onChange={(amount) =>
                 onChange(
@@ -100,4 +108,12 @@ export function AllocationTable({
       </div>
     </div>
   );
+}
+
+function safeDecimal(value: string): Decimal {
+  try {
+    return new Decimal(value.replace(",", ".") || 0);
+  } catch {
+    return new Decimal(0);
+  }
 }
