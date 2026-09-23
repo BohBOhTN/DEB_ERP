@@ -192,6 +192,7 @@ export function DataTable<TRow>({
   } else if (data.length === 0) {
     body = (
       <EmptyState
+        illustration="ledger"
         size="sm"
         title={empty?.title ?? fr.noResults}
         description={empty?.description ?? fr.noResultsDescription}
