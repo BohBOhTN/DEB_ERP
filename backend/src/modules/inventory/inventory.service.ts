@@ -96,7 +96,69 @@ export class InventoryService {
       this.prisma.inventoryMovement.count({ where }),
     ]);
 
-    return paginated(items, total, params);
+    return paginated(await this.decorateMovements(items), total, params);
+  }
+
+  /// The screen shows who posted a movement and the document it came from;
+  /// actors and references are batch-loaded for the page, never per row.
+  private async decorateMovements<
+    TRow extends {
+      actorUserId: string;
+      sourceType: InventorySourceType;
+      sourceId: string | null;
+    },
+  >(rows: TRow[]) {
+    if (rows.length === 0) {
+      return [];
+    }
+
+    const actorIds = [...new Set(rows.map((row) => row.actorUserId))];
+    const purchaseIds = rows
+      .filter(
+        (row) =>
+          row.sourceId &&
+          (row.sourceType === InventorySourceType.PURCHASE ||
+            row.sourceType === InventorySourceType.PURCHASE_CANCELLATION),
+      )
+      .map((row) => row.sourceId as string);
+    const saleIds = rows
+      .filter(
+        (row) =>
+          row.sourceId &&
+          (row.sourceType === InventorySourceType.POS_SALE ||
+            row.sourceType === InventorySourceType.CUSTOMER_ORDER_SALE),
+      )
+      .map((row) => row.sourceId as string);
+    const [actors, purchases, sales] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { id: { in: actorIds } },
+        select: { id: true, displayName: true },
+      }),
+      purchaseIds.length > 0
+        ? this.prisma.purchase.findMany({
+            where: { id: { in: purchaseIds } },
+            select: { id: true, reference: true },
+          })
+        : Promise.resolve([]),
+      saleIds.length > 0
+        ? this.prisma.sale.findMany({
+            where: { id: { in: saleIds } },
+            select: { id: true, reference: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    const references = new Map<string, string | null>([
+      ...purchases.map((row) => [row.id, row.reference] as const),
+      ...sales.map((row) => [row.id, row.reference] as const),
+    ]);
+
+    return rows.map((row) => ({
+      ...row,
+      createdBy: actors.find((actor) => actor.id === row.actorUserId) ?? null,
+      sourceReference: row.sourceId
+        ? (references.get(row.sourceId) ?? null)
+        : null,
+    }));
   }
 
   public async listBalances() {
@@ -113,6 +175,9 @@ export class InventoryService {
           _sum: {
             quantityDelta: true,
           },
+          _max: {
+            occurredAt: true,
+          },
         }),
         this.prisma.inventoryMovement.groupBy({
           by: ["rawMaterialId", "unitId"],
@@ -124,6 +189,9 @@ export class InventoryService {
           orderBy: [{ rawMaterialId: "asc" }, { unitId: "asc" }],
           _sum: {
             quantityDelta: true,
+          },
+          _max: {
+            occurredAt: true,
           },
         }),
       ]);
@@ -162,8 +230,10 @@ export class InventoryService {
           itemId: balance.productId,
           itemName: product?.name ?? "Produit",
           unitName: product?.baseUnit.name ?? "Unité",
+          unitSymbol: product?.baseUnit.symbol ?? "",
           quantity,
           isNegative: Number(quantity) < 0,
+          lastMovementAt: balance._max?.occurredAt ?? null,
         };
       }),
       ...rawMaterialBalances.map((balance) => {
@@ -176,8 +246,10 @@ export class InventoryService {
           itemId: balance.rawMaterialId,
           itemName: rawMaterial?.name ?? "Matière première",
           unitName: rawMaterial?.baseUnit.name ?? "Unité",
+          unitSymbol: rawMaterial?.baseUnit.symbol ?? "",
           quantity,
           isNegative: Number(quantity) < 0,
+          lastMovementAt: balance._max?.occurredAt ?? null,
         };
       }),
     ].sort((left, right) => left.itemName.localeCompare(right.itemName));
