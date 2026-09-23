@@ -88,7 +88,7 @@ Run locally on macOS, Node 24.15.0:
 - `npm run typecheck`: passed, backend and frontend
 - `npm run test --workspace backend`: 307 passed, 10 skipped; the V1
   distribution route and service tests remain green with the added counts
-- `npm run test --workspace frontend`: 170 passed (77 files), including
+- `npm run test --workspace frontend`: 171 passed (78 files), including
   `DistributionPages.test.tsx` (AS-014 dispatch with the impact and no sale;
   AS-015 and AS-V2-20 settlement at 768 px blocked at "Reste 40", "Reste 2"
   and "Dépassement de 1" until 30 + 8 + 2 reconcile, then posted with the
@@ -96,7 +96,8 @@ Run locally on macOS, Node 24.15.0:
   without debt; the custody board with the discrepancy badge at 360 px;
   AS-016 payment allocated to the settlement reducing the balance from
   36,000 to 16,000; the directory without identifiers) and
-  `Accordion.test.tsx`
+  `Accordion.test.tsx` and `contractPaths.test.ts` (every path a feature
+  client calls exists in `backend/openapi.json`)
 - `npm run build`: passed; initial JavaScript 195.8 kB gzip against the
   250 kB budget; POS chunk 11.2 kB against 120 kB
 - `npm run openapi:check` and `npm run api:types`: in sync (response shapes
@@ -143,6 +144,17 @@ None.
 None.
 
 ## Risks and Follow-Up
+
+- Found on the owner's smoke against the real backend and fixed on this
+  branch: the Sprint 22 customer and order clients and the Sprint 24
+  distributor client prefixed their paths with the module name
+  (`/customers/customers`, `/orders/orders`, `/distribution/distributors`)
+  while those routers are mounted at the `/api/v1` root (`/customers`,
+  `/customer-balances`, `/orders`, `/distributors`, `/distributor-…`).
+  The mocks mirrored the wrong paths, so the unit and browser tests could
+  not see it. Paths are corrected in the clients and every mock, and
+  `contractPaths.test.ts` now fails the suite for any path absent from the
+  OpenAPI document.
 
 - The settlement page reads one page of products for the default prices; a
   catalogue larger than that page leaves later products' prices to be typed.
