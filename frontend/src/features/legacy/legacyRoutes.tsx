@@ -15,14 +15,6 @@ const lazyScreen = <TModule extends Record<string, unknown>>(
   });
 
 const pos = lazyScreen(() => import("../pos/PosManagement"), "PosManagement");
-const orders = lazyScreen(
-  () => import("../orders/OrderManagement"),
-  "OrderManagement",
-);
-const customers = lazyScreen(
-  () => import("../customers/CustomerManagement"),
-  "CustomerManagement",
-);
 const distribution = lazyScreen(
   () => import("../distribution/DistributionManagement"),
   "DistributionManagement",
@@ -66,18 +58,6 @@ export const legacyRoutes: readonly LegacyRoute[] = [
     screen: pos,
     anyOf: ["pos.access"],
     title: "Sessions",
-  },
-  {
-    path: "/commandes",
-    screen: orders,
-    anyOf: ["orders.view"],
-    title: "Commandes",
-  },
-  {
-    path: "/clients",
-    screen: customers,
-    anyOf: ["customers.view"],
-    title: "Clients",
   },
   {
     path: "/distributeurs",

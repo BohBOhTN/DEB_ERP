@@ -25,6 +25,16 @@ Release R8 module redesign wave 1, targeting `v1.3.0`.
   payment impact; purchase detail with cancellation by reason; supplier
   payments with allocations across open purchases and the unallocated
   remainder live.
+- Customers and orders rebuilt on the kit (Sprint 22): customer directory
+  with receivable, advance and open orders, customer detail with two big
+  numbers and the Ventes, Commandes, Relevé and Règlements tabs, a payment
+  dialog with the till switch and allocations across open sales; an order
+  board with six queues, a full-page editor with an advance taken at the
+  open till, and an order detail whose action bar shows only the permitted
+  transitions, with completion and cancellation dialogs stating their
+  impact; `AllocationTable` generalised into the pattern kit.
+- Backend: customer balance rows carry the open order count; order rows
+  carry the line count.
 - Backend: a draft purchase can be replaced before posting
   (`PATCH /procurement/purchases/{id}`); purchase rows carry their ledger
   balance and payment state; supplier balance rows carry the reference and
@@ -38,6 +48,8 @@ Release R8 module redesign wave 1, targeting `v1.3.0`.
 
 - The V1 catalogue and inventory screens and the inventory API client.
 - The V1 procurement screen and its API client.
+- The V1 customer and order screens (their API files remain as shims for
+  the V1 POS screen until Sprint 23).
 
 ## [1.2.0] - 2026-09-23
 

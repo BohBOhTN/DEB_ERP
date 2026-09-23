@@ -87,6 +87,31 @@ const SupplierPaymentsPage = lazy(() =>
     default: m.SupplierPaymentsPage,
   })),
 );
+const CustomersPage = lazy(() =>
+  import("../features/customers/pages/CustomersPage.js").then((m) => ({
+    default: m.CustomersPage,
+  })),
+);
+const CustomerDetailPage = lazy(() =>
+  import("../features/customers/pages/CustomerDetailPage.js").then((m) => ({
+    default: m.CustomerDetailPage,
+  })),
+);
+const OrdersPage = lazy(() =>
+  import("../features/orders/pages/OrdersPage.js").then((m) => ({
+    default: m.OrdersPage,
+  })),
+);
+const OrderEditorPage = lazy(() =>
+  import("../features/orders/pages/OrderEditorPage.js").then((m) => ({
+    default: m.OrderEditorPage,
+  })),
+);
+const OrderDetailPage = lazy(() =>
+  import("../features/orders/pages/OrderDetailPage.js").then((m) => ({
+    default: m.OrderDetailPage,
+  })),
+);
 const AccueilPage = lazy(() =>
   import("../features/home/AccueilPage.js").then((m) => ({
     default: m.AccueilPage,
@@ -283,6 +308,51 @@ export const routes: RouteObject[] = [
               </Guarded>
             ),
             handle: { title: "Paiements fournisseurs" },
+          },
+          {
+            path: "/clients",
+            element: (
+              <Guarded anyOf={["customers.view"]}>
+                <CustomersPage />
+              </Guarded>
+            ),
+            handle: { title: "Clients" },
+          },
+          {
+            path: "/clients/:customerId",
+            element: (
+              <Guarded anyOf={["customers.view"]}>
+                <CustomerDetailPage />
+              </Guarded>
+            ),
+            handle: { title: "Client" },
+          },
+          {
+            path: "/commandes",
+            element: (
+              <Guarded anyOf={["orders.view"]}>
+                <OrdersPage />
+              </Guarded>
+            ),
+            handle: { title: "Commandes" },
+          },
+          {
+            path: "/commandes/nouvelle",
+            element: (
+              <Guarded anyOf={["orders.create"]}>
+                <OrderEditorPage />
+              </Guarded>
+            ),
+            handle: { title: "Nouvelle commande" },
+          },
+          {
+            path: "/commandes/:orderId",
+            element: (
+              <Guarded anyOf={["orders.view"]}>
+                <OrderDetailPage />
+              </Guarded>
+            ),
+            handle: { title: "Commande" },
           },
           ...legacyRoutes.map((route, index) => ({
             path: route.path,

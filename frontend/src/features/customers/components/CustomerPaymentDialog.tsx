@@ -1,10 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useRef } from "react";
 import { Controller, useForm } from "react-hook-form";
+import { AllocationTable } from "../../../components/patterns/AllocationTable/AllocationTable.js";
 import { FormDialog } from "../../../components/patterns/FormDialog/FormDialog.js";
 import { PaymentBox } from "../../../components/patterns/PaymentBox/PaymentBox.js";
 import { DateInput } from "../../../components/ui/DateInput/DateInput.js";
 import { FormField } from "../../../components/ui/FormField/FormField.js";
+import { Switch } from "../../../components/ui/Switch/Switch.js";
 import { TextArea } from "../../../components/ui/TextArea/TextArea.js";
 import { TextInput } from "../../../components/ui/TextInput/TextInput.js";
 import { useToast } from "../../../components/ui/Toast/useToast.js";
@@ -14,136 +16,124 @@ import {
   formatMoney,
   toBusinessDate,
 } from "../../../i18n/format.js";
-import type { SupplierPayment } from "../procurement.api.js";
+import { useCurrentSession } from "../../pos/pos.queries.js";
+import type { CustomerPayment } from "../customers.api.js";
 import {
-  useCreateSupplierPayment,
-  usePurchases,
-  useSupplier,
-} from "../procurement.queries.js";
+  useCreateCustomerPayment,
+  useCustomerStatementPages,
+} from "../customers.queries.js";
 import {
-  supplierPaymentSchema,
-  type SupplierPaymentFormInput,
-  type SupplierPaymentFormOutput,
-} from "../procurement.schemas.js";
-import { AllocationTable } from "../../../components/patterns/AllocationTable/AllocationTable.js";
-import { SupplierCombobox } from "./SupplierCombobox.js";
+  customerPaymentSchema,
+  type CustomerPaymentFormInput,
+  type CustomerPaymentFormOutput,
+} from "../customers.schemas.js";
+import { CustomerCombobox } from "./CustomerCombobox.js";
 
-export interface SupplierPaymentDialogProps {
+export interface CustomerPaymentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /// Preselected from the supplier detail; the picker is then hidden.
-  supplier?: { id: string; name: string } | null;
-  onSaved?: (payment: SupplierPayment) => void;
+  /// Preselected from the customer detail; the picker is then hidden.
+  customer?: { id: string; name: string } | null;
+  onSaved?: (payment: CustomerPayment) => void;
 }
 
 function defaultsFor(
-  supplier: { id: string; name: string } | null | undefined,
-): SupplierPaymentFormInput {
+  customer: { id: string; name: string } | null | undefined,
+): CustomerPaymentFormInput {
   return {
-    supplier: supplier ? { value: supplier.id, label: supplier.name } : null,
+    customer: customer ? { value: customer.id, label: customer.name } : null,
     paidAt: toBusinessDate(new Date()),
     amountTnd: "",
     reference: "",
     notes: "",
+    collectedAtPos: false,
+    balanceTnd: "0",
     allocations: [],
   };
 }
 
-/// "Nouveau paiement" (07 section 4.3, AS-004): supplier, date, amount with
-/// the amount owed and the remainder, then one allocation input per open
-/// purchase. The command is posted once with an idempotency key.
-export function SupplierPaymentDialog({
+/// "Encaisser un règlement" (07 section 4.4, AS-013): amount against the
+/// receivable, an "Encaissé à la caisse" switch only while a till is open,
+/// and one allocation input per open sale. Posted once with a key kept for
+/// the dialog's lifetime.
+export function CustomerPaymentDialog({
   open,
   onOpenChange,
-  supplier = null,
+  customer = null,
   onSaved,
-}: SupplierPaymentDialogProps) {
+}: CustomerPaymentDialogProps) {
   const toast = useToast();
-  const create = useCreateSupplierPayment();
+  const create = useCreateCustomerPayment();
+  const session = useCurrentSession({ enabled: open });
   const keyRef = useRef<string | null>(null);
   const form = useForm<
-    SupplierPaymentFormInput,
+    CustomerPaymentFormInput,
     unknown,
-    SupplierPaymentFormOutput
+    CustomerPaymentFormOutput
   >({
-    resolver: zodResolver(supplierPaymentSchema),
-    defaultValues: defaultsFor(supplier),
+    resolver: zodResolver(customerPaymentSchema),
+    defaultValues: defaultsFor(customer),
   });
   const errors = form.formState.errors;
-  const picked = form.watch("supplier");
+  const picked = form.watch("customer");
   const amountTnd = form.watch("amountTnd") ?? "";
-  const supplierId = picked?.value ?? "";
-  const balance = useSupplier(supplierId, {
-    enabled: open && supplierId !== "",
-  });
-  const openPurchases = usePurchases(
-    {
-      page: 1,
-      pageSize: 50,
-      supplierId,
-      status: "POSTED",
-      sort: { field: "dueDate", direction: "asc" },
-    },
-    { enabled: open && supplierId !== "" },
-  );
+  const allocations = form.watch("allocations") ?? [];
+  const customerId = picked?.value ?? "";
+  // The statement gives the receivable and every open sale with its balance.
+  const statement = useCustomerStatementPages(customerId, {});
+  const first = statement.data?.pages[0];
 
   useEffect(() => {
     if (open) {
       keyRef.current = createIdempotencyKey();
-      form.reset(defaultsFor(supplier));
+      form.reset(defaultsFor(customer));
     }
-  }, [open, supplier, form]);
+  }, [open, customer, form]);
 
-  // The allocation rows follow the picked supplier's open purchases; typed
-  // amounts survive a refetch because rows are matched by purchase.
-  const rows =
-    openPurchases.data?.items.filter(
-      (purchase) => Number(purchase.balanceTnd) > 0,
-    ) ?? [];
-  const allocations = form.watch("allocations") ?? [];
   useEffect(() => {
-    if (!open || !openPurchases.data) return;
+    if (!open || !first) return;
     const current = form.getValues("allocations") ?? [];
-    const next = rows.map((purchase) => ({
-      purchaseId: purchase.id,
-      reference: purchase.reference,
-      dueDate: purchase.dueDate,
-      balanceTnd: purchase.balanceTnd,
-      amountTnd:
-        current.find((row) => row.purchaseId === purchase.id)?.amountTnd ?? "",
-    }));
-    if (JSON.stringify(next) !== JSON.stringify(current)) {
+    const next = first.sales
+      .filter((sale) => Number(sale.balanceTnd) > 0)
+      .map((sale) => ({
+        saleId: sale.id,
+        reference: sale.reference,
+        soldAt: sale.soldAt,
+        balanceTnd: sale.balanceTnd,
+        amountTnd:
+          current.find((row) => row.saleId === sale.id)?.amountTnd ?? "",
+      }));
+    form.setValue("balanceTnd", first.balanceTnd);
+    if (JSON.stringify(next) !== JSON.stringify(current))
       form.setValue("allocations", next);
-    }
-  }, [open, openPurchases.data]);
+  }, [open, first, form]);
 
   const allocationErrors: Record<string, string | undefined> = {};
-  const allocationErrorList = errors.allocations as unknown as
+  const list = errors.allocations as unknown as
     | (Array<{ amountTnd?: { message?: string } }> & {
         message?: string;
         root?: { message?: string };
       })
     | undefined;
-  allocationErrorList?.forEach?.((row, index) => {
+  list?.forEach?.((row, index) => {
     if (row?.amountTnd?.message)
       allocationErrors[`allocations.${index}.amountTnd`] =
         row.amountTnd.message;
   });
-  if (allocationErrorList?.message ?? allocationErrorList?.root?.message) {
-    allocationErrors.allocations =
-      allocationErrorList?.message ?? allocationErrorList?.root?.message;
-  }
+  if (list?.message ?? list?.root?.message)
+    allocationErrors.allocations = list?.message ?? list?.root?.message;
 
-  const submit = async (values: SupplierPaymentFormOutput) => {
-    if (!values.supplier) return;
+  const submit = async (values: CustomerPaymentFormOutput) => {
+    if (!values.customer) return;
     const payment = await create.mutateAsync({
       idempotencyKey: keyRef.current ?? createIdempotencyKey(),
       body: {
-        supplierId: values.supplier.value,
+        customerId: values.customer.value,
         paidAt: values.paidAt,
         amountTnd: values.amountTnd,
         reference: values.reference || undefined,
         notes: values.notes || undefined,
+        collectedAtPos: values.collectedAtPos || undefined,
         allocations: values.allocations
           .filter(
             (row) =>
@@ -151,14 +141,14 @@ export function SupplierPaymentDialog({
               Number(row.amountTnd.replace(",", ".")) > 0,
           )
           .map((row) => ({
-            purchaseId: row.purchaseId,
+            saleId: row.saleId,
             amountTnd: row.amountTnd.replace(",", "."),
           })),
       },
     });
     toast.success(
-      "Paiement enregistré",
-      `${payment.supplier.name} : ${formatMoney(payment.amountTnd)}.`,
+      "Règlement enregistré",
+      `${payment.customer.name} : ${formatMoney(payment.amountTnd)}.`,
     );
     onSaved?.(payment);
     onOpenChange(false);
@@ -168,38 +158,34 @@ export function SupplierPaymentDialog({
     <FormDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Nouveau paiement"
+      title="Encaisser un règlement"
       description={
-        supplier
-          ? `Paiement à ${supplier.name}.`
-          : "Enregistre un paiement fait à un fournisseur et l'affecte à ses achats ouverts."
+        customer
+          ? `Règlement de ${customer.name}.`
+          : "Enregistre un règlement reçu d'un client et l'affecte à ses ventes à crédit."
       }
       size="lg"
       form={form}
       onSubmit={submit}
-      submitLabel="Enregistrer le paiement"
+      submitLabel="Enregistrer le règlement"
     >
-      {!supplier ? (
-        <FormField
-          label="Fournisseur"
-          error={errors.supplier?.message}
-          required
-        >
+      {!customer ? (
+        <FormField label="Client" error={errors.customer?.message} required>
           <Controller
             control={form.control}
-            name="supplier"
+            name="customer"
             render={({ field }) => (
-              <SupplierCombobox
+              <CustomerCombobox
                 value={field.value ?? null}
                 onChange={(option) => field.onChange(option)}
-                invalid={Boolean(errors.supplier)}
+                invalid={Boolean(errors.customer)}
               />
             )}
           />
         </FormField>
       ) : null}
       <FormField
-        label="Date du paiement"
+        label="Date du règlement"
         error={errors.paidAt?.message}
         required
       >
@@ -216,42 +202,51 @@ export function SupplierPaymentDialog({
         name="amountTnd"
         render={({ field }) => (
           <PaymentBox
-            dueTnd={balance.data?.balanceTnd ?? "0"}
+            dueTnd={first?.balanceTnd ?? "0"}
             amountTnd={field.value ?? ""}
             onAmountChange={field.onChange}
             error={errors.amountTnd?.message}
           />
         )}
       />
+      {session.data ? (
+        <Controller
+          control={form.control}
+          name="collectedAtPos"
+          render={({ field }) => (
+            <Switch
+              label="Encaissé à la caisse"
+              description="Le montant sera compté dans la caisse ouverte."
+              checked={field.value ?? false}
+              onCheckedChange={field.onChange}
+            />
+          )}
+        />
+      ) : null}
       <FormField
         label="Référence"
         error={errors.reference?.message}
-        hint="Numéro de reçu ou de virement."
+        hint="Numéro de reçu, facultatif."
       >
         <TextInput {...form.register("reference")} />
       </FormField>
       <FormField label="Notes" error={errors.notes?.message}>
         <TextArea {...form.register("notes")} rows={2} />
       </FormField>
-      {supplierId ? (
+      {customerId ? (
         <FormField
           label="Affectations"
           labelIsElement={false}
-          hint="Répartissez le montant entre les achats ouverts ; le reste restera non affecté."
+          hint="Répartissez le montant entre les ventes à crédit ; le reste restera non affecté."
         >
           <AllocationTable
             amountTnd={amountTnd}
             rows={allocations.map((row) => ({
-              id: row.purchaseId,
-              label: row.reference ?? "Achat",
-              meta: row.dueDate
-                ? `échéance ${formatDate(row.dueDate)}`
-                : undefined,
+              id: row.saleId,
+              label: row.reference,
+              meta: `vente du ${formatDate(row.soldAt)}`,
               balanceTnd: row.balanceTnd,
               amountTnd: row.amountTnd ?? "",
-              overdue:
-                rows.find((purchase) => purchase.id === row.purchaseId)
-                  ?.paymentState === "OVERDUE",
             }))}
             onChange={(next) =>
               form.setValue(
@@ -264,6 +259,7 @@ export function SupplierPaymentDialog({
               )
             }
             errors={allocationErrors}
+            emptyText="Aucune vente à crédit ouverte : le règlement restera non affecté."
           />
         </FormField>
       ) : null}

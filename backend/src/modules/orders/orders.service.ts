@@ -133,9 +133,11 @@ export class OrdersService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.customerOrder.findMany({
         where,
-        // The queue shows header fields; lines are read with the order detail.
+        // The queue shows header fields and the line count; lines are read
+        // with the order detail.
         include: {
           customer: true,
+          _count: { select: { lines: true } },
         },
         // NFR-005: stable sort, soonest due first.
         orderBy: orderByFor<

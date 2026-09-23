@@ -1,4 +1,5 @@
 import {
+  CustomerOrderStatus,
   CustomerLedgerBalanceKind,
   CustomerLedgerEntryType,
   PosSessionStatus,
@@ -303,14 +304,40 @@ export class CustomersService {
     const openSaleTotals = saleTotals.filter((row) =>
       sumOrZero(row._sum.amountTnd).greaterThan(0),
     );
-    const openSales = await this.prisma.sale.findMany({
-      where: {
-        id: { in: openSaleTotals.map((row) => row.saleId as string) },
-        status: SaleStatus.POSTED,
-      },
-      select: { id: true, customerId: true, soldAt: true, paymentState: true },
-      orderBy: [{ soldAt: "desc" }, { id: "desc" }],
-    });
+    const [openSales, openOrders] = await Promise.all([
+      this.prisma.sale.findMany({
+        where: {
+          id: { in: openSaleTotals.map((row) => row.saleId as string) },
+          status: SaleStatus.POSTED,
+        },
+        select: {
+          id: true,
+          customerId: true,
+          soldAt: true,
+          paymentState: true,
+        },
+        orderBy: [{ soldAt: "desc" }, { id: "desc" }],
+      }),
+      // Orders still awaiting fulfilment, counted by the database per customer.
+      this.prisma.customerOrder.groupBy({
+        by: ["customerId"],
+        where: {
+          customerId: { in: customers.map((customer) => customer.id) },
+          status: {
+            in: [
+              CustomerOrderStatus.DRAFT,
+              CustomerOrderStatus.CONFIRMED,
+              CustomerOrderStatus.PREPARING,
+              CustomerOrderStatus.READY,
+            ],
+          },
+        },
+        _count: { _all: true },
+      }),
+    ]);
+    const openOrderCount = new Map(
+      openOrders.map((row) => [row.customerId, row._count._all]),
+    );
     const saleBalance = balancesByKey(
       openSaleTotals,
       (row) => row.saleId,
@@ -347,6 +374,7 @@ export class CustomersService {
             ),
           ),
           openSaleCount: customerOpenSales.length,
+          openOrderCount: openOrderCount.get(customer.id) ?? 0,
           openSales: customerOpenSales,
         };
       }),

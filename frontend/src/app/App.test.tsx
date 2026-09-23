@@ -97,7 +97,10 @@ describe("App", () => {
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/commandes"),
     );
-    expect(await screen.findByText("Ancienne interface")).toBeInTheDocument();
+    // The orders module is rebuilt since Sprint 22: its own heading, no badge.
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Commandes" }),
+    ).toBeInTheDocument();
   });
 
   it("shows the French error on a wrong password", async () => {

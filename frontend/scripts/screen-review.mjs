@@ -57,7 +57,15 @@ const screens = [
     signedIn: true,
     ready: "heading",
   },
-  { name: "commandes-v1", path: "/commandes", signedIn: true, ready: "legacy" },
+  { name: "clients", path: "/clients", signedIn: true, ready: "heading" },
+  { name: "commandes", path: "/commandes", signedIn: true, ready: "heading" },
+  {
+    name: "commande-nouvelle",
+    path: "/commandes/nouvelle",
+    signedIn: true,
+    ready: "heading",
+  },
+  { name: "caisse-v1", path: "/caisse", signedIn: true, ready: "legacy" },
 ];
 
 const server = spawn(

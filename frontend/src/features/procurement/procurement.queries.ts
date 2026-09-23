@@ -75,7 +75,8 @@ export function useSupplierStatementPages(
         cursor: pageParam || undefined,
       }),
     initialPageParam: "",
-    getNextPageParam: (lastPage) => lastPage.meta.nextCursor ?? undefined,
+    enabled: supplierId !== "",
+    getNextPageParam: (lastPage) => lastPage?.meta?.nextCursor ?? undefined,
   });
 }
 
