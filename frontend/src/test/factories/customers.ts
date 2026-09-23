@@ -4,7 +4,6 @@ import type {
   SaleSummary,
 } from "../../features/customers/customers.api.js";
 import type { Order, OrderLine } from "../../features/orders/orders.api.js";
-import type { PosSession } from "../../features/pos/pos.api.js";
 
 let sequence = 0;
 const next = () => (sequence += 1);
@@ -104,20 +103,6 @@ export function makeOrder(overrides: Partial<Order> = {}): Order {
     lines,
     advances: [],
     sale: null,
-    ...overrides,
-  };
-}
-
-export function makePosSession(
-  overrides: Partial<PosSession> = {},
-): PosSession {
-  return {
-    id: "session-1",
-    status: "OPEN",
-    openedAt: "2026-09-23T06:00:00.000Z",
-    openedByUserId: "user-1",
-    openingCashTnd: "50.000",
-    terminal: { id: "terminal-1", code: "MAIN", name: "Caisse principale" },
     ...overrides,
   };
 }
