@@ -21,6 +21,14 @@ export interface ListParams {
   pageSize: number;
 }
 
+/// The product list also filters by category and stockability and sorts by
+/// price and status (07 section 4.1).
+export interface ProductListParams extends Omit<ListParams, "sort"> {
+  sort?: SortSpec<"name" | "createdAt" | "salePriceTnd" | "isActive">;
+  categoryId?: string;
+  isStockable?: boolean;
+}
+
 const defaultUnits = [
   { code: "piece", name: "Piece", symbol: "pc", precision: 0 },
   { code: "kilogram", name: "Kilogramme", symbol: "kg", precision: 3 },
@@ -620,12 +628,16 @@ export class CatalogService {
     return result;
   }
 
-  public async listProducts(params: ListParams) {
+  public async listProducts(params: ProductListParams) {
     const normalizedSearch = params.search
       ? normalizeName(params.search)
       : undefined;
     const where = {
       ...(params.isActive === undefined ? {} : { isActive: params.isActive }),
+      ...(params.categoryId ? { categoryId: params.categoryId } : {}),
+      ...(params.isStockable === undefined
+        ? {}
+        : { isStockable: params.isStockable }),
       ...(normalizedSearch
         ? {
             OR: [
@@ -660,13 +672,15 @@ export class CatalogService {
           baseUnit: true,
         },
         orderBy: orderByFor<
-          "name" | "createdAt",
+          "name" | "createdAt" | "salePriceTnd" | "isActive",
           Prisma.ProductOrderByWithRelationInput
         >(
           params.sort,
           {
             name: (direction) => [{ isActive: "desc" }, { name: direction }],
             createdAt: (direction) => [{ createdAt: direction }],
+            salePriceTnd: (direction) => [{ salePriceTnd: direction }],
+            isActive: (direction) => [{ isActive: direction }, { name: "asc" }],
           },
           [{ isActive: "desc" }, { name: "asc" }],
           { id: "asc" },
@@ -1136,7 +1150,11 @@ function assertVersionUpdated(count: number): void {
   }
 }
 
-function paginated<TItem>(items: TItem[], total: number, params: ListParams) {
+function paginated<TItem>(
+  items: TItem[],
+  total: number,
+  params: { page: number; pageSize: number },
+) {
   return {
     items,
     page: params.page,

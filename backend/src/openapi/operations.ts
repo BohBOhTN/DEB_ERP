@@ -355,7 +355,7 @@ const catalogOperations: ApiOperation[] = [
     summary: "Products",
     tag: "catalog",
     permissions: ["products.view"],
-    query: catalog.listQuerySchema,
+    query: catalog.productListQuerySchema,
     list: true,
   }),
   operation({
