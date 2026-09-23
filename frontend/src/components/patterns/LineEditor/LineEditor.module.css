@@ -94,6 +94,14 @@
     grid-template-columns: minmax(200px, 2fr) 120px 120px 140px 120px 44px;
   }
 
+  .noPrice {
+    grid-template-columns: minmax(200px, 2fr) 120px 44px;
+  }
+
+  .noPrice.withUnit {
+    grid-template-columns: minmax(200px, 2fr) 120px 120px 44px;
+  }
+
   .header {
     padding: 0 var(--space-4);
     font-size: var(--text-xs);
