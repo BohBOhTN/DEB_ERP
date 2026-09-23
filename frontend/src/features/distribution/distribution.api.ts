@@ -184,7 +184,7 @@ export interface DistributorListQuery {
 export function listDistributors(
   query: DistributorListQuery,
 ): Promise<PageResult<Distributor>> {
-  return apiClient.list<Distributor>("/distribution/distributors", {
+  return apiClient.list<Distributor>("/distributors", {
     query: toSearchParams({ ...query }),
   });
 }
@@ -194,7 +194,7 @@ export async function getDistributor(
 ): Promise<DistributorDetail> {
   return (
     await apiClient.get<{ distributor: DistributorDetail }>(
-      `/distribution/distributors/${distributorId}`,
+      `/distributors/${distributorId}`,
     )
   ).distributor;
 }
@@ -211,10 +211,7 @@ export async function createDistributor(
   input: DistributorInput,
 ): Promise<Distributor> {
   return (
-    await apiClient.post<{ distributor: Distributor }>(
-      "/distribution/distributors",
-      input,
-    )
+    await apiClient.post<{ distributor: Distributor }>("/distributors", input)
   ).distributor;
 }
 
@@ -224,7 +221,7 @@ export async function updateDistributor(
 ): Promise<Distributor> {
   return (
     await apiClient.patch<{ distributor: Distributor }>(
-      `/distribution/distributors/${distributorId}`,
+      `/distributors/${distributorId}`,
       input,
     )
   ).distributor;
@@ -244,7 +241,7 @@ export async function postDirectSale(
 ): Promise<DistributorSale> {
   return (
     await apiClient.post<{ sale: DistributorSale }>(
-      "/distribution/distributor-sales",
+      "/distributor-sales",
       input,
       { idempotencyKey },
     )
@@ -262,7 +259,7 @@ export interface DispatchListQuery {
 export function listDispatches(
   query: DispatchListQuery,
 ): Promise<PageResult<Dispatch>> {
-  return apiClient.list<Dispatch>("/distribution/distributor-dispatches", {
+  return apiClient.list<Dispatch>("/distributor-dispatches", {
     query: toSearchParams({ ...query }),
   });
 }
@@ -270,7 +267,7 @@ export function listDispatches(
 export async function getDispatch(dispatchId: string): Promise<Dispatch> {
   return (
     await apiClient.get<{ dispatch: Dispatch }>(
-      `/distribution/distributor-dispatches/${dispatchId}`,
+      `/distributor-dispatches/${dispatchId}`,
     )
   ).dispatch;
 }
@@ -288,7 +285,7 @@ export async function postDispatch(
 ): Promise<Dispatch> {
   return (
     await apiClient.post<{ dispatch: Dispatch }>(
-      "/distribution/distributor-dispatches",
+      "/distributor-dispatches",
       input,
       { idempotencyKey },
     )
@@ -308,7 +305,7 @@ export interface SettlementListQuery {
 export function listSettlements(
   query: SettlementListQuery,
 ): Promise<PageResult<Settlement>> {
-  return apiClient.list<Settlement>("/distribution/distributor-settlements", {
+  return apiClient.list<Settlement>("/distributor-settlements", {
     query: toSearchParams({ ...query }),
   });
 }
@@ -333,7 +330,7 @@ export async function postSettlement(
 ): Promise<Settlement> {
   return (
     await apiClient.post<{ settlement: Settlement }>(
-      "/distribution/distributor-settlements",
+      "/distributor-settlements",
       input,
       { idempotencyKey },
     )
@@ -342,10 +339,9 @@ export async function postSettlement(
 
 export async function getCustody(distributorId?: string): Promise<Custody> {
   return (
-    await apiClient.get<{ custody: Custody }>(
-      "/distribution/distributor-custody",
-      { query: distributorId ? { distributorId } : undefined },
-    )
+    await apiClient.get<{ custody: Custody }>("/distributor-custody", {
+      query: distributorId ? { distributorId } : undefined,
+    })
   ).custody;
 }
 
@@ -361,10 +357,9 @@ export function listDistributorBalances(
   query: BalanceListQuery,
 ): Promise<PageResult<DistributorBalanceRow>> {
   const { sort, ...rest } = query;
-  return apiClient.list<DistributorBalanceRow>(
-    "/distribution/distributor-balances",
-    { query: { ...toSearchParams(rest), ...(sort ? { sort } : {}) } },
-  );
+  return apiClient.list<DistributorBalanceRow>("/distributor-balances", {
+    query: { ...toSearchParams(rest), ...(sort ? { sort } : {}) },
+  });
 }
 
 export interface StatementQuery {
@@ -380,7 +375,7 @@ export async function getDistributorStatement(
 ): Promise<DistributorStatement> {
   return (
     await apiClient.get<{ statement: DistributorStatement }>(
-      `/distribution/distributors/${distributorId}/statement`,
+      `/distributors/${distributorId}/statement`,
       { query: toSearchParams({ page: 1, pageSize: 1, ...query } as never) },
     )
   ).statement;
@@ -396,10 +391,9 @@ export interface PaymentListQuery {
 export function listDistributorPayments(
   query: PaymentListQuery,
 ): Promise<PageResult<DistributorPayment>> {
-  return apiClient.list<DistributorPayment>(
-    "/distribution/distributor-payments",
-    { query: toSearchParams({ ...query }) },
-  );
+  return apiClient.list<DistributorPayment>("/distributor-payments", {
+    query: toSearchParams({ ...query }),
+  });
 }
 
 export interface DistributorPaymentInput {
@@ -421,7 +415,7 @@ export async function createDistributorPayment(
 ): Promise<DistributorPayment> {
   return (
     await apiClient.post<{ payment: DistributorPayment }>(
-      "/distribution/distributor-payments",
+      "/distributor-payments",
       input,
       { idempotencyKey },
     )

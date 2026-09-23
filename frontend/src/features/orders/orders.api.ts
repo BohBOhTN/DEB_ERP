@@ -73,14 +73,13 @@ export interface OrderListQuery {
 }
 
 export function listOrders(query: OrderListQuery): Promise<PageResult<Order>> {
-  return apiClient.list<Order>("/orders/orders", {
+  return apiClient.list<Order>("/orders", {
     query: toSearchParams({ ...query }),
   });
 }
 
 export async function getOrder(orderId: string): Promise<Order> {
-  return (await apiClient.get<{ order: Order }>(`/orders/orders/${orderId}`))
-    .order;
+  return (await apiClient.get<{ order: Order }>(`/orders/${orderId}`)).order;
 }
 
 export interface OrderInput {
@@ -95,7 +94,7 @@ export async function createOrder(
   idempotencyKey: string,
 ): Promise<Order> {
   return (
-    await apiClient.post<{ order: Order }>("/orders/orders", input, {
+    await apiClient.post<{ order: Order }>("/orders", input, {
       idempotencyKey,
     })
   ).order;
@@ -106,10 +105,7 @@ export async function changeOrderStatus(
   input: { version: number; status: "CONFIRMED" | "PREPARING" | "READY" },
 ): Promise<Order> {
   return (
-    await apiClient.post<{ order: Order }>(
-      `/orders/orders/${orderId}/status`,
-      input,
-    )
+    await apiClient.post<{ order: Order }>(`/orders/${orderId}/status`, input)
   ).order;
 }
 
@@ -119,7 +115,7 @@ export async function recordAdvance(
   idempotencyKey: string,
 ): Promise<{ order: Order; advance: OrderAdvance }> {
   return apiClient.post<{ order: Order; advance: OrderAdvance }>(
-    `/orders/orders/${orderId}/advances`,
+    `/orders/${orderId}/advances`,
     input,
     { idempotencyKey },
   );
@@ -132,7 +128,7 @@ export async function completeOrder(
 ): Promise<Order> {
   return (
     await apiClient.post<{ order: Order }>(
-      `/orders/orders/${orderId}/complete`,
+      `/orders/${orderId}/complete`,
       input,
       { idempotencyKey },
     )
@@ -149,10 +145,8 @@ export async function cancelOrder(
   idempotencyKey: string,
 ): Promise<Order> {
   return (
-    await apiClient.post<{ order: Order }>(
-      `/orders/orders/${orderId}/cancel`,
-      input,
-      { idempotencyKey },
-    )
+    await apiClient.post<{ order: Order }>(`/orders/${orderId}/cancel`, input, {
+      idempotencyKey,
+    })
   ).order;
 }

@@ -175,9 +175,9 @@ export async function handleDistribution(
   const body = () => route.request().postDataJSON() as Record<string, unknown>;
 
   if (path === "/pos/products") return (route.fulfill(page([bread])), true);
-  if (path === "/distribution/distributors" && method === "GET")
+  if (path === "/distributors" && method === "GET")
     return (route.fulfill(page([distributorRow(state)])), true);
-  if (path === "/distribution/distributors/distributor-1/statement") {
+  if (path === "/distributors/distributor-1/statement") {
     const settlements = state.settlements.map((row) => ({
       ...row,
       balanceTnd: money(
@@ -214,14 +214,14 @@ export async function handleDistribution(
       true
     );
   }
-  if (path === "/distribution/distributors/distributor-1")
+  if (path === "/distributors/distributor-1")
     return (
       route.fulfill(envelope({ distributor: distributorRow(state) })),
       true
     );
-  if (path === "/distribution/distributor-custody")
+  if (path === "/distributor-custody")
     return (route.fulfill(envelope({ custody: custody(state) })), true);
-  if (path === "/distribution/distributor-balances")
+  if (path === "/distributor-balances")
     return (
       route.fulfill(
         page([
@@ -234,7 +234,7 @@ export async function handleDistribution(
       ),
       true
     );
-  if (path === "/distribution/distributor-payments" && method === "GET")
+  if (path === "/distributor-payments" && method === "GET")
     return (
       route.fulfill(
         page(
@@ -243,7 +243,7 @@ export async function handleDistribution(
       ),
       true
     );
-  if (path === "/distribution/distributor-settlements" && method === "GET")
+  if (path === "/distributor-settlements" && method === "GET")
     return (
       route.fulfill(
         page(
@@ -257,7 +257,7 @@ export async function handleDistribution(
       true
     );
 
-  if (path === "/distribution/distributor-dispatches" && method === "GET")
+  if (path === "/distributor-dispatches" && method === "GET")
     return (
       route.fulfill(
         page(
@@ -269,7 +269,7 @@ export async function handleDistribution(
       ),
       true
     );
-  if (path === "/distribution/distributor-dispatches" && method === "POST") {
+  if (path === "/distributor-dispatches" && method === "POST") {
     sequence += 1;
     const input = body();
     const id = `dispatch-${sequence}`;
@@ -305,8 +305,7 @@ export async function handleDistribution(
       true
     );
   }
-  const dispatchMatch =
-    /^\/distribution\/distributor-dispatches\/([^/]+)$/.exec(path);
+  const dispatchMatch = /^\/distributor-dispatches\/([^/]+)$/.exec(path);
   if (dispatchMatch) {
     const dispatch = state.dispatches.find(
       (row) => row.id === dispatchMatch[1],
@@ -328,7 +327,7 @@ export async function handleDistribution(
       true
     );
   }
-  if (path === "/distribution/distributor-settlements" && method === "POST") {
+  if (path === "/distributor-settlements" && method === "POST") {
     const input = body();
     const dispatch = state.dispatches.find(
       (row) => row.id === input.dispatchId,
@@ -409,7 +408,7 @@ export async function handleDistribution(
     state.settlements.unshift(settlement);
     return (route.fulfill(envelope({ settlement }, 201)), true);
   }
-  if (path === "/distribution/distributor-payments" && method === "POST") {
+  if (path === "/distributor-payments" && method === "POST") {
     const input = body();
     if (Number(input.amountTnd) > receivable(state) + 1e-9)
       return (
@@ -459,7 +458,7 @@ export async function mockDistribution(
   page: Page,
   state: DistributionState,
 ): Promise<void> {
-  await page.route("**/api/v1/distribution/**", (route) =>
+  await page.route("**/api/v1/distributor**", (route) =>
     handleDistribution(route, state),
   );
   await page.route("**/api/v1/pos/products**", (route) =>
