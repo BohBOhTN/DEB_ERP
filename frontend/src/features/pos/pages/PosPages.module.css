@@ -1,0 +1,113 @@
+.muted {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.cardTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.nameCell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.panels {
+  display: grid;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.stickyBar {
+  position: sticky;
+  bottom: calc(var(--bottom-nav-height, 64px) + var(--space-2));
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-inverse);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgb(0 0 0 / 20%));
+}
+
+.stickyBar strong {
+  font-size: var(--text-lg);
+}
+
+.sheetBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.receipt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.receiptLines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.receiptLine {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px dashed var(--border-subtle);
+}
+
+.positive {
+  color: var(--success);
+}
+
+.negative {
+  color: var(--danger);
+}
+
+.kpis {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 900px) {
+  .panels {
+    grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr) minmax(
+        300px,
+        1fr
+      );
+  }
+
+  .kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
