@@ -4,14 +4,25 @@ import {
   type ComboboxOption,
 } from "../../../components/ui/Combobox/Combobox.js";
 import { formatQuantity } from "../../../i18n/format.js";
-import { listProducts, listRawMaterials } from "../../catalog/catalog.api.js";
+import {
+  listProducts,
+  listRawMaterials,
+  type Product,
+  type RawMaterial,
+} from "../../catalog/catalog.api.js";
 import type { InventoryBalance, InventoryItemType } from "../inventory.api.js";
 import { useBalances } from "../inventory.queries.js";
 import type { PickedItem } from "../inventory.schemas.js";
 
+/// The full record behind a picked item, for callers that need more than the
+/// picker keeps (conversions of a raw material, price of a product).
+export type ItemSource =
+  | { kind: "PRODUCT"; product: Product }
+  | { kind: "RAW_MATERIAL"; rawMaterial: RawMaterial };
+
 export interface ItemComboboxProps {
   value: PickedItem | null;
-  onChange: (item: PickedItem | null) => void;
+  onChange: (item: PickedItem | null, source: ItemSource | null) => void;
   /// Restrict to one kind of item; both by default.
   itemTypes?: readonly InventoryItemType[];
   disabled?: boolean;
@@ -22,6 +33,7 @@ export interface ItemComboboxProps {
 
 interface ItemOption extends ComboboxOption {
   item: PickedItem;
+  source: ItemSource;
 }
 
 const typeLabels: Record<InventoryItemType, string> = {
@@ -32,7 +44,7 @@ const typeLabels: Record<InventoryItemType, string> = {
 /// Searches products and raw materials by name through the two list
 /// endpoints with `q`, and shows the current balance next to each item so
 /// nobody ever types an identifier (07 section 4.2). Shared with
-/// procurement and simulation later.
+/// procurement and simulation.
 export function ItemCombobox({
   value,
   onChange,
@@ -70,35 +82,35 @@ export function ItemCombobox({
         ...(products?.items ?? [])
           .filter((product) => product.isStockable)
           .map((product) => {
-            const balance = balanceOf(product.id);
             const item: PickedItem = {
               itemType: "PRODUCT",
               itemId: product.id,
               label: product.name,
               unitSymbol: product.baseUnit.symbol,
-              currentQuantity: balance?.quantity ?? "0",
+              currentQuantity: balanceOf(product.id)?.quantity ?? "0",
             };
             return {
               value: `PRODUCT:${product.id}`,
               label: product.name,
               description: describe("PRODUCT", item),
               item,
+              source: { kind: "PRODUCT" as const, product },
             };
           }),
         ...(rawMaterials?.items ?? []).map((rawMaterial) => {
-          const balance = balanceOf(rawMaterial.id);
           const item: PickedItem = {
             itemType: "RAW_MATERIAL",
             itemId: rawMaterial.id,
             label: rawMaterial.name,
             unitSymbol: rawMaterial.baseUnit.symbol,
-            currentQuantity: balance?.quantity ?? "0",
+            currentQuantity: balanceOf(rawMaterial.id)?.quantity ?? "0",
           };
           return {
             value: `RAW_MATERIAL:${rawMaterial.id}`,
             label: rawMaterial.name,
             description: describe("RAW_MATERIAL", item),
             item,
+            source: { kind: "RAW_MATERIAL" as const, rawMaterial },
           };
         }),
       ];
@@ -116,6 +128,8 @@ export function ItemCombobox({
             label: value.label,
             description: describe(value.itemType, value),
             item: value,
+            // The record is only known from a load; the selected value shows the label.
+            source: null as unknown as ItemSource,
           }
         : null,
     [value],
@@ -127,7 +141,9 @@ export function ItemCombobox({
       aria-label={rest["aria-label"]}
       loadOptions={loadOptions}
       value={selected}
-      onChange={(option) => onChange(option?.item ?? null)}
+      onChange={(option) =>
+        onChange(option?.item ?? null, option?.source ?? null)
+      }
       placeholder="Nom de l'article"
       emptyText="Aucun article"
       disabled={disabled}

@@ -32,6 +32,11 @@ export interface LineEditorProps {
   priceEditable?: boolean;
   errors?: Record<string, string | undefined>;
   disabled?: boolean;
+  /// Helper text under a line (a normalised quantity such as "= 50,000 kg").
+  lineHint?: (line: EditorLine) => ReactNode;
+  /// Overrides the quantity × price total, for documents whose price is per
+  /// base unit while the quantity is entered in another unit (purchases).
+  lineTotalFor?: (line: EditorLine) => string;
   /// Extra content under the lines (a subtotal, a hint).
   footer?: ReactNode;
   className?: string;
@@ -83,6 +88,8 @@ export function LineEditor({
   priceEditable = true,
   errors = {},
   disabled = false,
+  lineHint,
+  lineTotalFor,
   footer,
   className,
 }: LineEditorProps) {
@@ -145,6 +152,9 @@ export function LineEditor({
                 {errorFor("quantity") ? (
                   <p className={styles.error}>{errorFor("quantity")}</p>
                 ) : null}
+                {lineHint ? (
+                  <p className={styles.hint}>{lineHint(line)}</p>
+                ) : null}
               </div>
               {units ? (
                 <div className={styles.cell}>
@@ -177,7 +187,9 @@ export function LineEditor({
               <div className={cx(styles.cell, styles.total)}>
                 <span className={styles.mobileLabel}>{fr.lineTotal}</span>
                 <span className="tabular-nums">
-                  {formatMoney(lineTotal(line))}
+                  {formatMoney(
+                    lineTotalFor ? lineTotalFor(line) : lineTotal(line),
+                  )}
                 </span>
               </div>
               <div className={cx(styles.cell, styles.remove)}>
