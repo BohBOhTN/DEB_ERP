@@ -119,7 +119,9 @@ export class ApiClient {
       headers,
       credentials: "include",
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: options.signal,
+      // Only set when given: an undefined key is enough for Node's fetch to
+      // run its realm check against jsdom's AbortSignal in tests.
+      ...(options.signal ? { signal: options.signal } : {}),
     };
 
     // Only an idempotent read is retried, once, and only on a network
