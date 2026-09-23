@@ -46,6 +46,10 @@ export interface AppShellProps {
   onNavigate?: (item: ShellNavItem) => void;
   onLogout?: () => void;
   onSettings?: () => void;
+  /// Desktop-only slot left of the user menu (the command palette trigger).
+  search?: ReactNode;
+  /// Called when the pointer rests on a navigation link, to preload its page.
+  onPrefetch?: (item: ShellNavItem) => void;
   logoSrc?: string;
   /// Persisted collapsed state of the desktop rail.
   collapsed?: boolean;
@@ -83,7 +87,9 @@ export function AppShell({
   onNavigate,
   onLogout,
   onSettings,
-  logoSrc = "/assets/dar-el-barka-logo.png",
+  search,
+  onPrefetch,
+  logoSrc = "/assets/dar-el-barka-logo-192.webp",
   collapsed = false,
   onCollapsedChange,
   children,
@@ -124,6 +130,8 @@ export function AppShell({
                   )}
                   aria-current={item.id === activeId ? "page" : undefined}
                   title={dense ? item.label : undefined}
+                  onMouseEnter={() => onPrefetch?.(item)}
+                  onFocus={() => onPrefetch?.(item)}
                   onClick={(event) => {
                     if (onNavigate) {
                       event.preventDefault();
@@ -244,7 +252,10 @@ export function AppShell({
             )}
             {badge}
           </div>
-          <div className={styles.topbarRight}>{userMenu}</div>
+          <div className={styles.topbarRight}>
+            {isDesktop ? search : null}
+            {userMenu}
+          </div>
         </header>
         <main id="main" className={styles.content} tabIndex={-1}>
           {children}

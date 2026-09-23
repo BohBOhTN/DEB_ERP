@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Navigate,
   Outlet,
@@ -12,6 +19,10 @@ import {
   writeCollapsedPreference,
   type ShellNavItem,
 } from "../components/patterns/AppShell/AppShell.js";
+import {
+  CommandPaletteTrigger,
+  usePaletteShortcut,
+} from "../components/patterns/CommandPalette/CommandPalette.js";
 import { ErrorState } from "../components/ui/ErrorState/ErrorState.js";
 import { useToast } from "../components/ui/Toast/useToast.js";
 import { SplashScreen } from "../features/shell/SplashScreen.js";
@@ -24,6 +35,7 @@ import {
   useSession,
 } from "../lib/auth/session.js";
 import { activeNavItem, visibleNavItems } from "./nav.js";
+import { preloadRoute } from "./routeLoaders.js";
 import { SessionContext, sessionContextFor } from "./sessionContext.js";
 
 interface RouteHandle {
@@ -40,6 +52,12 @@ export function ProtectedLayout() {
   const matches = useMatches();
   const toast = useToast();
   const [collapsed, setCollapsed] = useState(readCollapsedPreference);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteMounted, setPaletteMounted] = useState(false);
+  const openPalette = useCallback(() => {
+    setPaletteMounted(true);
+    setPaletteOpen(true);
+  }, []);
 
   const handle = (matches[matches.length - 1]?.handle ?? {}) as RouteHandle;
   const active = activeNavItem(location.pathname);
@@ -68,6 +86,8 @@ export function ProtectedLayout() {
   useEffect(() => {
     document.title = `${title} · ${fr.appName}`;
   }, [title]);
+
+  usePaletteShortcut(openPalette, context !== null);
 
   // OD-V2-005: fixed 8 h session, one warning toast 10 minutes before.
   useEffect(() => {
@@ -115,6 +135,11 @@ export function ProtectedLayout() {
 
   return (
     <SessionContext.Provider value={context}>
+      {paletteMounted ? (
+        <Suspense fallback={null}>
+          <Palette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        </Suspense>
+      ) : null}
       <AppShell
         items={items}
         activeId={active?.id}
@@ -126,6 +151,8 @@ export function ProtectedLayout() {
         onNavigate={(item) => navigate(item.href)}
         onLogout={() => logout.mutate()}
         onSettings={() => navigate("/parametres")}
+        search={<CommandPaletteTrigger onClick={openPalette} />}
+        onPrefetch={(item) => preloadRoute(item.href)}
         collapsed={collapsed}
         onCollapsedChange={(next) => {
           setCollapsed(next);
@@ -137,3 +164,9 @@ export function ProtectedLayout() {
     </SessionContext.Provider>
   );
 }
+
+/// Mounted on first use inside the session provider, so the sources see the
+/// permissions and the search clients stay out of the initial bundle.
+const Palette = lazy(() =>
+  import("./palette.js").then((m) => ({ default: m.PaletteDialog })),
+);
