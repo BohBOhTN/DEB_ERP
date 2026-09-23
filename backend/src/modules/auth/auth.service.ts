@@ -95,7 +95,7 @@ export class AuthService {
     });
 
     return {
-      user: await this.toAuthenticatedUser(user),
+      user: await this.toAuthenticatedUser(user, expiresAt),
       sessionToken,
       expiresAt,
     };
@@ -130,7 +130,7 @@ export class AuthService {
       await this.repository.touchSession(session.id);
     }
 
-    return this.toAuthenticatedUser(session.user);
+    return this.toAuthenticatedUser(session.user, session.expiresAt);
   }
 
   public async logout(sessionToken: string | undefined): Promise<void> {
@@ -189,14 +189,20 @@ export class AuthService {
 
   private async toAuthenticatedUser(
     user: StoredUser,
+    sessionExpiresAt?: Date,
   ): Promise<AuthenticatedUser> {
+    const [effectivePermissions, roles] = await Promise.all([
+      this.repository.findEffectivePermissionKeys(user.id),
+      this.repository.findUserRoles?.(user.id) ?? Promise.resolve([]),
+    ]);
+
     return {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
-      effectivePermissions: await this.repository.findEffectivePermissionKeys(
-        user.id,
-      ),
+      effectivePermissions,
+      roles,
+      sessionExpiresAt: sessionExpiresAt?.toISOString() ?? null,
     };
   }
 }
