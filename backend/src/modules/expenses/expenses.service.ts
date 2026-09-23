@@ -65,13 +65,21 @@ export class ExpensesService {
     });
   }
 
+  /// Categories with how many expenses use each (07 section 4.8), counted
+  /// by the database in the same query.
   public async listCategories(params: { isActive?: boolean }) {
-    return this.prisma.expenseCategory.findMany({
+    const categories = await this.prisma.expenseCategory.findMany({
       where: {
         ...(params.isActive === undefined ? {} : { isActive: params.isActive }),
       },
+      include: { _count: { select: { expenses: true } } },
       orderBy: [{ isActive: "desc" }, { name: "asc" }],
     });
+
+    return categories.map(({ _count, ...category }) => ({
+      ...category,
+      expenseCount: _count.expenses,
+    }));
   }
 
   public async createCategory(

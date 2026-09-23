@@ -102,7 +102,31 @@ const screens = [
     signedIn: true,
     ready: "heading",
   },
-  { name: "depenses-v1", path: "/depenses", signedIn: true, ready: "legacy" },
+  { name: "depenses", path: "/depenses", signedIn: true, ready: "heading" },
+  {
+    name: "depenses-categories",
+    path: "/depenses/categories",
+    signedIn: true,
+    ready: "heading",
+  },
+  {
+    name: "simulations",
+    path: "/simulations",
+    signedIn: true,
+    ready: "heading",
+  },
+  {
+    name: "simulation-nouvelle",
+    path: "/simulations/nouvelle",
+    signedIn: true,
+    ready: "heading",
+  },
+  {
+    name: "utilisateurs-v1",
+    path: "/utilisateurs",
+    signedIn: true,
+    ready: "legacy",
+  },
 ];
 
 const server = spawn(

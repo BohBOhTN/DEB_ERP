@@ -163,6 +163,31 @@ const DistributorPaymentsPage = lazy(() =>
     (m) => ({ default: m.DistributorPaymentsPage }),
   ),
 );
+const ExpensesPage = lazy(() =>
+  import("../features/expenses/pages/ExpensesPage.js").then((m) => ({
+    default: m.ExpensesPage,
+  })),
+);
+const ExpenseCategoriesPage = lazy(() =>
+  import("../features/expenses/pages/ExpenseCategoriesPage.js").then((m) => ({
+    default: m.ExpenseCategoriesPage,
+  })),
+);
+const SimulationsPage = lazy(() =>
+  import("../features/simulation/pages/SimulationsPage.js").then((m) => ({
+    default: m.SimulationsPage,
+  })),
+);
+const SimulationEditorPage = lazy(() =>
+  import("../features/simulation/pages/SimulationEditorPage.js").then((m) => ({
+    default: m.SimulationEditorPage,
+  })),
+);
+const SimulationDetailPage = lazy(() =>
+  import("../features/simulation/pages/SimulationDetailPage.js").then((m) => ({
+    default: m.SimulationDetailPage,
+  })),
+);
 const AccueilPage = lazy(() =>
   import("../features/home/AccueilPage.js").then((m) => ({
     default: m.AccueilPage,
@@ -512,6 +537,60 @@ export const routes: RouteObject[] = [
               </Guarded>
             ),
             handle: { title: "Règlements" },
+          },
+          {
+            path: "/depenses",
+            element: (
+              <Guarded anyOf={["expenses.view"]}>
+                <ExpensesPage />
+              </Guarded>
+            ),
+            handle: { title: "Dépenses" },
+          },
+          {
+            path: "/depenses/categories",
+            element: (
+              <Guarded anyOf={["expense_categories.manage"]}>
+                <ExpenseCategoriesPage />
+              </Guarded>
+            ),
+            handle: { title: "Catégories de dépenses" },
+          },
+          {
+            path: "/simulations",
+            element: (
+              <Guarded anyOf={["simulations.view"]}>
+                <SimulationsPage />
+              </Guarded>
+            ),
+            handle: { title: "Simulation de coût" },
+          },
+          {
+            path: "/simulations/nouvelle",
+            element: (
+              <Guarded anyOf={["simulations.create"]}>
+                <SimulationEditorPage />
+              </Guarded>
+            ),
+            handle: { title: "Nouvelle simulation" },
+          },
+          {
+            path: "/simulations/:simulationId",
+            element: (
+              <Guarded anyOf={["simulations.view"]}>
+                <SimulationDetailPage />
+              </Guarded>
+            ),
+            handle: { title: "Simulation" },
+          },
+          {
+            path: "/simulations/:simulationId/modifier",
+            element: (
+              <Guarded anyOf={["simulations.update"]}>
+                <SimulationEditorPage />
+              </Guarded>
+            ),
+            handle: { title: "Modifier la simulation" },
           },
           ...legacyRoutes.map((route, index) => ({
             path: route.path,
