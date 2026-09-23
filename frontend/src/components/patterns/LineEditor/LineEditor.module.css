@@ -57,6 +57,12 @@
   justify-content: flex-end;
 }
 
+.hint {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--text-secondary);
+}
+
 .error {
   font-size: var(--text-sm);
   line-height: var(--leading-sm);

@@ -134,6 +134,13 @@ async function createTestApp(permissionKeys: string[]) {
       totalTnd: "250.000",
       paidAmountTnd: "100.000",
     }),
+    updateDraftPurchase: vi.fn().mockResolvedValue({
+      id: "purchase-1",
+      supplierId: "supplier-1",
+      status: "DRAFT",
+      totalTnd: "300.000",
+      paidAmountTnd: "0.000",
+    }),
     postPurchase: vi.fn().mockResolvedValue({
       purchase: {
         id: "purchase-1",
@@ -394,6 +401,62 @@ describe("procurement routes", () => {
         actorUserId: "user-1",
       }),
     );
+  });
+
+  it("replaces a draft purchase when the user has purchases.create", async () => {
+    const { app, cookie, procurementService } = await createTestApp([
+      "purchases.create",
+    ]);
+
+    const response = await request(app)
+      .patch("/api/procurement/purchases/purchase-1")
+      .set("Cookie", cookie)
+      .send({
+        supplierId: "supplier-1",
+        purchaseDate: "2026-09-21T08:00:00.000Z",
+        paymentTerms: "UNPAID",
+        dueDate: "2026-09-30T08:00:00.000Z",
+        lines: [
+          {
+            rawMaterialId: "raw-material-1",
+            enteredUnitId: "unit-bag",
+            enteredQuantity: "6",
+            unitPriceTnd: "50.000",
+          },
+        ],
+      })
+      .expect(200);
+
+    expect(response.body.data.purchase).toMatchObject({
+      id: "purchase-1",
+      status: "DRAFT",
+      totalTnd: "300.000",
+    });
+    expect(procurementService.updateDraftPurchase).toHaveBeenCalledWith(
+      "purchase-1",
+      expect.objectContaining({
+        supplierId: "supplier-1",
+        paymentTerms: "UNPAID",
+        paidAmountTnd: "0",
+      }),
+      expect.objectContaining({
+        actorUserId: "user-1",
+      }),
+    );
+  });
+
+  it("refuses to replace a draft purchase without purchases.create", async () => {
+    const { app, cookie, procurementService } = await createTestApp([
+      "purchases.view",
+    ]);
+
+    await request(app)
+      .patch("/api/procurement/purchases/purchase-1")
+      .set("Cookie", cookie)
+      .send({})
+      .expect(403);
+
+    expect(procurementService.updateDraftPurchase).not.toHaveBeenCalled();
   });
 
   it("requires an idempotency key to post purchases", async () => {

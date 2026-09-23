@@ -57,6 +57,36 @@ const MovementsPage = lazy(() =>
     default: m.MovementsPage,
   })),
 );
+const SuppliersPage = lazy(() =>
+  import("../features/procurement/pages/SuppliersPage.js").then((m) => ({
+    default: m.SuppliersPage,
+  })),
+);
+const SupplierDetailPage = lazy(() =>
+  import("../features/procurement/pages/SupplierDetailPage.js").then((m) => ({
+    default: m.SupplierDetailPage,
+  })),
+);
+const PurchasesPage = lazy(() =>
+  import("../features/procurement/pages/PurchasesPage.js").then((m) => ({
+    default: m.PurchasesPage,
+  })),
+);
+const PurchaseEditorPage = lazy(() =>
+  import("../features/procurement/pages/PurchaseEditorPage.js").then((m) => ({
+    default: m.PurchaseEditorPage,
+  })),
+);
+const PurchaseDetailPage = lazy(() =>
+  import("../features/procurement/pages/PurchaseDetailPage.js").then((m) => ({
+    default: m.PurchaseDetailPage,
+  })),
+);
+const SupplierPaymentsPage = lazy(() =>
+  import("../features/procurement/pages/SupplierPaymentsPage.js").then((m) => ({
+    default: m.SupplierPaymentsPage,
+  })),
+);
 const AccueilPage = lazy(() =>
   import("../features/home/AccueilPage.js").then((m) => ({
     default: m.AccueilPage,
@@ -190,6 +220,69 @@ export const routes: RouteObject[] = [
               </Guarded>
             ),
             handle: { title: "Mouvements" },
+          },
+          {
+            path: "/fournisseurs",
+            element: (
+              <Guarded anyOf={["suppliers.view"]}>
+                <SuppliersPage />
+              </Guarded>
+            ),
+            handle: { title: "Fournisseurs" },
+          },
+          {
+            path: "/fournisseurs/:supplierId",
+            element: (
+              <Guarded anyOf={["suppliers.view"]}>
+                <SupplierDetailPage />
+              </Guarded>
+            ),
+            handle: { title: "Fournisseur" },
+          },
+          {
+            path: "/achats",
+            element: (
+              <Guarded anyOf={["purchases.view"]}>
+                <PurchasesPage />
+              </Guarded>
+            ),
+            handle: { title: "Achats" },
+          },
+          {
+            path: "/achats/nouveau",
+            element: (
+              <Guarded anyOf={["purchases.create"]}>
+                <PurchaseEditorPage />
+              </Guarded>
+            ),
+            handle: { title: "Nouvel achat" },
+          },
+          {
+            path: "/achats/:purchaseId",
+            element: (
+              <Guarded anyOf={["purchases.view"]}>
+                <PurchaseDetailPage />
+              </Guarded>
+            ),
+            handle: { title: "Achat" },
+          },
+          {
+            path: "/achats/:purchaseId/modifier",
+            element: (
+              <Guarded anyOf={["purchases.create"]}>
+                <PurchaseEditorPage />
+              </Guarded>
+            ),
+            handle: { title: "Modifier l'achat" },
+          },
+          {
+            path: "/paiements-fournisseurs",
+            element: (
+              <Guarded anyOf={["supplier_payments.view"]}>
+                <SupplierPaymentsPage />
+              </Guarded>
+            ),
+            handle: { title: "Paiements fournisseurs" },
           },
           ...legacyRoutes.map((route, index) => ({
             path: route.path,

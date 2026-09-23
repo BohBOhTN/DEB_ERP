@@ -38,6 +38,25 @@ const screens = [
     signedIn: true,
     ready: "heading",
   },
+  {
+    name: "fournisseurs",
+    path: "/fournisseurs",
+    signedIn: true,
+    ready: "heading",
+  },
+  { name: "achats", path: "/achats", signedIn: true, ready: "heading" },
+  {
+    name: "achat-nouveau",
+    path: "/achats/nouveau",
+    signedIn: true,
+    ready: "heading",
+  },
+  {
+    name: "paiements-fournisseurs",
+    path: "/paiements-fournisseurs",
+    signedIn: true,
+    ready: "heading",
+  },
   { name: "commandes-v1", path: "/commandes", signedIn: true, ready: "legacy" },
 ];
 

@@ -660,7 +660,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Replace a draft purchase's header and lines */
+        patch: operations["procurement.updateDraftPurchase"];
         trace?: never;
     };
     "/procurement/purchases/{purchaseId}/post": {
@@ -4732,6 +4733,102 @@ export interface operations {
             };
             /** @description The target does not exist. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "procurement.updateDraftPurchase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                purchaseId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    supplierId: string;
+                    /** Format: date-time */
+                    purchaseDate: string;
+                    supplierReference?: string;
+                    /** @enum {string} */
+                    paymentTerms: "PAID" | "PARTIAL" | "UNPAID";
+                    /** @default 0 */
+                    paidAmountTnd?: string;
+                    /** Format: date-time */
+                    dueDate?: string;
+                    notes?: string;
+                    lines: {
+                        rawMaterialId: string;
+                        enteredUnitId: string;
+                        enteredQuantity: string;
+                        unitPriceTnd: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            purchase: {
+                                [key: string]: unknown;
+                            };
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Validation failed (`VALIDATION_ERROR`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The target does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description State, uniqueness, or version conflict (`STATE_CONFLICT`, `VERSION_CONFLICT`, `IDEMPOTENCY_KEY_REUSED`, or a business rule code). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

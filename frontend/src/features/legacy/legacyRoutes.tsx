@@ -27,10 +27,6 @@ const distribution = lazyScreen(
   () => import("../distribution/DistributionManagement"),
   "DistributionManagement",
 );
-const procurement = lazyScreen(
-  () => import("../procurement/ProcurementManagement"),
-  "ProcurementManagement",
-);
 const expenses = lazyScreen(
   () => import("../expenses/ExpenseManagement"),
   "ExpenseManagement",
@@ -100,24 +96,6 @@ export const legacyRoutes: readonly LegacyRoute[] = [
     screen: distribution,
     anyOf: ["distribution.balances.view"],
     title: "Règlements",
-  },
-  {
-    path: "/achats",
-    screen: procurement,
-    anyOf: ["purchases.view"],
-    title: "Achats",
-  },
-  {
-    path: "/fournisseurs",
-    screen: procurement,
-    anyOf: ["suppliers.view"],
-    title: "Fournisseurs",
-  },
-  {
-    path: "/paiements-fournisseurs",
-    screen: procurement,
-    anyOf: ["supplier_payments.view"],
-    title: "Paiements fournisseurs",
   },
   {
     path: "/depenses",

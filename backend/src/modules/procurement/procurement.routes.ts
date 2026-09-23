@@ -224,6 +224,24 @@ export function procurementRouter(params: {
     },
   );
 
+  router.patch(
+    "/purchases/:purchaseId",
+    requirePermission("purchases.create"),
+    async (request, response, next) => {
+      try {
+        const body = createPurchaseSchema.parse(request.body);
+        const purchase = await params.procurementService.updateDraftPurchase(
+          parseRouteParam(request.params.purchaseId),
+          body,
+          actorFromResponse(response),
+        );
+        response.json(okFor(response, { purchase }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   router.post(
     "/purchases/:purchaseId/post",
     requirePermission("purchases.post"),

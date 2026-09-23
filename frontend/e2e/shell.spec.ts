@@ -10,7 +10,7 @@ const modules = [
   ["Commandes", "/commandes", "legacy"],
   ["Clients", "/clients", "legacy"],
   ["Distributeurs", "/distributeurs", "legacy"],
-  ["Achats", "/achats", "legacy"],
+  ["Achats", "/achats", "rebuilt"],
   ["Produits", "/produits", "rebuilt"],
   ["Stock", "/stock", "rebuilt"],
   ["Dépenses", "/depenses", "legacy"],
