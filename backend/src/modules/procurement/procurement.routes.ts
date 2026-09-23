@@ -33,6 +33,7 @@ export const purchaseListQuerySchema = z.object({
   supplierId: z.string().trim().min(1).optional(),
   status: z.nativeEnum(PurchaseStatus).optional(),
   paymentTerms: z.nativeEnum(PurchasePaymentTerms).optional(),
+  rawMaterialId: z.string().trim().min(1).optional(),
   ...dateRangeFields,
   dueState: z.enum(["OVERDUE", "UPCOMING"]).optional(),
   ...pageFields,

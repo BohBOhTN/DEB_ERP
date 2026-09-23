@@ -44,6 +44,8 @@ export interface PurchaseListParams {
   /// with money still owed; "upcoming" is a future due date still owed.
   dueState?: "OVERDUE" | "UPCOMING";
   asOf?: Date;
+  /// Purchases containing a given raw material (raw material detail, UI-10).
+  rawMaterialId?: string;
   page: number;
   pageSize: number;
 }
@@ -284,6 +286,9 @@ export class ProcurementService {
       ...(params.supplierId ? { supplierId: params.supplierId } : {}),
       ...(params.status ? { status: params.status } : {}),
       ...(params.paymentTerms ? { paymentTerms: params.paymentTerms } : {}),
+      ...(params.rawMaterialId
+        ? { lines: { some: { rawMaterialId: params.rawMaterialId } } }
+        : {}),
       ...(params.from || params.to
         ? {
             purchaseDate: {
