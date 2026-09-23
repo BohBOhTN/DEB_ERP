@@ -3,17 +3,19 @@ import { mockApi, ownerPermissions } from "./mockApi";
 
 /// Sprint 19 smoke (AS-001 and AS-020 through the new UI, AS-V2-12): login,
 /// the home page, every module reachable from the navigation, logout.
+/// Rebuilt modules show their own heading; the others still carry the
+/// "Ancienne interface" badge (ADR-V2-003).
 const modules = [
-  ["Caisse", "/caisse"],
-  ["Commandes", "/commandes"],
-  ["Clients", "/clients"],
-  ["Distributeurs", "/distributeurs"],
-  ["Achats", "/achats"],
-  ["Produits", "/produits"],
-  ["Stock", "/stock"],
-  ["Dépenses", "/depenses"],
-  ["Utilisateurs", "/utilisateurs"],
-  ["Journal d'audit", "/audit"],
+  ["Caisse", "/caisse", "legacy"],
+  ["Commandes", "/commandes", "legacy"],
+  ["Clients", "/clients", "legacy"],
+  ["Distributeurs", "/distributeurs", "legacy"],
+  ["Achats", "/achats", "legacy"],
+  ["Produits", "/produits", "rebuilt"],
+  ["Stock", "/stock", "rebuilt"],
+  ["Dépenses", "/depenses", "legacy"],
+  ["Utilisateurs", "/utilisateurs", "legacy"],
+  ["Journal d'audit", "/audit", "legacy"],
 ] as const;
 
 test("signs in, opens every module inside the shell, and signs out", async ({
@@ -49,7 +51,7 @@ test("signs in, opens every module inside the shell, and signs out", async ({
     page.getByRole("link", { name: "3 achats en retard" }),
   ).toBeVisible();
 
-  for (const [label, path] of modules) {
+  for (const [label, path, generation] of modules) {
     if (isMobile) {
       const bottom = page
         .getByRole("navigation", { name: "Navigation" })
@@ -72,7 +74,14 @@ test("signs in, opens every module inside the shell, and signs out", async ({
     }
 
     await expect(page).toHaveURL(new RegExp(`${path.replace(/\//g, "\\/")}$`));
-    await expect(page.getByText("Ancienne interface")).toBeVisible();
+    if (generation === "legacy") {
+      await expect(page.getByText("Ancienne interface")).toBeVisible();
+    } else {
+      await expect(
+        page.getByRole("heading", { level: 1, name: label }),
+      ).toBeVisible();
+      await expect(page.getByText("Ancienne interface")).toHaveCount(0);
+    }
     // No horizontal page scroll at this width (AS-020, shell only).
     const overflow = await page.evaluate(
       () =>

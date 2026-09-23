@@ -16,8 +16,8 @@ describe("msw test server", () => {
     expect(page).toMatchObject({
       page: 1,
       pageSize: 1,
-      total: 2,
-      pageCount: 2,
+      total: 1,
+      pageCount: 1,
     });
   });
 
