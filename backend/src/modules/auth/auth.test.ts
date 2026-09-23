@@ -134,6 +134,8 @@ describe("AuthService", () => {
       email: "admin@example.com",
       displayName: "Admin",
       effectivePermissions: [],
+      roles: [],
+      sessionExpiresAt: expect.any(String),
     });
     expect(result.sessionToken).toEqual(expect.any(String));
     expect(repository.sessions.size).toBe(1);

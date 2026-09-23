@@ -1,12 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { describeError, errorCopyFor, knownErrorCodes } from "./errors.js";
 
 /// Every code the backend can emit must have French copy, so an unknown code
 /// can only come from a route added after this test was written.
 function backendErrorCodes(): string[] {
-  const root = path.resolve(process.cwd(), "../backend/src");
+  const root = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../backend/src",
+  );
   const codes = new Set<string>();
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

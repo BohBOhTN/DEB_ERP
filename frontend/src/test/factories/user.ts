@@ -5,6 +5,7 @@ export interface SessionUserFixture {
   isActive: boolean;
   roles: Array<{ id: string; name: string }>;
   effectivePermissions: string[];
+  sessionExpiresAt: string | null;
 }
 
 let sequence = 0;
@@ -28,6 +29,7 @@ export function makeUser(
       "customers.view",
       "orders.view",
     ],
+    sessionExpiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString(),
     ...overrides,
   };
 }

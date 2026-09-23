@@ -1,12 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { kitEntries } from "./KitPage.js";
 
 /// AS-V2-10: every component folder has an example registered in the kit,
 /// so the gallery renders each primitive and pattern of the design system.
 function componentFolders(group: "ui" | "patterns"): string[] {
-  const dir = path.resolve(process.cwd(), "src/components", group);
+  const dir = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    group,
+  );
 
   return fs
     .readdirSync(dir, { withFileTypes: true })

@@ -1,4 +1,5 @@
 .root {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -75,12 +76,14 @@
   gap: var(--space-2);
 }
 
+/* A figure never breaks inside the number: it scales with the tile width
+   (2-up on phones, 4-up on wide screens) between the xl and 3xl sizes. */
 .value {
-  font-size: var(--text-3xl);
-  line-height: var(--leading-3xl);
+  font-size: clamp(var(--text-xl), 13cqi, var(--text-3xl));
+  line-height: 1.15;
   font-weight: var(--weight-kpi);
   letter-spacing: var(--tracking-title);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 
 .unit {

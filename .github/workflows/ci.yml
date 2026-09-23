@@ -103,3 +103,21 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # The shell smoke drives the Vite dev server in a headless Chromium with
+      # the API mocked in the browser, at 360 px and 1280 px.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end smoke
+        run: npm run e2e --workspace frontend
+        env:
+          CI: "1"
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 7

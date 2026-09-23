@@ -6,3 +6,7 @@ internal-docs
 package-lock.json
 frontend/src/lib/api/types.gen.ts
 backend/openapi.json
+frontend/test-results
+frontend/playwright-report
+frontend/screen-review
+frontend/kit-screenshots

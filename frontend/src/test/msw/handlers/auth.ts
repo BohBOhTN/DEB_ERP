@@ -23,9 +23,12 @@ export function authHandlers(user: SessionUserFixture = makeUser()) {
         );
       }
 
-      return ok({ user: { ...user, email: body.email ?? user.email } });
+      return ok({
+        user: { ...user, email: body.email ?? user.email },
+        expiresAt: user.sessionExpiresAt,
+      });
     }),
-    http.post(`${apiV1}/auth/logout`, () => ok({ loggedOut: true })),
+    http.post(`${apiV1}/auth/logout`, () => ok({ success: true })),
   ];
 }
 

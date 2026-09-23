@@ -1,7 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
-import "./styles/global.css";
+import { AppErrorBoundary } from "./app/errorBoundary";
+import "./styles/tokens.css";
+import "./styles/reset.css";
+import "./styles/base.css";
 
 const root = document.getElementById("root");
 
@@ -18,7 +21,9 @@ if (import.meta.env.DEV && window.location.pathname === "/_kit") {
 } else {
   createRoot(root).render(
     <StrictMode>
-      <App />
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
     </StrictMode>,
   );
 }

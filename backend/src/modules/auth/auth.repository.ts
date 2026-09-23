@@ -22,6 +22,20 @@ export class PrismaAuthRepository implements AuthRepository {
     });
   }
 
+  /// Role display names for the shell's user menu (UI-06); never used for
+  /// authorization, which relies on permission keys only.
+  public async findUserRoles(
+    userId: string,
+  ): Promise<Array<{ id: string; name: string }>> {
+    const rows = await this.prisma.userRole.findMany({
+      where: { userId, role: { isActive: true } },
+      select: { role: { select: { id: true, name: true } } },
+      orderBy: { role: { name: "asc" } },
+    });
+
+    return rows.map((row) => row.role);
+  }
+
   public async findEffectivePermissionKeys(userId: string): Promise<string[]> {
     const cached = this.permissionCache?.get(userId);
     if (cached) {
