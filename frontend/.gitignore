@@ -1,2 +1,5 @@
 .env
 kit-screenshots/
+screen-review/
+playwright-report/
+test-results/
