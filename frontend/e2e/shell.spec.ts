@@ -21,7 +21,10 @@ const modules = [
 test("signs in, opens every module inside the shell, and signs out", async ({
   page,
   isMobile,
+  viewport,
 }) => {
+  // Below 900 px the sidebar is a drawer behind the menu button (tablet).
+  const drawer = !isMobile && (viewport?.width ?? 1280) < 900;
   await mockApi(page, { signedIn: false, permissions: ownerPermissions });
 
   await page.goto("/utilisateurs");
@@ -68,6 +71,12 @@ test("signs in, opens every module inside the shell, and signs out", async ({
           .getByRole("link", { name: label, exact: true })
           .click();
       }
+    } else if (drawer) {
+      await page.getByRole("button", { name: "Ouvrir la navigation" }).click();
+      await page
+        .getByRole("dialog", { name: "Navigation" })
+        .getByRole("link", { name: label, exact: true })
+        .click();
     } else {
       await page
         .getByRole("complementary", { name: "Navigation" })
