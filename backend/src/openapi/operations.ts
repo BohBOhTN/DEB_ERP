@@ -1082,6 +1082,16 @@ const procurementOperations: ApiOperation[] = [
     dataKey: "purchase",
   }),
   operation({
+    method: "patch",
+    path: "/procurement/purchases/{purchaseId}",
+    operationId: "procurement.updateDraftPurchase",
+    summary: "Replace a draft purchase's header and lines",
+    tag: "procurement",
+    permissions: ["purchases.create"],
+    body: procurement.createPurchaseSchema,
+    dataKey: "purchase",
+  }),
+  operation({
     method: "post",
     path: "/procurement/purchases/{purchaseId}/post",
     operationId: "procurement.postPurchase",

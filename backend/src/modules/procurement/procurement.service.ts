@@ -340,7 +340,32 @@ export class ProcurementService {
       this.prisma.purchase.count({ where }),
     ]);
 
-    return paginated(items, total, params);
+    // One aggregate for the page so the list can show "Reste" and the
+    // payment state without a request per row.
+    const balances = balancesByKey(
+      items.length === 0
+        ? []
+        : await this.prisma.supplierLedgerEntry.groupBy({
+            by: ["purchaseId"],
+            where: { purchaseId: { in: items.map((row) => row.id) } },
+            _sum: { amountTnd: true },
+          }),
+      (row) => row.purchaseId,
+      (row) => row._sum.amountTnd,
+    );
+
+    return paginated(
+      items.map((purchase) => {
+        const balance = balanceOf(balances, purchase.id);
+        return {
+          ...purchase,
+          balanceTnd: balance.toFixed(3),
+          paymentState: derivePaymentState(purchase, balance),
+        };
+      }),
+      total,
+      params,
+    );
   }
 
   public async createPurchase(
@@ -410,6 +435,98 @@ export class ProcurementService {
       entity: "purchase",
       targetId: purchase.id,
       after: purchase,
+    });
+
+    return purchase;
+  }
+
+  /// A draft is replaced whole, header and lines, so the editor never has
+  /// to diff lines; posted and cancelled purchases are immutable.
+  public async updateDraftPurchase(
+    purchaseId: string,
+    params: {
+      supplierId: string;
+      purchaseDate: Date;
+      supplierReference?: string;
+      paymentTerms: PurchasePaymentTerms;
+      paidAmountTnd: string;
+      dueDate?: Date;
+      notes?: string;
+      lines: PurchaseLineInput[];
+    },
+    actor: ProcurementActor,
+  ) {
+    const supplier = await this.assertActiveSupplier(params.supplierId);
+    const lines = await this.buildPurchaseLines(params.lines, this.prisma);
+    const total = sumDecimals(
+      lines.map((line) => line.lineTotalTnd),
+      3,
+    );
+    const paidAmount = parseMoney(params.paidAmountTnd);
+
+    this.assertPaymentTerms({
+      paymentTerms: params.paymentTerms,
+      totalTnd: total,
+      paidAmountTnd: paidAmount,
+      dueDate: params.dueDate,
+    });
+
+    const purchase = await this.prisma.$transaction(async (tx) => {
+      const existing = await this.findPurchaseOrThrow(purchaseId, tx);
+
+      if (existing.status !== PurchaseStatus.DRAFT) {
+        throw new AppError({
+          statusCode: 409,
+          code: "PURCHASE_NOT_DRAFT",
+          message: "Seul un achat brouillon peut être modifié.",
+        });
+      }
+
+      await tx.purchaseLine.deleteMany({ where: { purchaseId } });
+
+      const updated = await tx.purchase.update({
+        where: { id: purchaseId },
+        data: {
+          supplierId: supplier.id,
+          purchaseDate: params.purchaseDate,
+          supplierReference: emptyToNull(params.supplierReference),
+          paymentTerms: params.paymentTerms,
+          dueDate: params.dueDate ?? null,
+          totalTnd: total.toFixed(3),
+          paidAmountTnd: paidAmount.toFixed(3),
+          notes: emptyToNull(params.notes),
+          updatedByUserId: actor.actorUserId,
+          lines: {
+            createMany: {
+              data: lines.map((line) => ({
+                rawMaterialId: line.rawMaterialId,
+                enteredUnitId: line.enteredUnitId,
+                baseUnitId: line.baseUnitId,
+                enteredQuantity: line.enteredQuantity.toFixed(6),
+                conversionFactorToBase: line.conversionFactorToBase.toFixed(6),
+                normalizedQuantity: line.normalizedQuantity.toFixed(6),
+                unitPriceTnd: line.unitPriceTnd.toFixed(3),
+                lineTotalTnd: line.lineTotalTnd.toFixed(3),
+                rawMaterialNameSnapshot: line.rawMaterialNameSnapshot,
+                enteredUnitNameSnapshot: line.enteredUnitNameSnapshot,
+                baseUnitNameSnapshot: line.baseUnitNameSnapshot,
+              })),
+            },
+          },
+        },
+        include: purchaseInclude,
+      });
+
+      await this.auditWithClient(tx, {
+        actor,
+        action: "purchase.update",
+        entity: "purchase",
+        targetId: updated.id,
+        before: existing,
+        after: updated,
+      });
+
+      return updated;
     });
 
     return purchase;
@@ -741,6 +858,7 @@ export class ProcurementService {
       },
       select: {
         id: true,
+        reference: true,
         supplierId: true,
         dueDate: true,
         totalTnd: true,
@@ -766,7 +884,9 @@ export class ProcurementService {
           const balance = balanceOf(purchaseBalance, purchase.id);
           return {
             purchaseId: purchase.id,
+            reference: purchase.reference,
             dueDate: purchase.dueDate,
+            totalTnd: purchase.totalTnd.toFixed(3),
             balanceTnd: balance.toFixed(3),
             paymentState: derivePaymentState(purchase, balance),
           };

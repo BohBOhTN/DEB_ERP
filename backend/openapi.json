@@ -5906,6 +5906,194 @@
             }
           }
         }
+      },
+      "patch": {
+        "operationId": "procurement.updateDraftPurchase",
+        "summary": "Replace a draft purchase's header and lines",
+        "tags": [
+          "procurement"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "x-permissions": [
+          "purchases.create"
+        ],
+        "parameters": [
+          {
+            "name": "purchaseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "supplierId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "purchaseDate": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "supplierReference": {
+                    "type": "string"
+                  },
+                  "paymentTerms": {
+                    "type": "string",
+                    "enum": [
+                      "PAID",
+                      "PARTIAL",
+                      "UNPAID"
+                    ]
+                  },
+                  "paidAmountTnd": {
+                    "default": "0",
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d{1,3})?$"
+                  },
+                  "dueDate": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "lines": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "rawMaterialId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enteredUnitId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "enteredQuantity": {
+                          "type": "string",
+                          "pattern": "^\\d+(\\.\\d{1,6})?$"
+                        },
+                        "unitPriceTnd": {
+                          "type": "string",
+                          "pattern": "^\\d+(\\.\\d{1,3})?$"
+                        }
+                      },
+                      "required": [
+                        "rawMaterialId",
+                        "enteredUnitId",
+                        "enteredQuantity",
+                        "unitPriceTnd"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "supplierId",
+                  "purchaseDate",
+                  "paymentTerms",
+                  "lines"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "purchase": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "purchase"
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (`VALIDATION_ERROR`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The target does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State, uniqueness, or version conflict (`STATE_CONFLICT`, `VERSION_CONFLICT`, `IDEMPOTENCY_KEY_REUSED`, or a business rule code).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/procurement/purchases/{purchaseId}/post": {

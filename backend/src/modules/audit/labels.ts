@@ -33,6 +33,7 @@ const actionLabels: Record<string, string> = {
   "supplier.activate": "Activation d'un fournisseur",
   "supplier.deactivate": "Désactivation d'un fournisseur",
   "purchase.create": "Création d'un achat",
+  "purchase.update": "Modification d'un achat brouillon",
   "purchase.post": "Validation d'un achat",
   "purchase.cancel": "Annulation d'un achat",
   "supplier_payment.create": "Paiement fournisseur",
