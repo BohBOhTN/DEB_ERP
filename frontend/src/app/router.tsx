@@ -128,6 +128,41 @@ const SessionsPage = lazy(() =>
 const SessionDetailPage = lazy(() =>
   posModule().then((m) => ({ default: m.SessionDetailPage })),
 );
+const DistributorsPage = lazy(() =>
+  import("../features/distribution/pages/DistributorsPage.js").then((m) => ({
+    default: m.DistributorsPage,
+  })),
+);
+const DistributorDetailPage = lazy(() =>
+  import("../features/distribution/pages/DistributorDetailPage.js").then(
+    (m) => ({ default: m.DistributorDetailPage }),
+  ),
+);
+const CustodyPage = lazy(() =>
+  import("../features/distribution/pages/CustodyPage.js").then((m) => ({
+    default: m.CustodyPage,
+  })),
+);
+const DispatchEditorPage = lazy(() =>
+  import("../features/distribution/pages/DispatchEditorPage.js").then((m) => ({
+    default: m.DispatchEditorPage,
+  })),
+);
+const DispatchDetailPage = lazy(() =>
+  import("../features/distribution/pages/DispatchDetailPage.js").then((m) => ({
+    default: m.DispatchDetailPage,
+  })),
+);
+const SettlementPage = lazy(() =>
+  import("../features/distribution/pages/SettlementPage.js").then((m) => ({
+    default: m.SettlementPage,
+  })),
+);
+const DistributorPaymentsPage = lazy(() =>
+  import("../features/distribution/pages/DistributorPaymentsPage.js").then(
+    (m) => ({ default: m.DistributorPaymentsPage }),
+  ),
+);
 const AccueilPage = lazy(() =>
   import("../features/home/AccueilPage.js").then((m) => ({
     default: m.AccueilPage,
@@ -414,6 +449,69 @@ export const routes: RouteObject[] = [
               </Guarded>
             ),
             handle: { title: "Session de caisse" },
+          },
+          {
+            path: "/distributeurs",
+            element: (
+              <Guarded anyOf={["distributors.view"]}>
+                <DistributorsPage />
+              </Guarded>
+            ),
+            handle: { title: "Distributeurs" },
+          },
+          {
+            path: "/distributeurs/:distributorId",
+            element: (
+              <Guarded anyOf={["distributors.view"]}>
+                <DistributorDetailPage />
+              </Guarded>
+            ),
+            handle: { title: "Distributeur" },
+          },
+          {
+            path: "/distribution/depot-vente",
+            element: (
+              <Guarded anyOf={["distribution.custody.view"]}>
+                <CustodyPage />
+              </Guarded>
+            ),
+            handle: { title: "Dépôt-vente" },
+          },
+          {
+            path: "/distribution/sorties/nouvelle",
+            element: (
+              <Guarded anyOf={["distribution.dispatch"]}>
+                <DispatchEditorPage />
+              </Guarded>
+            ),
+            handle: { title: "Nouvelle sortie" },
+          },
+          {
+            path: "/distribution/sorties/:dispatchId",
+            element: (
+              <Guarded anyOf={["distribution.custody.view"]}>
+                <DispatchDetailPage />
+              </Guarded>
+            ),
+            handle: { title: "Sortie" },
+          },
+          {
+            path: "/distribution/sorties/:dispatchId/regler",
+            element: (
+              <Guarded anyOf={["distribution.settle"]}>
+                <SettlementPage />
+              </Guarded>
+            ),
+            handle: { title: "Régler la sortie" },
+          },
+          {
+            path: "/distribution/reglements",
+            element: (
+              <Guarded anyOf={["distribution.balances.view"]}>
+                <DistributorPaymentsPage />
+              </Guarded>
+            ),
+            handle: { title: "Règlements" },
           },
           ...legacyRoutes.map((route, index) => ({
             path: route.path,
