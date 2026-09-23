@@ -13,7 +13,7 @@ const modules = [
   ["Achats", "/achats", "rebuilt"],
   ["Produits", "/produits", "rebuilt"],
   ["Stock", "/stock", "rebuilt"],
-  ["Dépenses", "/depenses", "legacy"],
+  ["Dépenses", "/depenses", "rebuilt"],
   ["Utilisateurs", "/utilisateurs", "legacy"],
   ["Journal d'audit", "/audit", "legacy"],
 ] as const;
@@ -24,8 +24,8 @@ test("signs in, opens every module inside the shell, and signs out", async ({
 }) => {
   await mockApi(page, { signedIn: false, permissions: ownerPermissions });
 
-  await page.goto("/depenses");
-  await expect(page).toHaveURL(/\/connexion\?next=%2Fdepenses/);
+  await page.goto("/utilisateurs");
+  await expect(page).toHaveURL(/\/connexion\?next=%2Futilisateurs/);
   await expect(
     page.getByRole("heading", { level: 1, name: "Dar El Barka" }),
   ).toBeVisible();
@@ -39,7 +39,7 @@ test("signs in, opens every module inside the shell, and signs out", async ({
 
   await page.getByLabel(/Mot de passe/).fill("correct-password");
   await page.getByRole("button", { name: "Se connecter" }).click();
-  await expect(page).toHaveURL(/\/depenses$/);
+  await expect(page).toHaveURL(/\/utilisateurs$/);
   await expect(page.getByText("Ancienne interface")).toBeVisible();
 
   await page.goto("/");
