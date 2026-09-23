@@ -1,0 +1,71 @@
+/*
+ * Print stylesheet (UI-22): statements and detail pages print on white with
+ * the shell, filters and actions hidden. The A6 ticket waits for OD-013.
+ */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+  }
+
+  [data-print="hide"],
+  aside,
+  nav,
+  header,
+  footer,
+  [role="tablist"],
+  button,
+  a[role="button"],
+  input,
+  select,
+  textarea {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+
+  [data-print="only"] {
+    display: block !important;
+  }
+
+  table {
+    width: 100% !important;
+    min-width: 0 !important;
+    border-collapse: collapse !important;
+    font-size: 10pt;
+  }
+
+  th,
+  td {
+    padding: 4pt 6pt !important;
+    border-bottom: 1px solid var(--border-default) !important;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tr {
+    break-inside: avoid;
+  }
+
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+
+  * {
+    box-shadow: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}

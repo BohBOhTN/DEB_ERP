@@ -5,6 +5,7 @@ import { AppErrorBoundary } from "./app/errorBoundary";
 import "./styles/tokens.css";
 import "./styles/reset.css";
 import "./styles/base.css";
+import "./styles/print.css";
 
 const root = document.getElementById("root");
 

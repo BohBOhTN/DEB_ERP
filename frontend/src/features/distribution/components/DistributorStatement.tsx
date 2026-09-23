@@ -1,9 +1,11 @@
 import Decimal from "decimal.js-light";
+import { Printer } from "lucide-react";
 import { useState } from "react";
 import {
   StatementTable,
   type StatementEntry,
 } from "../../../components/patterns/StatementTable/StatementTable.js";
+import { Button } from "../../../components/ui/Button/Button.js";
 import { DateInput } from "../../../components/ui/DateInput/DateInput.js";
 import { FormField } from "../../../components/ui/FormField/FormField.js";
 import { formatDate } from "../../../i18n/format.js";
@@ -53,7 +55,7 @@ export function DistributorStatement({
 
   return (
     <div className={styles.stack}>
-      <div className={styles.twoColumns}>
+      <div className={styles.twoColumns} data-print="hide">
         <FormField label="Du">
           <DateInput
             value={range.from}
@@ -66,6 +68,16 @@ export function DistributorStatement({
             onChange={(to) => setRange((current) => ({ ...current, to }))}
           />
         </FormField>
+      </div>
+      <div data-print="hide">
+        <Button
+          variant="secondary"
+          size="sm"
+          leftIcon={<Printer />}
+          onClick={() => window.print()}
+        >
+          Imprimer
+        </Button>
       </div>
       <StatementTable
         label="Relevé distributeur"

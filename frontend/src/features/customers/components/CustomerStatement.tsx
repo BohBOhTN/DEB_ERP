@@ -1,9 +1,11 @@
 import Decimal from "decimal.js-light";
+import { Printer } from "lucide-react";
 import { useState } from "react";
 import {
   StatementTable,
   type StatementEntry,
 } from "../../../components/patterns/StatementTable/StatementTable.js";
+import { Button } from "../../../components/ui/Button/Button.js";
 import { DateInput } from "../../../components/ui/DateInput/DateInput.js";
 import { FormField } from "../../../components/ui/FormField/FormField.js";
 import { formatDate } from "../../../i18n/format.js";
@@ -57,7 +59,7 @@ export function CustomerStatement({ customerId }: { customerId: string }) {
 
   return (
     <div className={styles.tabBody}>
-      <div className={styles.formGrid}>
+      <div className={styles.formGrid} data-print="hide">
         <FormField label="Du">
           <DateInput
             value={range.from}
@@ -70,6 +72,16 @@ export function CustomerStatement({ customerId }: { customerId: string }) {
             onChange={(to) => setRange((current) => ({ ...current, to }))}
           />
         </FormField>
+      </div>
+      <div data-print="hide">
+        <Button
+          variant="secondary"
+          size="sm"
+          leftIcon={<Printer />}
+          onClick={() => window.print()}
+        >
+          Imprimer
+        </Button>
       </div>
       <StatementTable
         label="Relevé client"

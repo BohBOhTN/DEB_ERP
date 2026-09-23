@@ -61,7 +61,7 @@ export function LoginPage() {
       <section className={styles.panel} aria-labelledby="login-title">
         <div className={styles.logoRing}>
           <img
-            src="/assets/dar-el-barka-logo.png"
+            src="/assets/dar-el-barka-logo.webp"
             alt=""
             width={120}
             height={120}
