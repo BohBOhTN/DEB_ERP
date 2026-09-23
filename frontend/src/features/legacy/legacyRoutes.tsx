@@ -14,7 +14,6 @@ const lazyScreen = <TModule extends Record<string, unknown>>(
     return { default: module[name] as ComponentType<{ user: CurrentUser }> };
   });
 
-const pos = lazyScreen(() => import("../pos/PosManagement"), "PosManagement");
 const distribution = lazyScreen(
   () => import("../distribution/DistributionManagement"),
   "DistributionManagement",
@@ -46,19 +45,6 @@ export interface LegacyRoute {
 /// The V1 screens not yet rebuilt, at their new French paths (06 section
 /// 3.7, 07 section 2). Catalogue and stock left this table in Sprint 20.
 export const legacyRoutes: readonly LegacyRoute[] = [
-  { path: "/caisse", screen: pos, anyOf: ["pos.access"], title: "Caisse" },
-  {
-    path: "/caisse/ventes",
-    screen: pos,
-    anyOf: ["pos.access"],
-    title: "Ventes",
-  },
-  {
-    path: "/caisse/sessions",
-    screen: pos,
-    anyOf: ["pos.access"],
-    title: "Sessions",
-  },
   {
     path: "/distributeurs",
     screen: distribution,
