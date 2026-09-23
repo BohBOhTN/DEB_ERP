@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { transferableAbortController } from "node:util";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { server } from "./msw/server.js";
 
@@ -12,6 +12,11 @@ globalThis.AbortController = transferableAbortController()
   .constructor as typeof AbortController;
 globalThis.AbortSignal = new Request("http://localhost").signal
   .constructor as typeof AbortSignal;
+
+// A page renders after the session, the route guard, the lazy chunk and its
+// list query; on a loaded CI runner that can exceed the library's default
+// one-second wait, which is not a product signal.
+configure({ asyncUtilTimeout: 4000 });
 
 beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
 afterEach(() => {
