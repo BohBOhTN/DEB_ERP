@@ -65,7 +65,16 @@ export const ownerPermissions = [
   "simulations.update",
   "simulations.delete",
   "users.view",
+  "users.create",
+  "users.update",
+  "users.activate",
+  "users.assign_roles",
+  "users.reset_password",
   "roles.view",
+  "roles.create",
+  "roles.update",
+  "roles.activate",
+  "roles.assign_permissions",
   "audit.view",
 ];
 
@@ -219,6 +228,69 @@ export async function mockApi(
               },
             ],
           },
+        }),
+      );
+    }
+
+    // Administration screens read a catalogue, roles and the build identity
+    // on mount; the flows in access.ts override these with a stateful mock.
+    if (path === "/access/permissions") {
+      return route.fulfill(
+        envelope({
+          permissions: [],
+          groups: [
+            {
+              module: "Clients",
+              permissions: [
+                {
+                  key: "customers.view",
+                  labelFr: "Voir",
+                  descriptionFr: "Voir les clients",
+                },
+              ],
+            },
+          ],
+        }),
+      );
+    }
+    if (path === "/access/roles") {
+      return route.fulfill(
+        envelope({
+          roles: [
+            {
+              id: "role-1",
+              name: "Gérante",
+              description: null,
+              isActive: true,
+              isSystem: false,
+              systemKey: null,
+              permissionKeys: ["customers.view"],
+              permissionCount: 1,
+              userCount: 1,
+            },
+          ],
+        }),
+      );
+    }
+    if (path === "/audit-filters") {
+      return route.fulfill(
+        envelope({
+          actions: [],
+          entities: [],
+          actionOptions: [],
+          entityOptions: [],
+        }),
+      );
+    }
+    if (path === "/health/ready") {
+      return route.fulfill(
+        envelope({
+          status: "ok",
+          service: "api",
+          environment: "e2e",
+          database: { status: "ok", migration: null },
+          version: "1.4.0",
+          gitSha: "e2e0000",
         }),
       );
     }

@@ -3,19 +3,19 @@ import { mockApi, ownerPermissions } from "./mockApi";
 
 /// Sprint 19 smoke (AS-001 and AS-020 through the new UI, AS-V2-12): login,
 /// the home page, every module reachable from the navigation, logout.
-/// Rebuilt modules show their own heading; the others still carry the
-/// "Ancienne interface" badge (ADR-V2-003).
+/// Since Sprint 26 every module is rebuilt and shows its own heading; the
+/// "Ancienne interface" badge no longer exists (ADR-V2-003 closed).
 const modules = [
-  ["Caisse", "/caisse", "rebuilt"],
-  ["Commandes", "/commandes", "rebuilt"],
-  ["Clients", "/clients", "rebuilt"],
-  ["Distributeurs", "/distributeurs", "rebuilt"],
-  ["Achats", "/achats", "rebuilt"],
-  ["Produits", "/produits", "rebuilt"],
-  ["Stock", "/stock", "rebuilt"],
-  ["Dépenses", "/depenses", "rebuilt"],
-  ["Utilisateurs", "/utilisateurs", "legacy"],
-  ["Journal d'audit", "/audit", "legacy"],
+  ["Caisse", "/caisse"],
+  ["Commandes", "/commandes"],
+  ["Clients", "/clients"],
+  ["Distributeurs", "/distributeurs"],
+  ["Achats", "/achats"],
+  ["Produits", "/produits"],
+  ["Stock", "/stock"],
+  ["Dépenses", "/depenses"],
+  ["Utilisateurs", "/utilisateurs"],
+  ["Journal d'audit", "/audit"],
 ] as const;
 
 test("signs in, opens every module inside the shell, and signs out", async ({
@@ -40,7 +40,9 @@ test("signs in, opens every module inside the shell, and signs out", async ({
   await page.getByLabel(/Mot de passe/).fill("correct-password");
   await page.getByRole("button", { name: "Se connecter" }).click();
   await expect(page).toHaveURL(/\/utilisateurs$/);
-  await expect(page.getByText("Ancienne interface")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Utilisateurs" }),
+  ).toBeVisible();
 
   await page.goto("/");
   await expect(
@@ -51,7 +53,7 @@ test("signs in, opens every module inside the shell, and signs out", async ({
     page.getByRole("link", { name: "3 achats en retard" }),
   ).toBeVisible();
 
-  for (const [label, path, generation] of modules) {
+  for (const [label, path] of modules) {
     if (isMobile) {
       const bottom = page
         .getByRole("navigation", { name: "Navigation" })
@@ -74,14 +76,10 @@ test("signs in, opens every module inside the shell, and signs out", async ({
     }
 
     await expect(page).toHaveURL(new RegExp(`${path.replace(/\//g, "\\/")}$`));
-    if (generation === "legacy") {
-      await expect(page.getByText("Ancienne interface")).toBeVisible();
-    } else {
-      await expect(
-        page.getByRole("heading", { level: 1, name: label }),
-      ).toBeVisible();
-      await expect(page.getByText("Ancienne interface")).toHaveCount(0);
-    }
+    await expect(
+      page.getByRole("heading", { level: 1, name: label }),
+    ).toBeVisible();
+    await expect(page.getByText("Ancienne interface")).toHaveCount(0);
     // No horizontal page scroll at this width (AS-020, shell only).
     const overflow = await page.evaluate(
       () =>

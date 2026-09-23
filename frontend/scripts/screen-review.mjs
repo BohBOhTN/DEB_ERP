@@ -122,11 +122,14 @@ const screens = [
     ready: "heading",
   },
   {
-    name: "utilisateurs-v1",
+    name: "utilisateurs",
     path: "/utilisateurs",
     signedIn: true,
-    ready: "legacy",
+    ready: "heading",
   },
+  { name: "roles", path: "/roles", signedIn: true, ready: "heading" },
+  { name: "audit", path: "/audit", signedIn: true, ready: "heading" },
+  { name: "parametres", path: "/parametres", signedIn: true, ready: "heading" },
 ];
 
 const server = spawn(
@@ -157,11 +160,7 @@ for (const width of widths) {
       permissions: ownerPermissions,
     });
     await page.goto(`http://localhost:${port}${screen.path}`);
-    if (screen.ready === "legacy") {
-      await page.getByText("Ancienne interface").waitFor();
-    } else {
-      await page.getByRole("heading", { level: 1 }).first().waitFor();
-    }
+    await page.getByRole("heading", { level: 1 }).first().waitFor();
     await page.waitForTimeout(400);
 
     const overflow = await page.evaluate(
