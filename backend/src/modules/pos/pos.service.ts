@@ -58,7 +58,7 @@ export class PosService {
   }
 
   public async getCurrentSession() {
-    return this.prisma.posSession.findFirst({
+    const session = await this.prisma.posSession.findFirst({
       where: {
         status: PosSessionStatus.OPEN,
         terminal: {
@@ -72,6 +72,13 @@ export class PosService {
         openedAt: "desc",
       },
     });
+
+    if (!session) {
+      return null;
+    }
+
+    const actors = await this.actorsById([session.openedByUserId]);
+    return { ...session, openedBy: actors.get(session.openedByUserId) ?? null };
   }
 
   public async listProducts(params: PosProductListParams) {
@@ -223,8 +230,18 @@ export class PosService {
       }),
       this.prisma.sale.count({ where }),
     ]);
+    const actors = await this.actorsById(
+      items.map((sale) => sale.postedByUserId),
+    );
 
-    return paginated(items, total, params);
+    return paginated(
+      items.map((sale) => ({
+        ...sale,
+        postedBy: actors.get(sale.postedByUserId) ?? null,
+      })),
+      total,
+      params,
+    );
   }
 
   public async openSession(
@@ -700,7 +717,8 @@ export class PosService {
       });
     }
 
-    return sale;
+    const actors = await this.actorsById([sale.postedByUserId]);
+    return { ...sale, postedBy: actors.get(sale.postedByUserId) ?? null };
   }
 
   /// Session history for the Z-report screen.
@@ -743,8 +761,42 @@ export class PosService {
       }),
       this.prisma.posSession.count({ where }),
     ]);
+    const [actors, salesBySession] = await Promise.all([
+      this.actorsById(
+        items.flatMap((session) => [
+          session.openedByUserId,
+          session.closedByUserId,
+        ]),
+      ),
+      items.length === 0
+        ? []
+        : this.prisma.sale.groupBy({
+            by: ["sessionId"],
+            where: {
+              sessionId: { in: items.map((session) => session.id) },
+              status: SaleStatus.POSTED,
+            },
+            _count: { _all: true },
+            _sum: { totalTnd: true },
+          }),
+    ]);
+    const salesOf = new Map(salesBySession.map((row) => [row.sessionId, row]));
 
-    return paginated(items, total, params);
+    return paginated(
+      items.map((session) => ({
+        ...session,
+        openedBy: actors.get(session.openedByUserId) ?? null,
+        closedBy: session.closedByUserId
+          ? (actors.get(session.closedByUserId) ?? null)
+          : null,
+        salesCount: salesOf.get(session.id)?._count._all ?? 0,
+        salesTotalTnd: sumOrZero(
+          salesOf.get(session.id)?._sum.totalTnd,
+        ).toFixed(3),
+      })),
+      total,
+      params,
+    );
   }
 
   /// A session with its drawer totals, summed by the database: sales, cash
@@ -790,9 +842,19 @@ export class PosService {
       sumOrZero(
         advances.find((row) => row.movement === movement)?._sum.amountTnd,
       );
+    const actors = await this.actorsById([
+      session.openedByUserId,
+      session.closedByUserId,
+    ]);
 
     return {
-      session,
+      session: {
+        ...session,
+        openedBy: actors.get(session.openedByUserId) ?? null,
+        closedBy: session.closedByUserId
+          ? (actors.get(session.closedByUserId) ?? null)
+          : null,
+      },
       totals: {
         salesCount: sales._count._all,
         salesTotalTnd: sumOrZero(sales._sum.totalTnd).toFixed(3),
@@ -809,6 +871,20 @@ export class PosService {
         ),
       },
     };
+  }
+
+  /// Display names for a page's actors in one query; the screens show
+  /// "Caissier" as a name, never an identifier.
+  private async actorsById(ids: Array<string | null | undefined>) {
+    const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+    const actors =
+      unique.length === 0
+        ? []
+        : await this.prisma.user.findMany({
+            where: { id: { in: unique } },
+            select: { id: true, displayName: true },
+          });
+    return new Map(actors.map((actor) => [actor.id, actor]));
   }
 
   private async findMainTerminal(client: Prisma.TransactionClient) {

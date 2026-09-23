@@ -4,7 +4,29 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
-Release R8 module redesign wave 1, targeting `v1.3.0`.
+Release R9 module redesign wave 2, targeting `v1.4.0`.
+
+### Added
+
+- The till rebuilt on the kit (Sprint 23): session open and close with the
+  counted-cash dialog and the live difference, a product grid with search
+  and category chips, an in-memory cart with a sticky total and a bottom
+  sheet on phones, the customer picker, the direct sale or order toggle,
+  the payment box with change and the credit rule, one confirmation with
+  one idempotency key per cart intent, the receipt view, the sales list
+  and the session history with totals; desktop keyboard shortcuts.
+- Backend: POS sessions and sales carry the actors' display names; session
+  rows carry their sales count and total.
+
+### Removed
+
+- The V1 POS screen and its API client (a product lookup shim remains for
+  the V1 distribution screen).
+
+## [1.3.0] - 2026-09-23
+
+Release R8 module redesign wave 1 (Sprints 20 to 22), untagged by owner
+decision.
 
 ### Added
 

@@ -17,9 +17,9 @@ import {
   makeCustomer,
   makeCustomerPayment,
   makeOrder,
-  makePosSession,
   makeSale,
 } from "../../factories/customers.js";
+import { makePosSession } from "../../factories/pos.js";
 import { makePage } from "../../factories/page.js";
 import { apiError, apiV1, ok } from "../envelope.js";
 

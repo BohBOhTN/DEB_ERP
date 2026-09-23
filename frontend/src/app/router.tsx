@@ -112,6 +112,22 @@ const OrderDetailPage = lazy(() =>
     default: m.OrderDetailPage,
   })),
 );
+const posModule = () => import("../features/pos/pos.js");
+const CaissePage = lazy(() =>
+  posModule().then((m) => ({ default: m.CaissePage })),
+);
+const SalesPage = lazy(() =>
+  posModule().then((m) => ({ default: m.SalesPage })),
+);
+const SaleDetailPage = lazy(() =>
+  posModule().then((m) => ({ default: m.SaleDetailPage })),
+);
+const SessionsPage = lazy(() =>
+  posModule().then((m) => ({ default: m.SessionsPage })),
+);
+const SessionDetailPage = lazy(() =>
+  posModule().then((m) => ({ default: m.SessionDetailPage })),
+);
 const AccueilPage = lazy(() =>
   import("../features/home/AccueilPage.js").then((m) => ({
     default: m.AccueilPage,
@@ -353,6 +369,51 @@ export const routes: RouteObject[] = [
               </Guarded>
             ),
             handle: { title: "Commande" },
+          },
+          {
+            path: "/caisse",
+            element: (
+              <Guarded anyOf={["pos.access"]}>
+                <CaissePage />
+              </Guarded>
+            ),
+            handle: { title: "Caisse" },
+          },
+          {
+            path: "/caisse/ventes",
+            element: (
+              <Guarded anyOf={["pos.access"]}>
+                <SalesPage />
+              </Guarded>
+            ),
+            handle: { title: "Ventes" },
+          },
+          {
+            path: "/caisse/ventes/:saleId",
+            element: (
+              <Guarded anyOf={["pos.access"]}>
+                <SaleDetailPage />
+              </Guarded>
+            ),
+            handle: { title: "Vente" },
+          },
+          {
+            path: "/caisse/sessions",
+            element: (
+              <Guarded anyOf={["pos.access"]}>
+                <SessionsPage />
+              </Guarded>
+            ),
+            handle: { title: "Sessions" },
+          },
+          {
+            path: "/caisse/sessions/:sessionId",
+            element: (
+              <Guarded anyOf={["pos.access"]}>
+                <SessionDetailPage />
+              </Guarded>
+            ),
+            handle: { title: "Session de caisse" },
           },
           ...legacyRoutes.map((route, index) => ({
             path: route.path,

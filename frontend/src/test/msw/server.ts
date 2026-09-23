@@ -4,6 +4,7 @@ import { catalogHandlers } from "./handlers/catalog.js";
 import { homeHandlers } from "./handlers/home.js";
 import { inventoryHandlers } from "./handlers/inventory.js";
 import { customersOrdersHandlers } from "./handlers/customersOrders.js";
+import { posHandlers } from "./handlers/pos.js";
 import { procurementHandlers } from "./handlers/procurement.js";
 
 /// One msw server for every component test. Tests override handlers with
@@ -14,5 +15,6 @@ export const server = setupServer(
   ...homeHandlers(),
   ...inventoryHandlers(),
   ...procurementHandlers(),
+  ...posHandlers(),
   ...customersOrdersHandlers(),
 );

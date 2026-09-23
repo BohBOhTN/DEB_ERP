@@ -6,6 +6,8 @@ export const ownerPermissions = [
   "pos.access",
   "pos.sell",
   "pos.open_session",
+  "pos.credit_sale",
+  "pos.close_session",
   "orders.view",
   "orders.create",
   "orders.update",
