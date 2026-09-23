@@ -31,11 +31,7 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
           className,
         )}
       >
-        {prefix ? (
-          <span className={styles.affix} aria-hidden="true">
-            {prefix}
-          </span>
-        ) : null}
+        {prefix ? <span className={styles.affix}>{prefix}</span> : null}
         <input
           ref={ref}
           id={id ?? field?.id}
@@ -45,11 +41,8 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
           aria-describedby={rest["aria-describedby"] ?? field?.describedBy}
           {...rest}
         />
-        {suffix ? (
-          <span className={styles.affix} aria-hidden="true">
-            {suffix}
-          </span>
-        ) : null}
+        {/* Not aria-hidden: a suffix can hold the password toggle button. */}
+        {suffix ? <span className={styles.affix}>{suffix}</span> : null}
       </div>
     );
   },
