@@ -41,7 +41,7 @@ export interface AppShellProps {
   /// Page title for the phone top bar; breadcrumbs slot for desktop.
   title?: string;
   breadcrumbs?: ReactNode;
-  /// "Ancienne interface" badge while a V1 screen is mounted.
+  /// Optional badge next to the title (a read-only or preview notice).
   badge?: ReactNode;
   onNavigate?: (item: ShellNavItem) => void;
   onLogout?: () => void;

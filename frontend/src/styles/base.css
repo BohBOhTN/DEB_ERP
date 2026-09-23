@@ -1,7 +1,6 @@
 /*
  * V2 base styles: body, headings, links and the few utilities the design
- * system names (05 section 2). `global.css` next to this file is the V1
- * stylesheet and is deleted in Sprint 26; nothing here depends on it.
+ * system names (05 section 2). The V1 stylesheet was deleted in Sprint 26.
  */
 body {
   font-family: var(--font-sans);

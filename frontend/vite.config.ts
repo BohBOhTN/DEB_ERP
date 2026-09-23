@@ -1,5 +1,4 @@
 import react from "@vitejs/plugin-react";
-import prefixSelector from "postcss-prefix-selector";
 import { visualizer } from "rollup-plugin-visualizer";
 import { defineConfig } from "vite";
 
@@ -19,31 +18,6 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
-  },
-  css: {
-    postcss: {
-      plugins: [
-        // The V1 stylesheet styles bare elements (`button`, `input`, `h1`...).
-        // Until Sprint 26 deletes it, it is scoped to the `.legacy-screen`
-        // wrapper so a mounted V1 screen cannot restyle the V2 shell
-        // (ADR-V2-003). The file itself stays untouched.
-        prefixSelector({
-          prefix: ".legacy-screen",
-          includeFiles: [/src\/styles\/global\.css$/],
-          transform(prefix, selector, prefixedSelector) {
-            if (selector === "body" || selector === ":root") {
-              return prefix;
-            }
-
-            if (selector === "*") {
-              return `${prefix} *`;
-            }
-
-            return prefixedSelector;
-          },
-        }),
-      ],
-    },
   },
   build: {
     sourcemap: false,
