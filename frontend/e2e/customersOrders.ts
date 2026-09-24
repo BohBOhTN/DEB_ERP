@@ -172,6 +172,18 @@ function advance(state: CustomersOrdersState, customerId: string): number {
 
 function withCustomer(state: CustomersOrdersState, order: Order) {
   const { lines, advances, sale, ...rest } = order;
+  // The figures the API states per order (issue #45).
+  // This mock only ever records receipts.
+  const received = advances.reduce(
+    (sum, advance) => sum + Number(advance.amountTnd),
+    0,
+  );
+  const remaining =
+    order.status === "CANCELLED"
+      ? 0
+      : order.status === "COMPLETED"
+        ? Number(sale?.remainingDueTnd ?? 0)
+        : Number(order.totalTnd) - Number(order.advanceBalanceTnd);
   return {
     ...rest,
     customer: state.customers.find((row) => row.id === order.customerId),
@@ -179,6 +191,8 @@ function withCustomer(state: CustomersOrdersState, order: Order) {
     lines,
     advances,
     sale,
+    advanceReceivedTnd: received.toFixed(3),
+    remainingDueTnd: Math.max(0, remaining).toFixed(3),
   };
 }
 
