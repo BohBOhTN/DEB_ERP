@@ -1,4 +1,4 @@
-import { ArrowRight, Ban, Banknote, Check } from "lucide-react";
+import { ArrowRight, Ban, Banknote, Check, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -130,6 +130,32 @@ export function OrderDetailPage() {
                 }
               >
                 {actions.advance.label}
+              </Button>
+            ) : null}
+            {actions.resume ? (
+              <Button
+                variant="secondary"
+                leftIcon={<Undo2 />}
+                loading={changeStatus.isPending}
+                onClick={() =>
+                  changeStatus.mutate(
+                    {
+                      orderId: order.id,
+                      version: order.version,
+                      status: "PREPARING",
+                    },
+                    {
+                      onSuccess: (updated) =>
+                        toast.success(
+                          `Commande ${orderStatusLabels[updated.status].toLowerCase()}`,
+                          updated.reference,
+                        ),
+                      onError: (error) => toast.fromError(error),
+                    },
+                  )
+                }
+              >
+                {actions.resume.label}
               </Button>
             ) : null}
             {actions.recordAdvance ? (
@@ -295,11 +321,9 @@ export function OrderDetailPage() {
             <TotalsCard
               totalTnd={order.totalTnd}
               paidTnd={
-                order.sale ? order.sale.paidAmountTnd : order.advanceBalanceTnd
+                order.sale ? order.sale.paidAmountTnd : order.advanceReceivedTnd
               }
-              remainingTnd={
-                order.sale ? order.sale.remainingDueTnd : remainingOf(order)
-              }
+              remainingTnd={remainingOf(order)}
             />
           </Card>
         </div>

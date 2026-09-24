@@ -32,15 +32,19 @@ export const nextStatus: Partial<
 
 export interface OrderActions {
   advance?: { status: "CONFIRMED" | "PREPARING" | "READY"; label: string };
+  /// A ready order can go back to preparation (source of truth 12.3).
+  resume?: { status: "PREPARING"; label: string };
   recordAdvance: boolean;
   complete: boolean;
   cancel: boolean;
 }
 
 /// One action bar computed from the status and the caller's permissions
-/// (07 section 4.5): only the permitted transitions appear.
+/// (07 section 4.5): only the permitted transitions appear. Collecting a
+/// deposit needs both `orders.update` and `customer_payments.create`, as
+/// the route does (issue #45).
 export function orderActions(
-  order: Order,
+  order: Pick<Order, "status" | "advanceBalanceTnd" | "totalTnd">,
   permissions: PermissionSet,
 ): OrderActions {
   const open = openOrderStatuses.includes(order.status);
@@ -49,20 +53,21 @@ export function orderActions(
       open && permissions.has("orders.change_status")
         ? nextStatus[order.status]
         : undefined,
+    resume:
+      order.status === "READY" && permissions.has("orders.change_status")
+        ? { status: "PREPARING", label: "Reprendre la préparation" }
+        : undefined,
     recordAdvance:
       open &&
       permissions.has("orders.update") &&
+      permissions.has("customer_payments.create") &&
       Number(order.advanceBalanceTnd) < Number(order.totalTnd),
     complete: open && permissions.has("orders.complete"),
     cancel: open && permissions.has("orders.cancel"),
   };
 }
 
-export function remainingOf(
-  order: Pick<Order, "totalTnd" | "advanceBalanceTnd">,
-): string {
-  return Math.max(
-    0,
-    Number(order.totalTnd) - Number(order.advanceBalanceTnd),
-  ).toFixed(3);
+/// What the customer still has to pay, as the API states it.
+export function remainingOf(order: Pick<Order, "remainingDueTnd">): string {
+  return order.remainingDueTnd;
 }

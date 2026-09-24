@@ -83,9 +83,11 @@ describe("Orders", () => {
       screen.getByRole("textbox", { name: "Quantité 1" }),
       "10",
     );
+    // The price comes from the catalogue and is shown, not edited (#45).
     expect(
-      screen.getByRole("textbox", { name: "Prix unitaire 1" }),
-    ).toHaveValue("4,000");
+      screen.queryByRole("textbox", { name: "Prix unitaire 1" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("4,000 TND")).toBeInTheDocument();
     await userEvent.type(
       await screen.findByRole("textbox", { name: /Acompte/ }),
       "20",

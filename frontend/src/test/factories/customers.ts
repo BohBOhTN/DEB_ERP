@@ -92,6 +92,11 @@ export function makeOrder(overrides: Partial<Order> = {}): Order {
     requestedFulfillmentAt: "2026-09-24T09:00:00.000Z",
     totalTnd: "40.000",
     advanceBalanceTnd: "0.000",
+    advanceReceivedTnd: overrides.advanceBalanceTnd ?? "0.000",
+    remainingDueTnd: (
+      Number(overrides.totalTnd ?? "40.000") -
+      Number(overrides.advanceBalanceTnd ?? "0.000")
+    ).toFixed(3),
     notes: null,
     version: 1,
     saleId: null,

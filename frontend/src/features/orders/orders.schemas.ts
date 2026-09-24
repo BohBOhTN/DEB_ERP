@@ -82,11 +82,24 @@ export function orderTotal(
     .toDecimalPlaces(3);
 }
 
-export const advanceSchema = z.object({
-  amountTnd: tnd({ positive: true }),
-  paidAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Indiquez la date."),
-  notes: optionalString(300),
-});
+/// A deposit is capped by what remains of the order total (ORD-016), and
+/// the form says so before any request (issue #45).
+export const advanceSchema = z
+  .object({
+    amountTnd: tnd({ positive: true }),
+    paidAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Indiquez la date."),
+    notes: optionalString(300),
+    remainingTnd: z.string().default("0"),
+  })
+  .superRefine((values, context) => {
+    if (safeDecimal(values.amountTnd).greaterThan(values.remainingTnd)) {
+      context.addIssue({
+        code: "custom",
+        path: ["amountTnd"],
+        message: "L'acompte dépasse le reste à verser sur la commande.",
+      });
+    }
+  });
 export type AdvanceFormInput = z.input<typeof advanceSchema>;
 export type AdvanceFormOutput = z.output<typeof advanceSchema>;
 
