@@ -127,7 +127,7 @@ describe("Customers", () => {
       "15",
     );
     expect(
-      within(dialog).getByText("Reste non alloué").parentElement,
+      within(dialog).getByText("Reste à répartir").parentElement,
     ).toHaveTextContent("0,000 TND");
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Enregistrer le règlement" }),

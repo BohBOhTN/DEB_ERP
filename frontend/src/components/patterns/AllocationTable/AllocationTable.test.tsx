@@ -20,14 +20,14 @@ describe("AllocationTable", () => {
     render(<Harness amountTnd="300" />);
 
     expect(
-      screen.getByText("Reste non alloué").parentElement,
+      screen.getByText("Reste à répartir").parentElement,
     ).toHaveTextContent("300,000 TND");
     await userEvent.type(
       screen.getByRole("textbox", { name: "Affectation VT-000001" }),
       "200",
     );
     expect(
-      screen.getByText("Reste non alloué").parentElement,
+      screen.getByText("Reste à répartir").parentElement,
     ).toHaveTextContent("100,000 TND");
     await userEvent.type(
       screen.getByRole("textbox", { name: "Affectation VT-000002" }),
@@ -36,5 +36,23 @@ describe("AllocationTable", () => {
     expect(
       screen.getByText("Affectations en excès").parentElement,
     ).toHaveTextContent("50,000 TND");
+  });
+
+  it("splits the amount over the rows in order, each up to its balance", async () => {
+    render(<Harness amountTnd="250" />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Répartir automatiquement" }),
+    );
+
+    expect(
+      screen.getByRole("textbox", { name: "Affectation VT-000001" }),
+    ).toHaveValue("200,000");
+    expect(
+      screen.getByRole("textbox", { name: "Affectation VT-000002" }),
+    ).toHaveValue("50,000");
+    expect(
+      screen.getByText("Reste à répartir").parentElement,
+    ).toHaveTextContent("0,000 TND");
   });
 });

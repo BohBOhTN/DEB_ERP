@@ -2,6 +2,7 @@ import Decimal from "decimal.js-light";
 import { cx } from "../../../lib/cx.js";
 import { formatMoney } from "../../../i18n/format.js";
 import { Badge } from "../../ui/Badge/Badge.js";
+import { Button } from "../../ui/Button/Button.js";
 import { MoneyInput } from "../../ui/MoneyInput/MoneyInput.js";
 import styles from "./AllocationTable.module.css";
 
@@ -37,17 +38,40 @@ export function allocatedTotal(rows: Array<{ amountTnd: string }>): Decimal {
   );
 }
 
+/// Fills the rows from the amount in their order (the dialogs pass them
+/// oldest first), each up to its remaining due. This is what the server does
+/// with whatever the user leaves unallocated, so the table can show it
+/// before posting.
+export function autoAllocate<TRow extends AllocationRow>(
+  rows: TRow[],
+  amountTnd: string,
+): TRow[] {
+  let remainder = safeDecimal(amountTnd);
+
+  return rows.map((row) => {
+    const balance = safeDecimal(row.balanceTnd);
+    const take = remainder.lessThan(balance) ? remainder : balance;
+    remainder = remainder.minus(take);
+    return {
+      ...row,
+      amountTnd: take.greaterThan(0) ? take.toFixed(3) : "",
+    };
+  });
+}
+
 /// Allocations of a payment to open documents (05 section 3.2): one money
-/// input per document, the remaining due beside it, and the unallocated
-/// remainder recomputed on every keystroke. Shared by supplier, customer
-/// and distributor payments.
+/// input per document, the remaining due beside it, and the remainder
+/// recomputed on every keystroke. What the user leaves is placed by the
+/// server on the oldest documents; the "Répartir automatiquement" button
+/// shows that split ahead of time. Shared by supplier, customer and
+/// distributor payments.
 export function AllocationTable({
   amountTnd,
   rows,
   onChange,
   errors = {},
   disabled = false,
-  emptyText = "Aucun document ouvert : le paiement restera non affecté.",
+  emptyText = "Aucun document ouvert : le paiement réduira le solde global.",
   className,
 }: AllocationTableProps) {
   const allocated = allocatedTotal(rows);
@@ -61,6 +85,19 @@ export function AllocationTable({
       aria-label="Affectations"
     >
       {rows.length === 0 ? <p className={styles.error}>{emptyText}</p> : null}
+      {rows.length > 0 ? (
+        <div className={styles.toolbar}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={disabled || !safeDecimal(amountTnd).greaterThan(0)}
+            onClick={() => onChange(autoAllocate(rows, amountTnd))}
+          >
+            Répartir automatiquement
+          </Button>
+        </div>
+      ) : null}
       {rows.map((row, index) => {
         const error = errors[`allocations.${index}.amountTnd`];
 
@@ -101,11 +138,16 @@ export function AllocationTable({
         className={cx(styles.unallocated, over && styles.over)}
         aria-live="polite"
       >
-        <span>{over ? "Affectations en excès" : "Reste non alloué"}</span>
+        <span>{over ? "Affectations en excès" : "Reste à répartir"}</span>
         <span className="tabular-nums">
           {formatMoney(unallocated.abs().toFixed(3))}
         </span>
       </div>
+      {!over && unallocated.greaterThan(0) && rows.length > 0 ? (
+        <p className={styles.hint}>
+          Le reste sera affecté aux documents les plus anciens.
+        </p>
+      ) : null}
     </div>
   );
 }

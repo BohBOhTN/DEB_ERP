@@ -291,9 +291,9 @@ describe("Procurement", () => {
       within(dialog).getByRole("textbox", { name: "Affectation AC-000002" }),
       "100",
     );
-    expect(within(dialog).getByText("Reste non alloué")).toBeInTheDocument();
+    expect(within(dialog).getByText("Reste à répartir")).toBeInTheDocument();
     expect(
-      within(dialog).getByText("Reste non alloué").parentElement,
+      within(dialog).getByText("Reste à répartir").parentElement,
     ).toHaveTextContent("0,000 TND");
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Enregistrer le paiement" }),
