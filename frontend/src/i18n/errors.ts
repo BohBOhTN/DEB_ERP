@@ -281,10 +281,6 @@ const errorCopy: Record<string, ErrorCopy> = {
     title: "Montant invalide",
     description: "Le paiement doit être supérieur à zéro.",
   },
-  PAYMENT_ALLOCATION_TOTAL_MISMATCH: {
-    title: "Affectations incohérentes",
-    description: "La somme des affectations doit être égale au montant payé.",
-  },
   DUPLICATE_PAYMENT_ALLOCATION: {
     title: "Affectation en double",
     description: "Le même document est affecté deux fois.",

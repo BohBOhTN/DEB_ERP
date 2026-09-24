@@ -446,7 +446,17 @@ export async function handleDistribution(
     state.payments.unshift(payment);
     return (
       route.fulfill(
-        envelope({ payment: { ...payment, distributor: karim } }, 201),
+        envelope(
+          {
+            payment: { ...payment, distributor: karim },
+            allocations: payment.allocations.map((allocation) => ({
+              saleId: allocation.saleId,
+              settlementId: allocation.settlementId,
+              amountTnd: allocation.amountTnd,
+            })),
+          },
+          201,
+        ),
       ),
       true
     );
