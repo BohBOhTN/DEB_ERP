@@ -7,6 +7,8 @@ export const posKeys = {
   all: ["pos"] as const,
   session: ["pos", "session"] as const,
   sales: (query: api.SaleListQuery) => ["pos", "sales", query] as const,
+  salesSummary: (query: api.SaleFilterQuery) =>
+    ["pos", "sales", "summary", query] as const,
   sale: (id: string) => ["pos", "sale", id] as const,
   sessions: (query: api.SessionListQuery) =>
     ["pos", "sessions", query] as const,
@@ -31,6 +33,27 @@ export function useSales(query: api.SaleListQuery) {
     queryFn: () => api.listSales(query),
     placeholderData: (previous) => previous,
     ...tier("list"),
+  });
+}
+
+export function useSalesSummary(query: api.SaleFilterQuery) {
+  return useQuery({
+    queryKey: posKeys.salesSummary(query),
+    queryFn: () => api.getSalesSummary(query),
+    placeholderData: (previous) => previous,
+    ...tier("list"),
+  });
+}
+
+export function useCancelSale() {
+  const invalidate = useInvalidateAfter("pos.sale");
+  return useMutation({
+    mutationFn: (input: {
+      saleId: string;
+      reason: string;
+      idempotencyKey: string;
+    }) => api.cancelSale(input.saleId, input.reason, input.idempotencyKey),
+    onSuccess: invalidate,
   });
 }
 
