@@ -111,8 +111,11 @@ Run locally on macOS, Node 24:
   `Annulé`), error copy covering every new backend code
 - `npm run build`: passed; initial JavaScript 200.1 kB gzip against the
   250 kB budget; POS chunk 11.3 kB
-- `npm run e2e --workspace frontend` (Playwright, mocked API, three widths):
-  see the line below, filled after the run
+- `npm run e2e --workspace frontend` (Playwright on the system Brave
+  browser through `E2E_BROWSER`, mocked API, three widths): 117 passed,
+  2 skipped by design, 1 failed: the axe scan of `/roles` at 360 px hit the
+  30 s timeout under the parallel load and passed alone in 3.7 s on a
+  re-run; unrelated to this change
 - PostgreSQL suites (`*.concurrency.test.ts`, integration) run in CI only;
   the development machine has no PostgreSQL. The migration SQL was reviewed
   by hand and validated by `prisma validate`; it has not been applied to a
