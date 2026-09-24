@@ -240,7 +240,7 @@ export function OrdersPage() {
       />
       <KpiGrid columns={4}>
         <KpiTile
-          label="À traiter"
+          label="Commandes ouvertes"
           value={count(summary.data?.openCount)}
           note={`${count(summary.data?.dueTodayCount)} à livrer aujourd'hui`}
           loading={summary.isPending}

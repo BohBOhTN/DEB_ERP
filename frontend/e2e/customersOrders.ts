@@ -290,6 +290,49 @@ export async function handleCustomersOrders(
   if (path === "/customer-payments" && method === "GET")
     return (route.fulfill(page([])), true);
 
+  if (path === "/orders/summary" && method === "GET") {
+    const open = state.orders.filter(
+      (order) => !["COMPLETED", "CANCELLED"].includes(order.status),
+    );
+    const sum = (
+      rows: typeof open,
+      pick: (order: (typeof open)[number]) => string,
+    ) => rows.reduce((total, row) => total + Number(pick(row)), 0);
+    return (
+      route.fulfill(
+        envelope({
+          summary: {
+            count: state.orders.length,
+            openCount: open.length,
+            readyCount: open.filter((order) => order.status === "READY").length,
+            completedCount: state.orders.filter(
+              (order) => order.status === "COMPLETED",
+            ).length,
+            cancelledCount: state.orders.filter(
+              (order) => order.status === "CANCELLED",
+            ).length,
+            overdueCount: open.filter(
+              (order) =>
+                new Date(order.requestedFulfillmentAt).getTime() < Date.now(),
+            ).length,
+            dueTodayCount: 0,
+            openTotalTnd: sum(open, (order) => order.totalTnd).toFixed(3),
+            advanceHeldTnd: sum(
+              open,
+              (order) => order.advanceBalanceTnd,
+            ).toFixed(3),
+            remainingTnd: (
+              sum(open, (order) => order.totalTnd) -
+              sum(open, (order) => order.advanceBalanceTnd)
+            ).toFixed(3),
+            completedTotalTnd: "0.000",
+          },
+        }),
+      ),
+      true
+    );
+  }
+
   if (path === "/orders" && method === "GET") {
     const status = url.searchParams.get("status");
     const dueState = url.searchParams.get("dueState");
