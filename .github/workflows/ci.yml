@@ -146,7 +146,9 @@ jobs:
           --health-retries 10
 
     env:
-      DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+      # The env context is not available at job level: the same throwaway
+      # database as the quality job, spelled out.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/dar_el_barka_ci?schema=public
       NODE_ENV: development
       PORT: "4000"
       LOG_LEVEL: warn
