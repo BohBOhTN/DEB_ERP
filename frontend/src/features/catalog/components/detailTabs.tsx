@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { tier } from "../../../lib/query/cachePolicy.js";
+import { catalogKeys } from "../catalog.queries.js";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -153,8 +155,9 @@ export function HistoryTab({
   targetId: string;
 }) {
   const query = useQuery({
-    queryKey: ["audit", "target", entity, targetId],
+    queryKey: catalogKeys.relatedAudit(entity, targetId),
     queryFn: () => listAuditEvents({ entity, targetId, page: 1, pageSize: 20 }),
+    ...tier("document"),
   });
 
   if (query.isPending) {
@@ -199,8 +202,10 @@ export function HistoryTab({
 export function PurchasesTab({ rawMaterialId }: { rawMaterialId: string }) {
   const [page, setPage] = useState(1);
   const query = useQuery({
-    queryKey: ["procurement", "purchasesOf", rawMaterialId, page],
+    queryKey: catalogKeys.relatedPurchases(rawMaterialId, page),
     queryFn: () => listPurchasesOf(rawMaterialId, { page, pageSize: 10 }),
+    placeholderData: (previous) => previous,
+    ...tier("list"),
   });
   const columns: DataTableColumn<PurchaseRow>[] = [
     {

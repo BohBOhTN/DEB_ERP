@@ -121,6 +121,16 @@ export interface CustomerListQuery {
   minBalance?: string;
 }
 
+/// The plain directory (`customers.view`): names for pickers when the
+/// caller may not see balances.
+export function listCustomers(
+  query: Pick<CustomerListQuery, "page" | "pageSize" | "q">,
+): Promise<PageResult<Customer>> {
+  return apiClient.list<Customer>("/customers", {
+    query: toSearchParams({ ...query, isActive: true }),
+  });
+}
+
 export function listCustomerBalances(
   query: CustomerListQuery,
 ): Promise<PageResult<CustomerBalanceRow>> {
@@ -208,12 +218,16 @@ export interface CustomerPaymentInput {
   allocations: Array<{ saleId: string; amountTnd: string }>;
 }
 
+/// The command answers with the payment and its allocations, without the
+/// customer object the list rows carry.
+export type CustomerPaymentCreated = Omit<CustomerPayment, "customer">;
+
 export async function createCustomerPayment(
   input: CustomerPaymentInput,
   idempotencyKey: string,
-): Promise<CustomerPayment> {
+): Promise<CustomerPaymentCreated> {
   return (
-    await apiClient.post<{ payment: CustomerPayment }>(
+    await apiClient.post<{ payment: CustomerPaymentCreated }>(
       "/customer-payments",
       input,
       { idempotencyKey },

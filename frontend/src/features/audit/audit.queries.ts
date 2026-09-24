@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { tier } from "../../lib/query/cachePolicy.js";
 import * as api from "./audit.api.js";
 
 export const auditKeys = {
@@ -12,6 +13,7 @@ export function useAuditEvents(query: api.AuditListQuery) {
     queryKey: auditKeys.list(query),
     queryFn: () => api.listAuditEvents(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -19,6 +21,6 @@ export function useAuditFilters() {
   return useQuery({
     queryKey: auditKeys.filters,
     queryFn: api.getAuditFilters,
-    staleTime: 5 * 60_000,
+    ...tier("reference"),
   });
 }

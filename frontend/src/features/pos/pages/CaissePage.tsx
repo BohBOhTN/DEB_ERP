@@ -17,13 +17,14 @@ import { useDebounce } from "../../../lib/hooks/useDebounce.js";
 import { useIsPhone } from "../../../lib/hooks/useBreakpoint.js";
 import { useHotkeys } from "../../../lib/hooks/useHotkeys.js";
 import { useQuery } from "@tanstack/react-query";
+import { tier } from "../../../lib/query/cachePolicy.js";
 import {
   useSessionContext,
   useSessionPermissions,
 } from "../../../app/sessionContext.js";
 import { cartCount, cartTotal, useCartStore } from "../cart.store.js";
 import { listPosProducts, type PosProduct } from "../pos.api.js";
-import { useCurrentSession } from "../pos.queries.js";
+import { posKeys, useCurrentSession } from "../pos.queries.js";
 import { CartPanel } from "../components/CartPanel.js";
 import { CheckoutPanel, checkoutBlocker } from "../components/CheckoutPanel.js";
 import { CloseSessionDialog } from "../components/CloseSessionDialog.js";
@@ -55,11 +56,14 @@ export function CaissePage() {
   const customerRef = useRef<HTMLButtonElement>(null);
   const debounced = useDebounce(query, 250);
   const products = useQuery({
-    queryKey: ["pos", "products", debounced],
+    queryKey: posKeys.products(debounced),
     queryFn: () =>
       listPosProducts({ page: 1, pageSize: 60, q: debounced || undefined }),
     enabled: Boolean(session.data),
     placeholderData: (previous) => previous,
+    // The grid changes with the catalogue only: a minute (06 section 3.5).
+    ...tier("list"),
+    staleTime: 60_000,
   });
   const allProducts = useMemo(
     () => products.data?.items ?? [],

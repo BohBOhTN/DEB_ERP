@@ -1,4 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { tier } from "../../lib/query/cachePolicy.js";
+import { useInvalidateAfter } from "../../lib/query/invalidation.js";
 import * as api from "./simulation.api.js";
 
 export const simulationKeys = {
@@ -13,6 +15,7 @@ export function useSimulations(query: api.SimulationListQuery) {
     queryKey: simulationKeys.list(query),
     queryFn: () => api.listSimulations(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -21,17 +24,12 @@ export function useSimulation(simulationId: string) {
     queryKey: simulationKeys.detail(simulationId),
     queryFn: () => api.getSimulation(simulationId),
     enabled: simulationId !== "",
+    ...tier("document"),
   });
 }
 
-/// Simulations touch nothing else, so only their own queries refresh.
-function useInvalidateSimulations() {
-  const queryClient = useQueryClient();
-  return () => queryClient.invalidateQueries({ queryKey: simulationKeys.all });
-}
-
 export function useCreateSimulation() {
-  const invalidate = useInvalidateSimulations();
+  const invalidate = useInvalidateAfter("simulation");
   return useMutation({
     mutationFn: api.createSimulation,
     onSuccess: invalidate,
@@ -39,7 +37,7 @@ export function useCreateSimulation() {
 }
 
 export function useUpdateSimulation() {
-  const invalidate = useInvalidateSimulations();
+  const invalidate = useInvalidateAfter("simulation");
   return useMutation({
     mutationFn: (input: {
       simulationId: string;
@@ -50,7 +48,7 @@ export function useUpdateSimulation() {
 }
 
 export function useDuplicateSimulation() {
-  const invalidate = useInvalidateSimulations();
+  const invalidate = useInvalidateAfter("simulation");
   return useMutation({
     mutationFn: (input: { simulationId: string; name?: string }) =>
       api.duplicateSimulation(input.simulationId, { name: input.name }),
@@ -59,7 +57,7 @@ export function useDuplicateSimulation() {
 }
 
 export function useDeleteSimulation() {
-  const invalidate = useInvalidateSimulations();
+  const invalidate = useInvalidateAfter("simulation");
   return useMutation({
     mutationFn: (simulationId: string) => api.deleteSimulation(simulationId),
     onSuccess: invalidate,

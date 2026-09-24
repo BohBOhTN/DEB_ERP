@@ -158,7 +158,7 @@ export function DistributorPaymentDialog({
     });
     toast.success(
       "Paiement enregistré",
-      `${payment.distributor.name} : ${formatMoney(payment.amountTnd)}.`,
+      `${values.distributor.label} : ${formatMoney(payment.amountTnd)}.`,
     );
     onSaved?.(payment);
     onOpenChange(false);

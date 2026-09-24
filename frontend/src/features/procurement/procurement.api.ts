@@ -330,12 +330,15 @@ export interface SupplierPaymentInput {
   allocations: Array<{ purchaseId: string; amountTnd: string }>;
 }
 
+/// The command answers without the supplier object the list rows carry.
+export type SupplierPaymentCreated = Omit<SupplierPayment, "supplier">;
+
 export async function createSupplierPayment(
   input: SupplierPaymentInput,
   idempotencyKey: string,
-): Promise<SupplierPayment> {
+): Promise<SupplierPaymentCreated> {
   return (
-    await apiClient.post<{ payment: SupplierPayment }>(
+    await apiClient.post<{ payment: SupplierPaymentCreated }>(
       "/procurement/supplier-payments",
       input,
       { idempotencyKey },

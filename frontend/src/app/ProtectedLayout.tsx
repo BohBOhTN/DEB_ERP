@@ -36,6 +36,7 @@ import {
 } from "../lib/auth/session.js";
 import { activeNavItem, visibleNavItems } from "./nav.js";
 import { preloadRoute } from "./routeLoaders.js";
+import { useReferenceWarmup } from "./referenceWarmup.js";
 import { SessionContext, sessionContextFor } from "./sessionContext.js";
 
 interface RouteHandle {
@@ -88,6 +89,7 @@ export function ProtectedLayout() {
   }, [title]);
 
   usePaletteShortcut(openPalette, context !== null);
+  useReferenceWarmup(context?.permissions ?? null);
 
   // OD-V2-005: fixed 8 h session, one warning toast 10 minutes before.
   useEffect(() => {

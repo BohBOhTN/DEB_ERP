@@ -1,4 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { tier } from "../../lib/query/cachePolicy.js";
+import { useInvalidateAfter } from "../../lib/query/invalidation.js";
 import * as api from "./pos.api.js";
 
 export const posKeys = {
@@ -9,6 +11,7 @@ export const posKeys = {
   sessions: (query: api.SessionListQuery) =>
     ["pos", "sessions", query] as const,
   sessionDetail: (id: string) => ["pos", "sessionDetail", id] as const,
+  products: (q: string) => ["pos", "products", q] as const,
 };
 
 /// Whether a till is open decides what the POS, the orders and the customer
@@ -18,7 +21,7 @@ export function useCurrentSession(options: { enabled?: boolean } = {}) {
     queryKey: posKeys.session,
     queryFn: api.getCurrentSession,
     enabled: options.enabled ?? true,
-    staleTime: 30_000,
+    ...tier("live"),
   });
 }
 
@@ -27,6 +30,7 @@ export function useSales(query: api.SaleListQuery) {
     queryKey: posKeys.sales(query),
     queryFn: () => api.listSales(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -35,6 +39,7 @@ export function useSale(saleId: string) {
     queryKey: posKeys.sale(saleId),
     queryFn: () => api.getSale(saleId),
     enabled: saleId !== "",
+    ...tier("document"),
   });
 }
 
@@ -43,6 +48,7 @@ export function useSessions(query: api.SessionListQuery) {
     queryKey: posKeys.sessions(query),
     queryFn: () => api.listSessions(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -54,25 +60,12 @@ export function useSessionDetail(
     queryKey: posKeys.sessionDetail(sessionId),
     queryFn: () => api.getSession(sessionId),
     enabled: options.enabled ?? sessionId !== "",
+    ...tier("document"),
   });
 }
 
-/// A sale moves stock, revenue and customer receivables; a session change
-/// changes what every other module may do with cash.
-function useInvalidatePos() {
-  const queryClient = useQueryClient();
-
-  return async () => {
-    await queryClient.invalidateQueries({ queryKey: posKeys.all });
-    await queryClient.invalidateQueries({ queryKey: ["inventory"] });
-    await queryClient.invalidateQueries({ queryKey: ["customers"] });
-    await queryClient.invalidateQueries({ queryKey: ["orders"] });
-    await queryClient.invalidateQueries({ queryKey: ["home"] });
-  };
-}
-
 export function useOpenSession() {
-  const invalidate = useInvalidatePos();
+  const invalidate = useInvalidateAfter("pos.session");
   return useMutation({
     mutationFn: (input: {
       body: { openingCashTnd: string; notes?: string };
@@ -83,7 +76,7 @@ export function useOpenSession() {
 }
 
 export function useCloseSession() {
-  const invalidate = useInvalidatePos();
+  const invalidate = useInvalidateAfter("pos.session");
   return useMutation({
     mutationFn: (input: {
       sessionId: string;
@@ -95,7 +88,7 @@ export function useCloseSession() {
 }
 
 export function usePostSale() {
-  const invalidate = useInvalidatePos();
+  const invalidate = useInvalidateAfter("pos.sale");
   return useMutation({
     mutationFn: (input: { body: api.SaleInput; idempotencyKey: string }) =>
       api.postSale(input.body, input.idempotencyKey),

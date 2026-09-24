@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { KeyValueList } from "../../../components/patterns/KeyValueList/KeyValueList.js";
 import { PageHeader } from "../../../components/patterns/PageHeader/PageHeader.js";
 import { Badge } from "../../../components/ui/Badge/Badge.js";
@@ -6,7 +5,7 @@ import { Card, CardHeader } from "../../../components/ui/Card/Card.js";
 import { formatDateTime } from "../../../i18n/format.js";
 import { useSessionContext } from "../../../app/sessionContext.js";
 import { useCurrentSession } from "../../pos/pos.queries.js";
-import { getHealthReady } from "../settings.api.js";
+import { useHealthReady } from "../settings.queries.js";
 import styles from "./SettingsPage.module.css";
 
 /// `/parametres` (UI-21, OD-V2-011): the profile as the session knows it,
@@ -16,11 +15,7 @@ export function SettingsPage() {
   const { user } = useSessionContext();
   const canSeeTill = user.effectivePermissions.includes("pos.access");
   const session = useCurrentSession({ enabled: canSeeTill });
-  const health = useQuery({
-    queryKey: ["health", "ready"],
-    queryFn: getHealthReady,
-    staleTime: 5 * 60_000,
-  });
+  const health = useHealthReady();
 
   return (
     <>

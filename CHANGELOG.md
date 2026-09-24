@@ -20,8 +20,25 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
   of the stakeholder script, built through the services, with a guarded
   reset.
 
+### Changed
+
+- Sprint 28 server-state cache: four named tiers (reference, list,
+  document, live) replace the uniform thirty-second staleness; units,
+  categories, expense categories, the permission catalogue and roles are
+  read once per session and refreshed only after their own change; every
+  mutation raises a domain event and one typed map decides which queries
+  refresh; reference data is warmed when the session opens.
+
 ### Fixed
 
+- Found by the seeded demo replay: the palette hid server results; a
+  cashier without the balances permission could not pick a customer for an
+  order; the customer and supplier payment dialogs failed after a successful
+  payment; the demo seed priced purchase lines per entered unit and recorded
+  order advances without an open till; the reference warm-up requested
+  catalogues the user could not read.
+- The seeded demo job runs on demand only (`demo.yml`) so it never blocks
+  a pull request.
 - Placeholder text met the 4.5:1 contrast ratio and the password toggle
   became reachable by assistive technology (axe findings).
 

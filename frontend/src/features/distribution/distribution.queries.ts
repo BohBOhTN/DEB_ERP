@@ -4,6 +4,11 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { tier } from "../../lib/query/cachePolicy.js";
+import {
+  primeDetail,
+  useInvalidateAfter,
+} from "../../lib/query/invalidation.js";
 import * as api from "./distribution.api.js";
 
 export const distributionKeys = {
@@ -31,6 +36,7 @@ export function useDistributors(query: api.DistributorListQuery) {
     queryKey: distributionKeys.distributors(query),
     queryFn: () => api.listDistributors(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -39,6 +45,7 @@ export function useDistributor(distributorId: string) {
     queryKey: distributionKeys.distributor(distributorId),
     queryFn: () => api.getDistributor(distributorId),
     enabled: distributorId !== "",
+    ...tier("document"),
   });
 }
 
@@ -47,6 +54,7 @@ export function useDispatches(query: api.DispatchListQuery) {
     queryKey: distributionKeys.dispatches(query),
     queryFn: () => api.listDispatches(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -55,6 +63,7 @@ export function useDispatch(dispatchId: string) {
     queryKey: distributionKeys.dispatch(dispatchId),
     queryFn: () => api.getDispatch(dispatchId),
     enabled: dispatchId !== "",
+    ...tier("document"),
   });
 }
 
@@ -63,6 +72,7 @@ export function useSettlements(query: api.SettlementListQuery) {
     queryKey: distributionKeys.settlements(query),
     queryFn: () => api.listSettlements(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -70,6 +80,7 @@ export function useCustody(distributorId?: string) {
   return useQuery({
     queryKey: distributionKeys.custody(distributorId),
     queryFn: () => api.getCustody(distributorId),
+    ...tier("live"),
   });
 }
 
@@ -78,6 +89,7 @@ export function useDistributorBalances(query: api.BalanceListQuery) {
     queryKey: distributionKeys.balances(query),
     queryFn: () => api.listDistributorBalances(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -104,23 +116,12 @@ export function useDistributorPayments(query: api.PaymentListQuery) {
     queryKey: distributionKeys.payments(query),
     queryFn: () => api.listDistributorPayments(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
-/// Dispatches and settlements move stock; sales and payments move the
-/// ledger, so stock and home refresh with the module.
-function useInvalidateDistribution() {
-  const queryClient = useQueryClient();
-
-  return async () => {
-    await queryClient.invalidateQueries({ queryKey: distributionKeys.all });
-    await queryClient.invalidateQueries({ queryKey: ["inventory"] });
-    await queryClient.invalidateQueries({ queryKey: ["home"] });
-  };
-}
-
 export function useCreateDistributor() {
-  const invalidate = useInvalidateDistribution();
+  const invalidate = useInvalidateAfter("distribution.distributor");
   return useMutation({
     mutationFn: api.createDistributor,
     onSuccess: invalidate,
@@ -128,7 +129,8 @@ export function useCreateDistributor() {
 }
 
 export function useUpdateDistributor() {
-  const invalidate = useInvalidateDistribution();
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateAfter("distribution.distributor");
   return useMutation({
     mutationFn: (
       input: { distributorId: string } & Parameters<
@@ -138,12 +140,19 @@ export function useUpdateDistributor() {
       const { distributorId, ...fields } = input;
       return api.updateDistributor(distributorId, fields);
     },
-    onSuccess: invalidate,
+    onSuccess: (record, input) => {
+      primeDetail(
+        queryClient,
+        distributionKeys.distributor(input.distributorId),
+        record,
+      );
+      return invalidate();
+    },
   });
 }
 
 export function usePostDirectSale() {
-  const invalidate = useInvalidateDistribution();
+  const invalidate = useInvalidateAfter("distribution.sale");
   return useMutation({
     mutationFn: (input: {
       body: api.DirectSaleInput;
@@ -154,7 +163,7 @@ export function usePostDirectSale() {
 }
 
 export function usePostDispatch() {
-  const invalidate = useInvalidateDistribution();
+  const invalidate = useInvalidateAfter("distribution.dispatch");
   return useMutation({
     mutationFn: (input: { body: api.DispatchInput; idempotencyKey: string }) =>
       api.postDispatch(input.body, input.idempotencyKey),
@@ -163,7 +172,7 @@ export function usePostDispatch() {
 }
 
 export function usePostSettlement() {
-  const invalidate = useInvalidateDistribution();
+  const invalidate = useInvalidateAfter("distribution.settlement");
   return useMutation({
     mutationFn: (input: {
       body: api.SettlementInput;
@@ -174,7 +183,7 @@ export function usePostSettlement() {
 }
 
 export function useCreateDistributorPayment() {
-  const invalidate = useInvalidateDistribution();
+  const invalidate = useInvalidateAfter("distribution.payment");
   return useMutation({
     mutationFn: (input: {
       body: api.DistributorPaymentInput;

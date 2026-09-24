@@ -1,5 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { sessionQueryKey } from "../../lib/auth/session.js";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { tier } from "../../lib/query/cachePolicy.js";
+import { useInvalidateAfter } from "../../lib/query/invalidation.js";
 import * as api from "./access.api.js";
 
 export const accessKeys = {
@@ -14,12 +15,16 @@ export function usePermissionCatalogue() {
   return useQuery({
     queryKey: accessKeys.catalogue,
     queryFn: api.getPermissionCatalogue,
-    staleTime: 5 * 60_000,
+    ...tier("reference"),
   });
 }
 
 export function useRoles() {
-  return useQuery({ queryKey: accessKeys.roles, queryFn: api.listRoles });
+  return useQuery({
+    queryKey: accessKeys.roles,
+    queryFn: api.listRoles,
+    ...tier("reference"),
+  });
 }
 
 export function useRole(roleId: string) {
@@ -27,6 +32,7 @@ export function useRole(roleId: string) {
     queryKey: accessKeys.role(roleId),
     queryFn: () => api.getRole(roleId),
     enabled: roleId !== "",
+    ...tier("document"),
   });
 }
 
@@ -35,27 +41,17 @@ export function useUsers(query: api.UserListQuery) {
     queryKey: accessKeys.users(query),
     queryFn: () => api.listUsers(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
-/// A permission change applies to the caller too: the session is re-read
-/// so the owner's own navigation follows the new matrix (AS-002).
-function useInvalidateAccess() {
-  const queryClient = useQueryClient();
-  return async () => {
-    await queryClient.invalidateQueries({ queryKey: accessKeys.all });
-    await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
-    await queryClient.invalidateQueries({ queryKey: ["audit"] });
-  };
-}
-
 export function useCreateRole() {
-  const invalidate = useInvalidateAccess();
+  const invalidate = useInvalidateAfter("access");
   return useMutation({ mutationFn: api.createRole, onSuccess: invalidate });
 }
 
 export function useUpdateRole() {
-  const invalidate = useInvalidateAccess();
+  const invalidate = useInvalidateAfter("access");
   return useMutation({
     mutationFn: (input: {
       roleId: string;
@@ -66,7 +62,7 @@ export function useUpdateRole() {
 }
 
 export function useReplaceRolePermissions() {
-  const invalidate = useInvalidateAccess();
+  const invalidate = useInvalidateAfter("access");
   return useMutation({
     mutationFn: (input: { roleId: string; permissionKeys: string[] }) =>
       api.replaceRolePermissions(input.roleId, input.permissionKeys),
@@ -75,12 +71,12 @@ export function useReplaceRolePermissions() {
 }
 
 export function useCreateUser() {
-  const invalidate = useInvalidateAccess();
+  const invalidate = useInvalidateAfter("access");
   return useMutation({ mutationFn: api.createUser, onSuccess: invalidate });
 }
 
 export function useUpdateUser() {
-  const invalidate = useInvalidateAccess();
+  const invalidate = useInvalidateAfter("access");
   return useMutation({
     mutationFn: (input: {
       userId: string;
@@ -91,7 +87,7 @@ export function useUpdateUser() {
 }
 
 export function useResetUserPassword() {
-  const invalidate = useInvalidateAccess();
+  const invalidate = useInvalidateAfter("access");
   return useMutation({
     mutationFn: (input: { userId: string; password: string }) =>
       api.resetUserPassword(input.userId, input.password),
@@ -100,7 +96,7 @@ export function useResetUserPassword() {
 }
 
 export function useReplaceUserRoles() {
-  const invalidate = useInvalidateAccess();
+  const invalidate = useInvalidateAfter("access");
   return useMutation({
     mutationFn: (input: { userId: string; roleIds: string[] }) =>
       api.replaceUserRoles(input.userId, input.roleIds),
@@ -109,7 +105,7 @@ export function useReplaceUserRoles() {
 }
 
 export function useSetUserActivation() {
-  const invalidate = useInvalidateAccess();
+  const invalidate = useInvalidateAfter("access");
   return useMutation({
     mutationFn: (input: { userId: string; isActive: boolean }) =>
       api.setUserActivation(input.userId, input.isActive),

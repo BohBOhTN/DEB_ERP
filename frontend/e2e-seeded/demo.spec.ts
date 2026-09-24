@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { devices, expect, test, type Page } from "@playwright/test";
 
 /// 10_STAKEHOLDER_DEMO_SCRIPT.md replayed against the seeded backend
 /// (UI-25, AS-V2-23): sections 1 to 5 in order, the phone steps on the
@@ -15,7 +15,9 @@ async function login(page: Page, account: { email: string; password: string }) {
   await page.getByLabel(/E-mail/).fill(account.email);
   await page.getByLabel(/Mot de passe/).fill(account.password);
   await page.getByRole("button", { name: "Se connecter" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  // The login page has a heading too: wait for the redirect away from it.
+  await page.waitForURL((url) => !url.pathname.startsWith("/connexion"));
+  await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
 }
 
 async function logout(page: Page) {
@@ -176,9 +178,13 @@ test("2 and 3: a morning at the bakery (phone as cashier)", async ({
   ).toBeVisible();
   await expect(page.getByRole("main")).toContainText("13,500 TND");
   await page.getByRole("button", { name: "Encaisser un règlement" }).click();
-  const payment = page.getByRole("dialog", { name: /règlement/i });
+  const payment = page.getByRole("dialog", {
+    name: "Encaisser un règlement",
+  });
   await payment.getByRole("textbox", { name: /^Montant/ }).fill("13,5");
-  await payment.getByRole("button", { name: /Enregistrer/ }).click();
+  await payment
+    .getByRole("button", { name: "Enregistrer le règlement" })
+    .click();
   await expect(page.getByText(/Règlement enregistré/).first()).toBeVisible();
   await expect(page.getByText("Reste à payer").locator("..")).toContainText(
     "0,000 TND",
@@ -208,6 +214,8 @@ test("4: back office (laptop as owner)", async ({ page, isMobile }) => {
   await page.getByPlaceholder("Rechercher matière première").fill("levure fra");
   await page.getByText("Levure fraîche").first().click();
   await page.getByRole("textbox", { name: "Quantité 2" }).fill("5");
+  await page.getByRole("combobox", { name: "Unité 2" }).click();
+  await page.getByRole("option", { name: /Kilogramme|kg/ }).click();
   await page.getByRole("textbox", { name: "Prix unitaire 2" }).fill("6,5");
   await page.getByRole("radio", { name: "Partiel" }).click();
   await page.getByRole("textbox", { name: /Montant payé/ }).fill("300");
@@ -287,6 +295,7 @@ test("4: back office (laptop as owner)", async ({ page, isMobile }) => {
   ).toBeVisible();
   const before = await page
     .getByText(/Coût unitaire/)
+    .first()
     .locator("..")
     .innerText();
   await page
@@ -297,6 +306,7 @@ test("4: back office (laptop as owner)", async ({ page, isMobile }) => {
   await page.getByRole("textbox", { name: "Prix unitaire 2" }).fill("30");
   const after = await page
     .getByText(/Coût unitaire/)
+    .first()
     .locator("..")
     .innerText();
   expect(after).not.toBe(before);
@@ -306,56 +316,87 @@ test("4: back office (laptop as owner)", async ({ page, isMobile }) => {
   await logout(page);
 });
 
-test("5: control and trust (laptop then phone)", async ({ page, isMobile }) => {
-  if (!isMobile) {
-    await login(page, owner);
-    await page.goto("/roles");
-    await page
-      .getByRole("list", { name: "Rôles" })
-      .getByRole("button", { name: /Caissier/ })
-      .click();
-    const balances = page.getByRole("checkbox", {
-      name: "Voir les soldes clients",
+test("5: control and trust (laptop grants, phone sees it, phone closes the till)", async ({
+  page,
+  browser,
+  isMobile,
+}) => {
+  if (isMobile) {
+    // The cashier closes the till with a difference (script 5.3).
+    await login(page, cashier);
+    await page.goto("/caisse");
+    await page.getByRole("button", { name: "Clôturer" }).click();
+    const closeDialog = page.getByRole("alertdialog", {
+      name: "Clôturer la caisse",
     });
-    if (!(await balances.isChecked())) {
-      await balances.click();
-      await page.getByRole("button", { name: "Enregistrer" }).click();
-      await expect(page.getByText("Rôle enregistré").first()).toBeVisible();
-    }
-    await page.goto("/audit");
+    await expect(closeDialog).toContainText("TND");
+    await closeDialog
+      .getByRole("textbox", { name: /Espèces comptées/ })
+      .fill("120");
+    await expect(closeDialog).toContainText(/−|\+/);
+    await closeDialog.getByRole("button", { name: "Clôturer" }).click();
+    await expect(page.getByText("Caisse clôturée").first()).toBeVisible();
     await expect(
-      page.getByRole("heading", { level: 1, name: "Journal d'audit" }),
+      page.getByRole("heading", { level: 1, name: /Session du/ }),
     ).toBeVisible();
-    await page
-      .getByRole("main")
-      .getByText(/Règlement d'une sortie|Modification des autorisations/)
-      .first()
-      .click();
-    const sheet = page.getByRole("dialog");
-    await expect(sheet).toContainText("Identifiant de corrélation");
-    await page.keyboard.press("Escape");
     await logout(page);
     return;
   }
 
-  // The cashier now sees balances and closes the till with a difference.
-  await login(page, cashier);
-  await page.goto("/clients");
-  await expect(page.getByRole("main")).toContainText("TND");
-  await page.goto("/caisse");
-  await page.getByRole("button", { name: "Clôturer" }).click();
-  const closeDialog = page.getByRole("alertdialog", {
-    name: "Clôturer la caisse",
+  // 5.1 The owner grants "Voir le stock" to the cashier role. The script
+  // names the balances permission, but the seeded cashier already holds it
+  // because section 3.6 reads a balance on the phone; the stock permission
+  // shows the same thing: a change applies at the next request.
+  await login(page, owner);
+  await page.goto("/roles");
+  await page
+    .getByRole("list", { name: "Rôles" })
+    .getByRole("button", { name: /Caissier/ })
+    .click();
+  const stock = page.getByRole("checkbox", { name: "Voir le stock" });
+  await expect(stock).not.toBeChecked();
+  await stock.click();
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page.getByText("Rôle enregistré").first()).toBeVisible();
+
+  // On the phone, without a deployment, the cashier's "Plus" lists Stock.
+  const phone = await browser.newContext({
+    ...devices["Desktop Chrome"],
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    locale: "fr-TN",
+    timezoneId: "Africa/Tunis",
   });
-  await expect(closeDialog).toContainText("TND");
-  await closeDialog
-    .getByRole("textbox", { name: /Espèces comptées/ })
-    .fill("120");
-  await expect(closeDialog).toContainText(/−|\+/);
-  await closeDialog.getByRole("button", { name: "Clôturer" }).click();
-  await expect(page.getByText("Caisse clôturée").first()).toBeVisible();
+  const phonePage = await phone.newPage();
+  await login(phonePage, cashier);
+  await phonePage
+    .getByRole("navigation", { name: "Navigation" })
+    .last()
+    .getByRole("button", { name: "Plus" })
+    .click();
   await expect(
-    page.getByRole("heading", { level: 1, name: /Session du/ }),
+    phonePage
+      .getByRole("dialog", { name: "Plus" })
+      .getByRole("link", { name: "Stock", exact: true }),
   ).toBeVisible();
+  await phone.close();
+
+  // 5.2 The audit journal tells the story with the before and after.
+  await page.goto("/audit");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Journal d'audit" }),
+  ).toBeVisible();
+  await page
+    .getByRole("main")
+    .getByText("Modification des autorisations d'un rôle")
+    .first()
+    .click();
+  const sheet = page.getByRole("dialog", {
+    name: "Modification des autorisations d'un rôle",
+  });
+  await expect(sheet).toContainText("Identifiant de corrélation");
+  await expect(sheet).toContainText("inventory.view");
+  await page.keyboard.press("Escape");
   await logout(page);
 });

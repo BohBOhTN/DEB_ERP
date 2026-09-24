@@ -17,7 +17,7 @@ import {
   toBusinessDate,
 } from "../../../i18n/format.js";
 import { useCurrentSession } from "../../pos/pos.queries.js";
-import type { CustomerPayment } from "../customers.api.js";
+import type { CustomerPaymentCreated } from "../customers.api.js";
 import {
   useCreateCustomerPayment,
   useCustomerStatementPages,
@@ -34,7 +34,7 @@ export interface CustomerPaymentDialogProps {
   onOpenChange: (open: boolean) => void;
   /// Preselected from the customer detail; the picker is then hidden.
   customer?: { id: string; name: string } | null;
-  onSaved?: (payment: CustomerPayment) => void;
+  onSaved?: (payment: CustomerPaymentCreated) => void;
 }
 
 function defaultsFor(
@@ -148,7 +148,7 @@ export function CustomerPaymentDialog({
     });
     toast.success(
       "Règlement enregistré",
-      `${payment.customer.name} : ${formatMoney(payment.amountTnd)}.`,
+      `${values.customer.label} : ${formatMoney(payment.amountTnd)}.`,
     );
     onSaved?.(payment);
     onOpenChange(false);

@@ -76,10 +76,20 @@ export function CommandPalette({
     onOpenChange(next);
   };
 
+  // Static items are matched here, word by word, and server results are
+  // shown as the server returned them: cmdk's own filter stays off so an
+  // asynchronous result can never be hidden by a scoring mismatch.
+  const words = trimmed.toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (item: PaletteItem) => {
+    const haystack =
+      `${item.label} ${item.description ?? ""} ${(item.keywords ?? []).join(" ")}`.toLowerCase();
+    return words.every((word) => haystack.includes(word));
+  };
   const groups = new Map<string, PaletteItem[]>();
-  for (const item of [...items, ...results]) {
+  for (const item of [...items.filter(matches), ...results]) {
     groups.set(item.group, [...(groups.get(item.group) ?? []), item]);
   }
+  const empty = groups.size === 0;
 
   return (
     <Dialog
@@ -92,17 +102,7 @@ export function CommandPalette({
       <Command
         label="Palette de commandes"
         className={styles.command}
-        shouldFilter
-        filter={(value, searchValue, keywords) => {
-          const haystack =
-            `${value} ${(keywords ?? []).join(" ")}`.toLowerCase();
-          return searchValue
-            .toLowerCase()
-            .split(/\s+/)
-            .every((word) => haystack.includes(word))
-            ? 1
-            : 0;
-        }}
+        shouldFilter={false}
       >
         <div className={styles.searchRow}>
           <Search className={styles.searchIcon} aria-hidden="true" />
@@ -116,19 +116,17 @@ export function CommandPalette({
           <Kbd>Échap</Kbd>
         </div>
         <Command.List className={styles.list}>
-          <Command.Empty className={styles.empty}>
-            {searching ? "Recherche…" : "Aucun résultat."}
-          </Command.Empty>
+          {empty ? (
+            <div className={styles.empty} role="status">
+              {searching ? "Recherche…" : "Aucun résultat."}
+            </div>
+          ) : null}
           {[...groups].map(([group, entries]) => (
             <Command.Group key={group} heading={group} className={styles.group}>
               {entries.map((item) => (
                 <Command.Item
                   key={item.id}
                   value={`${item.group} ${item.label} ${item.description ?? ""}`}
-                  keywords={item.keywords}
-                  // Server results are already filtered by the query; keep
-                  // them visible whatever cmdk thinks of their label.
-                  forceMount={results.includes(item) || undefined}
                   onSelect={() => {
                     close(false);
                     item.onSelect();

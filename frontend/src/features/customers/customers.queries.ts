@@ -4,6 +4,11 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { tier } from "../../lib/query/cachePolicy.js";
+import {
+  primeDetail,
+  useInvalidateAfter,
+} from "../../lib/query/invalidation.js";
 import * as api from "./customers.api.js";
 
 export const customerKeys = {
@@ -21,6 +26,7 @@ export function useCustomerBalances(query: api.CustomerListQuery) {
     queryKey: customerKeys.list(query),
     queryFn: () => api.listCustomerBalances(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -32,6 +38,7 @@ export function useCustomer(
     queryKey: customerKeys.detail(customerId),
     queryFn: () => api.getCustomer(customerId),
     enabled: options.enabled ?? customerId !== "",
+    ...tier("document"),
   });
 }
 
@@ -58,29 +65,18 @@ export function useCustomerPayments(query: api.PaymentListQuery) {
     queryKey: customerKeys.payments(query),
     queryFn: () => api.listCustomerPayments(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
-/// A payment touches the ledger and, when taken at the till, the open
-/// session's cash, so the POS and home queries refresh too.
-function useInvalidateCustomers() {
-  const queryClient = useQueryClient();
-
-  return async () => {
-    await queryClient.invalidateQueries({ queryKey: customerKeys.all });
-    await queryClient.invalidateQueries({ queryKey: ["orders"] });
-    await queryClient.invalidateQueries({ queryKey: ["pos"] });
-    await queryClient.invalidateQueries({ queryKey: ["home"] });
-  };
-}
-
 export function useCreateCustomer() {
-  const invalidate = useInvalidateCustomers();
+  const invalidate = useInvalidateAfter("customer.record");
   return useMutation({ mutationFn: api.createCustomer, onSuccess: invalidate });
 }
 
 export function useUpdateCustomer() {
-  const invalidate = useInvalidateCustomers();
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateAfter("customer.record");
   return useMutation({
     mutationFn: (
       input: { customerId: string } & Parameters<typeof api.updateCustomer>[1],
@@ -88,12 +84,15 @@ export function useUpdateCustomer() {
       const { customerId, ...fields } = input;
       return api.updateCustomer(customerId, fields);
     },
-    onSuccess: invalidate,
+    onSuccess: (record, input) => {
+      primeDetail(queryClient, customerKeys.detail(input.customerId), record);
+      return invalidate();
+    },
   });
 }
 
 export function useCreateCustomerPayment() {
-  const invalidate = useInvalidateCustomers();
+  const invalidate = useInvalidateAfter("customer.payment");
   return useMutation({
     mutationFn: (input: {
       body: api.CustomerPaymentInput;

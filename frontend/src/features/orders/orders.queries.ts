@@ -1,4 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { tier } from "../../lib/query/cachePolicy.js";
+import { useInvalidateAfter } from "../../lib/query/invalidation.js";
 import * as api from "./orders.api.js";
 
 export const orderKeys = {
@@ -16,6 +18,7 @@ export function useOrders(
     queryFn: () => api.listOrders(query),
     placeholderData: (previous) => previous,
     enabled: options.enabled ?? true,
+    ...tier("list"),
   });
 }
 
@@ -24,25 +27,12 @@ export function useOrder(orderId: string) {
     queryKey: orderKeys.detail(orderId),
     queryFn: () => api.getOrder(orderId),
     enabled: orderId !== "",
+    ...tier("document"),
   });
 }
 
-/// Completion posts a sale and moves stock; advances move cash and the
-/// customer ledger, so every neighbouring module refreshes.
-function useInvalidateOrders() {
-  const queryClient = useQueryClient();
-
-  return async () => {
-    await queryClient.invalidateQueries({ queryKey: orderKeys.all });
-    await queryClient.invalidateQueries({ queryKey: ["customers"] });
-    await queryClient.invalidateQueries({ queryKey: ["inventory"] });
-    await queryClient.invalidateQueries({ queryKey: ["pos"] });
-    await queryClient.invalidateQueries({ queryKey: ["home"] });
-  };
-}
-
 export function useCreateOrder() {
-  const invalidate = useInvalidateOrders();
+  const invalidate = useInvalidateAfter("order");
   return useMutation({
     mutationFn: (input: { body: api.OrderInput; idempotencyKey: string }) =>
       api.createOrder(input.body, input.idempotencyKey),
@@ -51,7 +41,7 @@ export function useCreateOrder() {
 }
 
 export function useChangeOrderStatus() {
-  const invalidate = useInvalidateOrders();
+  const invalidate = useInvalidateAfter("order");
   return useMutation({
     mutationFn: (input: {
       orderId: string;
@@ -67,7 +57,7 @@ export function useChangeOrderStatus() {
 }
 
 export function useRecordAdvance() {
-  const invalidate = useInvalidateOrders();
+  const invalidate = useInvalidateAfter("order");
   return useMutation({
     mutationFn: (input: {
       orderId: string;
@@ -79,7 +69,7 @@ export function useRecordAdvance() {
 }
 
 export function useCompleteOrder() {
-  const invalidate = useInvalidateOrders();
+  const invalidate = useInvalidateAfter("order");
   return useMutation({
     mutationFn: (input: {
       orderId: string;
@@ -91,7 +81,7 @@ export function useCompleteOrder() {
 }
 
 export function useCancelOrder() {
-  const invalidate = useInvalidateOrders();
+  const invalidate = useInvalidateAfter("order");
   return useMutation({
     mutationFn: (input: {
       orderId: string;

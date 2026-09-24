@@ -14,7 +14,7 @@ import {
   formatMoney,
   toBusinessDate,
 } from "../../../i18n/format.js";
-import type { SupplierPayment } from "../procurement.api.js";
+import type { SupplierPaymentCreated } from "../procurement.api.js";
 import {
   useCreateSupplierPayment,
   usePurchases,
@@ -33,7 +33,7 @@ export interface SupplierPaymentDialogProps {
   onOpenChange: (open: boolean) => void;
   /// Preselected from the supplier detail; the picker is then hidden.
   supplier?: { id: string; name: string } | null;
-  onSaved?: (payment: SupplierPayment) => void;
+  onSaved?: (payment: SupplierPaymentCreated) => void;
 }
 
 function defaultsFor(
@@ -158,7 +158,7 @@ export function SupplierPaymentDialog({
     });
     toast.success(
       "Paiement enregistré",
-      `${payment.supplier.name} : ${formatMoney(payment.amountTnd)}.`,
+      `${values.supplier.label} : ${formatMoney(payment.amountTnd)}.`,
     );
     onSaved?.(payment);
     onOpenChange(false);
