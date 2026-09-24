@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { tier } from "../../lib/query/cachePolicy.js";
 import { fetchHomeSummary } from "./home.api.js";
 
 export const homeKeys = {
@@ -12,6 +13,7 @@ export function useHomeSummary(date: string | undefined) {
   return useQuery({
     queryKey: homeKeys.summary(date),
     queryFn: () => fetchHomeSummary(date),
+    ...tier("live"),
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });

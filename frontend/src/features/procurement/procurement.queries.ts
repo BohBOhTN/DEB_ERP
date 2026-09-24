@@ -4,6 +4,11 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { tier } from "../../lib/query/cachePolicy.js";
+import {
+  primeDetail,
+  useInvalidateAfter,
+} from "../../lib/query/invalidation.js";
 import * as api from "./procurement.api.js";
 
 export const procurementKeys = {
@@ -25,6 +30,7 @@ export function useSupplierBalances(query: api.SupplierListQuery) {
     queryKey: procurementKeys.suppliers(query),
     queryFn: () => api.listSupplierBalances(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -36,6 +42,7 @@ export function useSupplier(
     queryKey: procurementKeys.supplier(supplierId),
     queryFn: () => api.getSupplier(supplierId),
     enabled: options.enabled ?? supplierId !== "",
+    ...tier("document"),
   });
 }
 
@@ -48,6 +55,7 @@ export function usePurchases(
     queryFn: () => api.listPurchases(query),
     placeholderData: (previous) => previous,
     enabled: options.enabled ?? true,
+    ...tier("list"),
   });
 }
 
@@ -59,6 +67,7 @@ export function usePurchase(
     queryKey: procurementKeys.purchase(purchaseId),
     queryFn: () => api.getPurchase(purchaseId),
     enabled: options.enabled ?? purchaseId !== "",
+    ...tier("document"),
   });
 }
 
@@ -85,27 +94,18 @@ export function useSupplierPayments(query: api.PaymentListQuery) {
     queryKey: procurementKeys.payments(query),
     queryFn: () => api.listSupplierPayments(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
-/// A posting touches stock and the supplier ledger, so both modules refresh.
-function useInvalidateProcurement() {
-  const queryClient = useQueryClient();
-
-  return async () => {
-    await queryClient.invalidateQueries({ queryKey: procurementKeys.all });
-    await queryClient.invalidateQueries({ queryKey: ["inventory"] });
-    await queryClient.invalidateQueries({ queryKey: ["home"] });
-  };
-}
-
 export function useCreateSupplier() {
-  const invalidate = useInvalidateProcurement();
+  const invalidate = useInvalidateAfter("procurement.supplier");
   return useMutation({ mutationFn: api.createSupplier, onSuccess: invalidate });
 }
 
 export function useUpdateSupplier() {
-  const invalidate = useInvalidateProcurement();
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateAfter("procurement.supplier");
   return useMutation({
     mutationFn: (
       input: { supplierId: string } & Parameters<typeof api.updateSupplier>[1],
@@ -113,12 +113,19 @@ export function useUpdateSupplier() {
       const { supplierId, ...fields } = input;
       return api.updateSupplier(supplierId, fields);
     },
-    onSuccess: invalidate,
+    onSuccess: (record, input) => {
+      primeDetail(
+        queryClient,
+        procurementKeys.supplier(input.supplierId),
+        record,
+      );
+      return invalidate();
+    },
   });
 }
 
 export function useSavePurchase() {
-  const invalidate = useInvalidateProcurement();
+  const invalidate = useInvalidateAfter("procurement.purchase");
   return useMutation({
     mutationFn: (input: { purchaseId?: string; body: api.PurchaseInput }) =>
       input.purchaseId
@@ -129,7 +136,7 @@ export function useSavePurchase() {
 }
 
 export function usePostPurchase() {
-  const invalidate = useInvalidateProcurement();
+  const invalidate = useInvalidateAfter("procurement.purchase");
   return useMutation({
     mutationFn: (input: { purchaseId: string; idempotencyKey: string }) =>
       api.postPurchase(input.purchaseId, input.idempotencyKey),
@@ -138,7 +145,7 @@ export function usePostPurchase() {
 }
 
 export function useCancelPurchase() {
-  const invalidate = useInvalidateProcurement();
+  const invalidate = useInvalidateAfter("procurement.purchase");
   return useMutation({
     mutationFn: (input: {
       purchaseId: string;
@@ -151,7 +158,7 @@ export function useCancelPurchase() {
 }
 
 export function useCreateSupplierPayment() {
-  const invalidate = useInvalidateProcurement();
+  const invalidate = useInvalidateAfter("procurement.payment");
   return useMutation({
     mutationFn: (input: {
       body: api.SupplierPaymentInput;

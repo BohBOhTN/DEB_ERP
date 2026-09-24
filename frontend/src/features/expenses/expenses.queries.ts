@@ -1,4 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { tier } from "../../lib/query/cachePolicy.js";
+import { useInvalidateAfter } from "../../lib/query/invalidation.js";
 import * as api from "./expenses.api.js";
 
 export const expenseKeys = {
@@ -24,6 +26,7 @@ export function useExpenses(query: api.ExpenseListQuery) {
     queryKey: expenseKeys.list(query),
     queryFn: () => api.listExpenses(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -32,6 +35,7 @@ export function useExpenseTotals(query: { from?: string; to?: string }) {
     queryKey: expenseKeys.totals(query),
     queryFn: () => api.getExpenseTotals(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -40,19 +44,12 @@ export function useExpense(expenseId: string) {
     queryKey: expenseKeys.detail(expenseId),
     queryFn: () => api.getExpense(expenseId),
     enabled: expenseId !== "",
+    ...tier("document"),
   });
 }
 
-function useInvalidateExpenses() {
-  const queryClient = useQueryClient();
-  return async () => {
-    await queryClient.invalidateQueries({ queryKey: expenseKeys.all });
-    await queryClient.invalidateQueries({ queryKey: ["home"] });
-  };
-}
-
 export function useCreateExpenseCategory() {
-  const invalidate = useInvalidateExpenses();
+  const invalidate = useInvalidateAfter("expense.category");
   return useMutation({
     mutationFn: api.createExpenseCategory,
     onSuccess: invalidate,
@@ -60,7 +57,7 @@ export function useCreateExpenseCategory() {
 }
 
 export function useUpdateExpenseCategory() {
-  const invalidate = useInvalidateExpenses();
+  const invalidate = useInvalidateAfter("expense.category");
   return useMutation({
     mutationFn: (
       input: { categoryId: string } & Parameters<
@@ -75,12 +72,12 @@ export function useUpdateExpenseCategory() {
 }
 
 export function useCreateExpense() {
-  const invalidate = useInvalidateExpenses();
+  const invalidate = useInvalidateAfter("expense");
   return useMutation({ mutationFn: api.createExpense, onSuccess: invalidate });
 }
 
 export function useUpdateExpense() {
-  const invalidate = useInvalidateExpenses();
+  const invalidate = useInvalidateAfter("expense");
   return useMutation({
     mutationFn: (
       input: { expenseId: string } & Parameters<typeof api.updateExpense>[1],
@@ -93,7 +90,7 @@ export function useUpdateExpense() {
 }
 
 export function usePostExpense() {
-  const invalidate = useInvalidateExpenses();
+  const invalidate = useInvalidateAfter("expense");
   return useMutation({
     mutationFn: (input: { expenseId: string; version: number }) =>
       api.postExpense(input.expenseId, {
@@ -105,7 +102,7 @@ export function usePostExpense() {
 }
 
 export function useCancelExpense() {
-  const invalidate = useInvalidateExpenses();
+  const invalidate = useInvalidateAfter("expense");
   return useMutation({
     mutationFn: (input: {
       expenseId: string;

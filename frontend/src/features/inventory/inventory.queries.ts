@@ -1,4 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { tier } from "../../lib/query/cachePolicy.js";
+import { useInvalidateAfter } from "../../lib/query/invalidation.js";
 import * as api from "./inventory.api.js";
 import type { MovementListQuery } from "./inventory.api.js";
 
@@ -13,6 +15,7 @@ export function useBalances() {
   return useQuery({
     queryKey: inventoryKeys.balances(),
     queryFn: api.listBalances,
+    ...tier("live"),
   });
 }
 
@@ -21,17 +24,12 @@ export function useMovements(query: MovementListQuery) {
     queryKey: inventoryKeys.movements(query),
     queryFn: () => api.listMovements(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
-function useInvalidateInventory() {
-  const queryClient = useQueryClient();
-
-  return () => queryClient.invalidateQueries({ queryKey: inventoryKeys.all });
-}
-
 export function usePostOpeningStock() {
-  const invalidate = useInvalidateInventory();
+  const invalidate = useInvalidateAfter("inventory.movement");
   return useMutation({
     mutationFn: (input: {
       body: api.OpeningStockInput;
@@ -42,7 +40,7 @@ export function usePostOpeningStock() {
 }
 
 export function usePostAdjustment() {
-  const invalidate = useInvalidateInventory();
+  const invalidate = useInvalidateAfter("inventory.movement");
   return useMutation({
     mutationFn: (input: {
       body: api.AdjustmentInput;

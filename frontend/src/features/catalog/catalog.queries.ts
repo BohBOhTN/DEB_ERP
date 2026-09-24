@@ -1,9 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { tier } from "../../lib/query/cachePolicy.js";
+import {
+  invalidateAfter,
+  primeDetail,
+  useInvalidateAfter,
+} from "../../lib/query/invalidation.js";
 import * as api from "./catalog.api.js";
 import type { CatalogListQuery } from "./catalog.api.js";
 
-/// Query keys: `[module, entity, filters]` (06 section 2). Every mutation
-/// invalidates the module root, and stock when an item changes name or unit.
+/// Query keys: `[module, entity, filters]` (06 section 2). Units and
+/// categories sit under `reference` so the invalidation map can refresh
+/// them apart from the paginated lists; related documents of a record
+/// (its audit trail, its purchases) sit under `related`.
 export const catalogKeys = {
   all: ["catalog"] as const,
   products: (query: CatalogListQuery) =>
@@ -13,8 +21,13 @@ export const catalogKeys = {
     ["catalog", "rawMaterials", query] as const,
   rawMaterial: (id: string) => ["catalog", "rawMaterial", id] as const,
   categories: (query: CatalogListQuery) =>
-    ["catalog", "categories", query] as const,
-  units: (query: CatalogListQuery) => ["catalog", "units", query] as const,
+    ["catalog", "reference", "categories", query] as const,
+  units: (query: CatalogListQuery) =>
+    ["catalog", "reference", "units", query] as const,
+  relatedAudit: (entity: string, targetId: string) =>
+    ["catalog", "related", "audit", entity, targetId] as const,
+  relatedPurchases: (rawMaterialId: string, page: number) =>
+    ["catalog", "related", "purchases", rawMaterialId, page] as const,
 };
 
 /// Every active category or unit, for selects: one page of 100 is more than
@@ -31,6 +44,7 @@ export function useProducts(query: CatalogListQuery) {
     queryKey: catalogKeys.products(query),
     queryFn: () => api.listProducts(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -38,6 +52,7 @@ export function useProduct(productId: string) {
   return useQuery({
     queryKey: catalogKeys.product(productId),
     queryFn: () => api.getProduct(productId),
+    ...tier("document"),
   });
 }
 
@@ -46,6 +61,7 @@ export function useRawMaterials(query: CatalogListQuery) {
     queryKey: catalogKeys.rawMaterials(query),
     queryFn: () => api.listRawMaterials(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
   });
 }
 
@@ -53,6 +69,7 @@ export function useRawMaterial(rawMaterialId: string) {
   return useQuery({
     queryKey: catalogKeys.rawMaterial(rawMaterialId),
     queryFn: () => api.getRawMaterial(rawMaterialId),
+    ...tier("document"),
   });
 }
 
@@ -61,6 +78,7 @@ export function useCategories(query: CatalogListQuery = allActive) {
     queryKey: catalogKeys.categories(query),
     queryFn: () => api.listCategories(query),
     placeholderData: (previous) => previous,
+    ...tier("reference"),
   });
 }
 
@@ -69,34 +87,49 @@ export function useUnits(query: CatalogListQuery = allActive) {
     queryKey: catalogKeys.units(query),
     queryFn: () => api.listUnits(query),
     placeholderData: (previous) => previous,
+    ...tier("reference"),
   });
 }
 
-function useInvalidateCatalog() {
-  const queryClient = useQueryClient();
-
-  return async () => {
-    await queryClient.invalidateQueries({ queryKey: catalogKeys.all });
-    await queryClient.invalidateQueries({ queryKey: ["inventory"] });
-  };
+/// Warms the reference caches once per session so every combobox opens
+/// with its options (UI-26); called by the shell, loaded on demand.
+export async function prefetchCatalogReference(
+  queryClient: Parameters<typeof invalidateAfter>[0],
+): Promise<void> {
+  await Promise.all([
+    queryClient.prefetchQuery({
+      queryKey: catalogKeys.units(allActive),
+      queryFn: () => api.listUnits(allActive),
+      ...tier("reference"),
+    }),
+    queryClient.prefetchQuery({
+      queryKey: catalogKeys.categories(allActive),
+      queryFn: () => api.listCategories(allActive),
+      ...tier("reference"),
+    }),
+  ]);
 }
 
 export function useCreateProduct() {
-  const invalidate = useInvalidateCatalog();
+  const invalidate = useInvalidateAfter("catalog.product");
   return useMutation({ mutationFn: api.createProduct, onSuccess: invalidate });
 }
 
 export function useUpdateProduct(productId: string) {
-  const invalidate = useInvalidateCatalog();
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateAfter("catalog.product");
   return useMutation({
     mutationFn: (input: Parameters<typeof api.updateProduct>[1]) =>
       api.updateProduct(productId, input),
-    onSuccess: invalidate,
+    onSuccess: (product) => {
+      primeDetail(queryClient, catalogKeys.product(productId), product);
+      return invalidate();
+    },
   });
 }
 
 export function useSetProductActivation() {
-  const invalidate = useInvalidateCatalog();
+  const invalidate = useInvalidateAfter("catalog.product");
   return useMutation({
     mutationFn: (input: {
       productId: string;
@@ -112,7 +145,7 @@ export function useSetProductActivation() {
 }
 
 export function useCreateRawMaterial() {
-  const invalidate = useInvalidateCatalog();
+  const invalidate = useInvalidateAfter("catalog.rawMaterial");
   return useMutation({
     mutationFn: api.createRawMaterial,
     onSuccess: invalidate,
@@ -120,7 +153,8 @@ export function useCreateRawMaterial() {
 }
 
 export function useUpdateRawMaterial(rawMaterialId: string) {
-  const invalidate = useInvalidateCatalog();
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateAfter("catalog.rawMaterial");
   return useMutation({
     mutationFn: async (
       input: Parameters<typeof api.updateRawMaterial>[1] & {
@@ -137,12 +171,19 @@ export function useUpdateRawMaterial(rawMaterialId: string) {
           })
         : updated;
     },
-    onSuccess: invalidate,
+    onSuccess: (rawMaterial) => {
+      primeDetail(
+        queryClient,
+        catalogKeys.rawMaterial(rawMaterialId),
+        rawMaterial,
+      );
+      return invalidate();
+    },
   });
 }
 
 export function useSetRawMaterialActivation() {
-  const invalidate = useInvalidateCatalog();
+  const invalidate = useInvalidateAfter("catalog.rawMaterial");
   return useMutation({
     mutationFn: (input: {
       rawMaterialId: string;
@@ -158,12 +199,12 @@ export function useSetRawMaterialActivation() {
 }
 
 export function useCreateCategory() {
-  const invalidate = useInvalidateCatalog();
+  const invalidate = useInvalidateAfter("catalog.reference");
   return useMutation({ mutationFn: api.createCategory, onSuccess: invalidate });
 }
 
 export function useUpdateCategory() {
-  const invalidate = useInvalidateCatalog();
+  const invalidate = useInvalidateAfter("catalog.reference");
   return useMutation({
     mutationFn: (
       input: { categoryId: string } & Parameters<typeof api.updateCategory>[1],
@@ -176,12 +217,12 @@ export function useUpdateCategory() {
 }
 
 export function useCreateUnit() {
-  const invalidate = useInvalidateCatalog();
+  const invalidate = useInvalidateAfter("catalog.reference");
   return useMutation({ mutationFn: api.createUnit, onSuccess: invalidate });
 }
 
 export function useUpdateUnit() {
-  const invalidate = useInvalidateCatalog();
+  const invalidate = useInvalidateAfter("catalog.reference");
   return useMutation({
     mutationFn: (
       input: { unitId: string } & Parameters<typeof api.updateUnit>[1],

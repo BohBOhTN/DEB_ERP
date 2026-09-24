@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateAfter } from "../../../lib/query/invalidation.js";
 import { useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { FormDialog } from "../../../components/patterns/FormDialog/FormDialog.js";
@@ -13,7 +14,6 @@ import { useToast } from "../../../components/ui/Toast/useToast.js";
 import { fr } from "../../../i18n/fr.js";
 import type { Product } from "../catalog.api.js";
 import {
-  catalogKeys,
   useCategories,
   useCreateProduct,
   useUnits,
@@ -81,7 +81,7 @@ export function ProductFormDialog({
       form={form}
       onReload={() => {
         // The newer version is fetched again so the list shows it (AS-V2-15).
-        void queryClient.invalidateQueries({ queryKey: catalogKeys.all });
+        void invalidateAfter(queryClient, "catalog.product");
         onOpenChange(false);
       }}
       onSubmit={async (values) => {
