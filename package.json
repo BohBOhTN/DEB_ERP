@@ -19,7 +19,8 @@
     "prisma:generate": "npm run prisma:generate --workspace backend",
     "prisma:validate": "npm run prisma:validate --workspace backend",
     "format:check": "prettier --check .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "demo:seed": "npm run demo:seed --workspace backend --"
   },
   "engines": {
     "node": ">=22.0.0",

@@ -15,10 +15,20 @@ describe("TextInput", () => {
     expect(input).toHaveAttribute("aria-invalid", "true");
   });
 
-  it("renders prefix and suffix as decoration", () => {
-    render(<TextInput aria-label="Prix" prefix="TND" suffix="/ kg" />);
+  it("renders prefix and suffix beside the field, and a suffix control stays reachable", () => {
+    render(
+      <TextInput
+        aria-label="Prix"
+        prefix="TND"
+        suffix={<button type="button">Afficher</button>}
+      />,
+    );
 
-    expect(screen.getByText("TND")).toHaveAttribute("aria-hidden", "true");
-    expect(screen.getByText("/ kg")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByText("TND")).toBeInTheDocument();
+    // The suffix may hold the password toggle: it is never aria-hidden.
+    expect(screen.getByRole("button", { name: "Afficher" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Afficher" }).closest("[aria-hidden]"),
+    ).toBeNull();
   });
 });

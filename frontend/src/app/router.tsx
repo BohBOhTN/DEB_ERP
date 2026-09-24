@@ -6,6 +6,45 @@ import {
   type RouteObject,
 } from "react-router-dom";
 import { Skeleton } from "../components/ui/Skeleton/Skeleton.js";
+import {
+  loadLoginPage,
+  loadProductsPage,
+  loadProductDetailPage,
+  loadRawMaterialsPage,
+  loadRawMaterialDetailPage,
+  loadCatalogSettingsPage,
+  loadStockPage,
+  loadMovementsPage,
+  loadSuppliersPage,
+  loadSupplierDetailPage,
+  loadPurchasesPage,
+  loadPurchaseEditorPage,
+  loadPurchaseDetailPage,
+  loadSupplierPaymentsPage,
+  loadCustomersPage,
+  loadCustomerDetailPage,
+  loadOrdersPage,
+  loadOrderEditorPage,
+  loadOrderDetailPage,
+  loadPos,
+  loadDistributorsPage,
+  loadDistributorDetailPage,
+  loadCustodyPage,
+  loadDispatchEditorPage,
+  loadDispatchDetailPage,
+  loadSettlementPage,
+  loadDistributorPaymentsPage,
+  loadExpensesPage,
+  loadExpenseCategoriesPage,
+  loadSimulationsPage,
+  loadSimulationEditorPage,
+  loadSimulationDetailPage,
+  loadUsersPage,
+  loadRolesPage,
+  loadAuditPage,
+  loadSettingsPage,
+  loadAccueilPage,
+} from "./routeLoaders.js";
 import { AccessDeniedPage } from "../features/shell/AccessDeniedPage.js";
 import { NotFoundPage } from "../features/shell/NotFoundPage.js";
 import { ProtectedLayout } from "./ProtectedLayout.js";
@@ -15,200 +54,133 @@ import { RequirePermission } from "../lib/auth/RequirePermission.js";
 import type { PermissionKey } from "../lib/auth/permissions.js";
 
 const LoginPage = lazy(() =>
-  import("../features/auth/LoginPage.js").then((m) => ({
-    default: m.LoginPage,
-  })),
+  loadLoginPage().then((m) => ({ default: m.LoginPage })),
 );
 const ProductsPage = lazy(() =>
-  import("../features/catalog/pages/ProductsPage.js").then((m) => ({
-    default: m.ProductsPage,
-  })),
+  loadProductsPage().then((m) => ({ default: m.ProductsPage })),
 );
 const ProductDetailPage = lazy(() =>
-  import("../features/catalog/pages/ProductDetailPage.js").then((m) => ({
-    default: m.ProductDetailPage,
-  })),
+  loadProductDetailPage().then((m) => ({ default: m.ProductDetailPage })),
 );
 const RawMaterialsPage = lazy(() =>
-  import("../features/catalog/pages/RawMaterialsPage.js").then((m) => ({
-    default: m.RawMaterialsPage,
-  })),
+  loadRawMaterialsPage().then((m) => ({ default: m.RawMaterialsPage })),
 );
 const RawMaterialDetailPage = lazy(() =>
-  import("../features/catalog/pages/RawMaterialDetailPage.js").then((m) => ({
+  loadRawMaterialDetailPage().then((m) => ({
     default: m.RawMaterialDetailPage,
   })),
 );
 const CatalogSettingsPage = lazy(() =>
-  import("../features/catalog/pages/CatalogSettingsPage.js").then((m) => ({
-    default: m.CatalogSettingsPage,
-  })),
+  loadCatalogSettingsPage().then((m) => ({ default: m.CatalogSettingsPage })),
 );
 const StockPage = lazy(() =>
-  import("../features/inventory/pages/StockPage.js").then((m) => ({
-    default: m.StockPage,
-  })),
+  loadStockPage().then((m) => ({ default: m.StockPage })),
 );
 const MovementsPage = lazy(() =>
-  import("../features/inventory/pages/MovementsPage.js").then((m) => ({
-    default: m.MovementsPage,
-  })),
+  loadMovementsPage().then((m) => ({ default: m.MovementsPage })),
 );
 const SuppliersPage = lazy(() =>
-  import("../features/procurement/pages/SuppliersPage.js").then((m) => ({
-    default: m.SuppliersPage,
-  })),
+  loadSuppliersPage().then((m) => ({ default: m.SuppliersPage })),
 );
 const SupplierDetailPage = lazy(() =>
-  import("../features/procurement/pages/SupplierDetailPage.js").then((m) => ({
-    default: m.SupplierDetailPage,
-  })),
+  loadSupplierDetailPage().then((m) => ({ default: m.SupplierDetailPage })),
 );
 const PurchasesPage = lazy(() =>
-  import("../features/procurement/pages/PurchasesPage.js").then((m) => ({
-    default: m.PurchasesPage,
-  })),
+  loadPurchasesPage().then((m) => ({ default: m.PurchasesPage })),
 );
 const PurchaseEditorPage = lazy(() =>
-  import("../features/procurement/pages/PurchaseEditorPage.js").then((m) => ({
-    default: m.PurchaseEditorPage,
-  })),
+  loadPurchaseEditorPage().then((m) => ({ default: m.PurchaseEditorPage })),
 );
 const PurchaseDetailPage = lazy(() =>
-  import("../features/procurement/pages/PurchaseDetailPage.js").then((m) => ({
-    default: m.PurchaseDetailPage,
-  })),
+  loadPurchaseDetailPage().then((m) => ({ default: m.PurchaseDetailPage })),
 );
 const SupplierPaymentsPage = lazy(() =>
-  import("../features/procurement/pages/SupplierPaymentsPage.js").then((m) => ({
-    default: m.SupplierPaymentsPage,
-  })),
+  loadSupplierPaymentsPage().then((m) => ({ default: m.SupplierPaymentsPage })),
 );
 const CustomersPage = lazy(() =>
-  import("../features/customers/pages/CustomersPage.js").then((m) => ({
-    default: m.CustomersPage,
-  })),
+  loadCustomersPage().then((m) => ({ default: m.CustomersPage })),
 );
 const CustomerDetailPage = lazy(() =>
-  import("../features/customers/pages/CustomerDetailPage.js").then((m) => ({
-    default: m.CustomerDetailPage,
-  })),
+  loadCustomerDetailPage().then((m) => ({ default: m.CustomerDetailPage })),
 );
 const OrdersPage = lazy(() =>
-  import("../features/orders/pages/OrdersPage.js").then((m) => ({
-    default: m.OrdersPage,
-  })),
+  loadOrdersPage().then((m) => ({ default: m.OrdersPage })),
 );
 const OrderEditorPage = lazy(() =>
-  import("../features/orders/pages/OrderEditorPage.js").then((m) => ({
-    default: m.OrderEditorPage,
-  })),
+  loadOrderEditorPage().then((m) => ({ default: m.OrderEditorPage })),
 );
 const OrderDetailPage = lazy(() =>
-  import("../features/orders/pages/OrderDetailPage.js").then((m) => ({
-    default: m.OrderDetailPage,
-  })),
+  loadOrderDetailPage().then((m) => ({ default: m.OrderDetailPage })),
 );
-const posModule = () => import("../features/pos/pos.js");
 const CaissePage = lazy(() =>
-  posModule().then((m) => ({ default: m.CaissePage })),
+  loadPos().then((m) => ({ default: m.CaissePage })),
 );
-const SalesPage = lazy(() =>
-  posModule().then((m) => ({ default: m.SalesPage })),
-);
+const SalesPage = lazy(() => loadPos().then((m) => ({ default: m.SalesPage })));
 const SaleDetailPage = lazy(() =>
-  posModule().then((m) => ({ default: m.SaleDetailPage })),
+  loadPos().then((m) => ({ default: m.SaleDetailPage })),
 );
 const SessionsPage = lazy(() =>
-  posModule().then((m) => ({ default: m.SessionsPage })),
+  loadPos().then((m) => ({ default: m.SessionsPage })),
 );
 const SessionDetailPage = lazy(() =>
-  posModule().then((m) => ({ default: m.SessionDetailPage })),
+  loadPos().then((m) => ({ default: m.SessionDetailPage })),
 );
 const DistributorsPage = lazy(() =>
-  import("../features/distribution/pages/DistributorsPage.js").then((m) => ({
-    default: m.DistributorsPage,
-  })),
+  loadDistributorsPage().then((m) => ({ default: m.DistributorsPage })),
 );
 const DistributorDetailPage = lazy(() =>
-  import("../features/distribution/pages/DistributorDetailPage.js").then(
-    (m) => ({ default: m.DistributorDetailPage }),
-  ),
+  loadDistributorDetailPage().then((m) => ({
+    default: m.DistributorDetailPage,
+  })),
 );
 const CustodyPage = lazy(() =>
-  import("../features/distribution/pages/CustodyPage.js").then((m) => ({
-    default: m.CustodyPage,
-  })),
+  loadCustodyPage().then((m) => ({ default: m.CustodyPage })),
 );
 const DispatchEditorPage = lazy(() =>
-  import("../features/distribution/pages/DispatchEditorPage.js").then((m) => ({
-    default: m.DispatchEditorPage,
-  })),
+  loadDispatchEditorPage().then((m) => ({ default: m.DispatchEditorPage })),
 );
 const DispatchDetailPage = lazy(() =>
-  import("../features/distribution/pages/DispatchDetailPage.js").then((m) => ({
-    default: m.DispatchDetailPage,
-  })),
+  loadDispatchDetailPage().then((m) => ({ default: m.DispatchDetailPage })),
 );
 const SettlementPage = lazy(() =>
-  import("../features/distribution/pages/SettlementPage.js").then((m) => ({
-    default: m.SettlementPage,
-  })),
+  loadSettlementPage().then((m) => ({ default: m.SettlementPage })),
 );
 const DistributorPaymentsPage = lazy(() =>
-  import("../features/distribution/pages/DistributorPaymentsPage.js").then(
-    (m) => ({ default: m.DistributorPaymentsPage }),
-  ),
-);
-const ExpensesPage = lazy(() =>
-  import("../features/expenses/pages/ExpensesPage.js").then((m) => ({
-    default: m.ExpensesPage,
+  loadDistributorPaymentsPage().then((m) => ({
+    default: m.DistributorPaymentsPage,
   })),
 );
+const ExpensesPage = lazy(() =>
+  loadExpensesPage().then((m) => ({ default: m.ExpensesPage })),
+);
 const ExpenseCategoriesPage = lazy(() =>
-  import("../features/expenses/pages/ExpenseCategoriesPage.js").then((m) => ({
+  loadExpenseCategoriesPage().then((m) => ({
     default: m.ExpenseCategoriesPage,
   })),
 );
 const SimulationsPage = lazy(() =>
-  import("../features/simulation/pages/SimulationsPage.js").then((m) => ({
-    default: m.SimulationsPage,
-  })),
+  loadSimulationsPage().then((m) => ({ default: m.SimulationsPage })),
 );
 const SimulationEditorPage = lazy(() =>
-  import("../features/simulation/pages/SimulationEditorPage.js").then((m) => ({
-    default: m.SimulationEditorPage,
-  })),
+  loadSimulationEditorPage().then((m) => ({ default: m.SimulationEditorPage })),
 );
 const SimulationDetailPage = lazy(() =>
-  import("../features/simulation/pages/SimulationDetailPage.js").then((m) => ({
-    default: m.SimulationDetailPage,
-  })),
+  loadSimulationDetailPage().then((m) => ({ default: m.SimulationDetailPage })),
 );
 const UsersPage = lazy(() =>
-  import("../features/access/pages/UsersPage.js").then((m) => ({
-    default: m.UsersPage,
-  })),
+  loadUsersPage().then((m) => ({ default: m.UsersPage })),
 );
 const RolesPage = lazy(() =>
-  import("../features/access/pages/RolesPage.js").then((m) => ({
-    default: m.RolesPage,
-  })),
+  loadRolesPage().then((m) => ({ default: m.RolesPage })),
 );
 const AuditPage = lazy(() =>
-  import("../features/audit/pages/AuditPage.js").then((m) => ({
-    default: m.AuditPage,
-  })),
+  loadAuditPage().then((m) => ({ default: m.AuditPage })),
 );
 const SettingsPage = lazy(() =>
-  import("../features/settings/pages/SettingsPage.js").then((m) => ({
-    default: m.SettingsPage,
-  })),
+  loadSettingsPage().then((m) => ({ default: m.SettingsPage })),
 );
 const AccueilPage = lazy(() =>
-  import("../features/home/AccueilPage.js").then((m) => ({
-    default: m.AccueilPage,
-  })),
+  loadAccueilPage().then((m) => ({ default: m.AccueilPage })),
 );
 
 function PageFallback() {

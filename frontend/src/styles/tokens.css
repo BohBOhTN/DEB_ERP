@@ -28,7 +28,8 @@
 
   --text-primary: #20242a;
   --text-secondary: #62676e;
-  --text-muted: #8a8f96;
+  /* 4.5:1 on white and on the muted surface: placeholders stay readable. */
+  --text-muted: #6b7078;
   --text-inverse: #ffffff;
   --text-link: var(--brand-navy);
 

@@ -12,7 +12,7 @@ export function SplashScreen() {
       aria-label={fr.loading}
     >
       <img
-        src="/assets/dar-el-barka-logo.png"
+        src="/assets/dar-el-barka-logo-192.webp"
         alt=""
         width={72}
         height={72}

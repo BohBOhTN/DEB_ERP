@@ -1,0 +1,22 @@
+{
+  "name": "Dar El Barka",
+  "short_name": "Dar El Barka",
+  "description": "Gestion de la boulangerie : caisse, commandes, achats, stock et distribution.",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7f1e6",
+  "theme_color": "#173f6d",
+  "icons": [
+    { "src": "/icons/icon-32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "/icons/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

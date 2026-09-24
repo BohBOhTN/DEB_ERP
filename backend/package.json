@@ -17,7 +17,8 @@
     "db:check-drift": "node scripts/check-schema-drift.mjs",
     "openapi:generate": "tsx src/scripts/generateOpenApi.ts",
     "openapi:check": "tsx src/scripts/generateOpenApi.ts --check",
-    "users:create": "tsx src/scripts/createUser.ts"
+    "users:create": "tsx src/scripts/createUser.ts",
+    "demo:seed": "tsx src/scripts/demoSeed.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.1",

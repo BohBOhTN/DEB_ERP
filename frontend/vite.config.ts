@@ -18,6 +18,17 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
+    // Against a real backend (the seeded demo run, Lighthouse), the browser
+    // talks to the same origin and the dev server forwards `/api`.
+    ...(process.env.API_PROXY_TARGET
+      ? { proxy: { "/api": { target: process.env.API_PROXY_TARGET } } }
+      : {}),
+  },
+  preview: {
+    port: 4173,
+    ...(process.env.API_PROXY_TARGET
+      ? { proxy: { "/api": { target: process.env.API_PROXY_TARGET } } }
+      : {}),
   },
   build: {
     sourcemap: false,
@@ -53,7 +64,7 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     testTimeout: 15_000,
     // Playwright specs run with `npm run e2e`, not with Vitest.
-    exclude: ["e2e/**", "node_modules/**", "dist/**"],
+    exclude: ["e2e/**", "e2e-seeded/**", "node_modules/**", "dist/**"],
     css: true,
   },
 });

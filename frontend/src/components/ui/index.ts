@@ -21,6 +21,10 @@ export {
 export { Dialog, DialogClose, type DialogSize } from "./Dialog/Dialog.js";
 export { DropdownMenu, type MenuItem } from "./DropdownMenu/DropdownMenu.js";
 export { EmptyState } from "./EmptyState/EmptyState.js";
+export {
+  Illustration,
+  type IllustrationName,
+} from "./Illustration/Illustration.js";
 export { ErrorState } from "./ErrorState/ErrorState.js";
 export { FormField, useFormField } from "./FormField/FormField.js";
 export { IconButton } from "./IconButton/IconButton.js";

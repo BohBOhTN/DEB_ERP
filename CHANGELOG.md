@@ -4,7 +4,31 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
-Release R9 module redesign wave 2, targeting `v1.4.0`.
+Release R10 polish, operations and launch, targeting `v2.0.0`.
+
+### Added
+
+- Sprint 27 polish: a command palette (`Ctrl+K` / `⌘K`) over the
+  navigation, the actions and a search of customers, products and
+  suppliers; a print stylesheet with `Imprimer` on the three statements;
+  line-art illustrations for empty states and the 404 page; a web manifest;
+  a WebP logo; page preload on navigation hover.
+- Sprint 27 quality suites: a tablet width for the browser flows, an axe
+  audit over every route, a Lighthouse runner with thresholds, and a demo
+  replay against the real API on a seeded database, run by a new CI job.
+- Sprint 27 demo seed (`npm run demo:seed`): the synthetic French bakery
+  of the stakeholder script, built through the services, with a guarded
+  reset.
+
+### Fixed
+
+- Placeholder text met the 4.5:1 contrast ratio and the password toggle
+  became reachable by assistive technology (axe findings).
+
+## [1.4.0] - 2026-09-24
+
+Release R9 module redesign wave 2 (Sprints 23 to 26), untagged by owner
+decision.
 
 ### Added
 

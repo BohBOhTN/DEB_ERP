@@ -15,6 +15,8 @@
     "bundle:check": "node scripts/check-bundle-size.mjs",
     "kit:review": "node scripts/kit-review.mjs",
     "e2e": "playwright test",
+    "e2e:seeded": "playwright test -c playwright.seeded.config.ts",
+    "lighthouse": "node scripts/lighthouse.mjs",
     "screen:review": "tsx scripts/screen-review.mjs"
   },
   "dependencies": {
@@ -48,6 +50,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
@@ -57,6 +60,7 @@
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^27.0.0",
+    "lighthouse": "^13.5.0",
     "msw": "^2.15.0",
     "openapi-typescript": "^7.13.0",
     "rollup-plugin-visualizer": "^7.1.1",
