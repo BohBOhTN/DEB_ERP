@@ -129,6 +129,35 @@ Acceptance scenarios:
 | AS-V2-26 | `referenceCache.test.tsx`: reference data fetched once per session and again only after its own mutation             | pass   |
 | AS-V2-27 | `invalidation.test.ts` and the end of `referenceCache.test.tsx`: a mutation refreshes exactly the screens it affects | pass   |
 
+## Fixes found by the seeded demo replay
+
+The CI `demo` job of Sprint 27 failed on its first real run; running the
+seed and the replay against a local PostgreSQL surfaced real defects, fixed
+here and each verified by typecheck, lint and the suites above:
+
+- Demo seed: purchase totals were computed per entered unit while the API
+  prices per base unit, so paid terms were refused; order advances are cash
+  at the till, so today's session now stays open while they are recorded;
+  the demo customer starts with a clean balance.
+- Command palette: server results were hidden by cmdk's own filter; the
+  palette now filters its static items itself and shows server results as
+  returned.
+- Customer picker: a cashier without `customer_balances.view` could not
+  pick a customer for an order; the combobox now falls back to the plain
+  directory.
+- Payment dialogs: the customer and supplier payment commands answer
+  without the nested party object that the mocks and the list rows carry,
+  so the success toast threw after a successful payment; the toasts name
+  the party from the form and the created types no longer promise it.
+- Reference warm-up: gated by `units.view` and `categories.view` so a
+  cashier no longer triggers refused requests at sign-in.
+
+By owner decision the automated demo replay is parked: the demo will be
+shown manually and the replay revisited once the features are complete.
+The `demo` job moved to a manual workflow (`demo.yml`,
+`workflow_dispatch`) so it never blocks a pull request; its spec keeps the
+label fixes made so far and still fails on later steps.
+
 ## Database and Migration Impact
 
 None.
