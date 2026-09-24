@@ -101,3 +101,20 @@ export function useCreateCustomerPayment() {
     onSuccess: invalidate,
   });
 }
+
+export function useReverseCustomerPayment() {
+  const invalidate = useInvalidateAfter("customer.payment");
+  return useMutation({
+    mutationFn: (input: {
+      paymentId: string;
+      reason: string;
+      idempotencyKey: string;
+    }) =>
+      api.reverseCustomerPayment(
+        input.paymentId,
+        input.reason,
+        input.idempotencyKey,
+      ),
+    onSuccess: invalidate,
+  });
+}

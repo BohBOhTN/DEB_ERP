@@ -176,6 +176,14 @@ const errorCopy: Record<string, ErrorCopy> = {
     title: "Motif requis",
     description: "Indiquez le motif de l'opération.",
   },
+  PAYMENT_ALLOCATION_EXCEEDS_AMOUNT: {
+    title: "Affectations en excès",
+    description: "La somme des affectations dépasse le montant payé.",
+  },
+  PAYMENT_ALREADY_REVERSED: {
+    title: "Déjà annulé",
+    description: "Ce paiement a déjà été annulé.",
+  },
 
   // Procurement
   SUPPLIER_NOT_FOUND: {
@@ -238,6 +246,14 @@ const errorCopy: Record<string, ErrorCopy> = {
   SUPPLIER_OVERPAYMENT_REJECTED: {
     title: "Montant trop élevé",
     description: "Le paiement dépasse le montant dû au fournisseur.",
+  },
+  SUPPLIER_INACTIVE: {
+    title: "Fournisseur désactivé",
+    description: "Aucun paiement ne peut être enregistré pour ce fournisseur.",
+  },
+  SUPPLIER_PAYMENT_NOT_FOUND: {
+    title: "Paiement introuvable",
+    description: "Ce paiement fournisseur n'existe pas ou plus.",
   },
   POSTED_PURCHASE_ALLOCATION_REQUIRED: {
     title: "Achat non validé",
@@ -330,6 +346,14 @@ const errorCopy: Record<string, ErrorCopy> = {
   SALE_OVERPAYMENT_REJECTED: {
     title: "Montant trop élevé",
     description: "Le paiement dépasse le reste dû de la vente.",
+  },
+  CUSTOMER_INACTIVE: {
+    title: "Client désactivé",
+    description: "Aucun règlement ne peut être enregistré pour ce client.",
+  },
+  CUSTOMER_PAYMENT_NOT_FOUND: {
+    title: "Règlement introuvable",
+    description: "Ce règlement n'existe pas ou plus.",
   },
   POSTED_SALE_ALLOCATION_REQUIRED: {
     title: "Vente non validée",
@@ -501,6 +525,19 @@ const errorCopy: Record<string, ErrorCopy> = {
   DISTRIBUTOR_OVERPAYMENT_REJECTED: {
     title: "Montant trop élevé",
     description: "Le paiement dépasse le montant dû par le distributeur.",
+  },
+  DISTRIBUTOR_INACTIVE: {
+    title: "Distributeur désactivé",
+    description: "Aucun paiement ne peut être enregistré pour ce distributeur.",
+  },
+  DISTRIBUTOR_PAYMENT_NOT_FOUND: {
+    title: "Paiement introuvable",
+    description: "Ce paiement distributeur n'existe pas ou plus.",
+  },
+  POSTED_DOCUMENT_ALLOCATION_REQUIRED: {
+    title: "Document non validé",
+    description:
+      "Un paiement ne peut être affecté qu'à une vente directe ou un règlement validé.",
   },
   DUPLICATE_DISTRIBUTOR_ALLOCATION: {
     title: "Affectation en double",

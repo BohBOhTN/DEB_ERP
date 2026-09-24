@@ -67,6 +67,9 @@ export interface CustomerPayment {
   notes: string | null;
   customer: Customer;
   allocations: CustomerPaymentAllocation[];
+  /// Set when the règlement was reversed; its ledger effect is compensated.
+  reversedAt: string | null;
+  reversalReason: string | null;
 }
 
 export type CustomerLedgerEntryType =
@@ -222,14 +225,38 @@ export interface CustomerPaymentInput {
 /// customer object the list rows carry.
 export type CustomerPaymentCreated = Omit<CustomerPayment, "customer">;
 
+/// The server completes the allocations (the amount left unallocated goes
+/// to the oldest open sales), so the answer's allocations, not the
+/// request's, are what the payment settled.
 export async function createCustomerPayment(
   input: CustomerPaymentInput,
   idempotencyKey: string,
 ): Promise<CustomerPaymentCreated> {
+  const result = await apiClient.post<{
+    payment: Omit<CustomerPaymentCreated, "allocations">;
+    allocations: Array<{ saleId: string; amountTnd: string }>;
+  }>("/customer-payments", input, { idempotencyKey });
+
+  return {
+    ...result.payment,
+    allocations: result.allocations.map((allocation) => ({
+      id: `${result.payment.id}:${allocation.saleId}`,
+      paymentId: result.payment.id,
+      saleId: allocation.saleId,
+      amountTnd: allocation.amountTnd,
+    })),
+  };
+}
+
+export async function reverseCustomerPayment(
+  paymentId: string,
+  reason: string,
+  idempotencyKey: string,
+): Promise<CustomerPaymentCreated> {
   return (
     await apiClient.post<{ payment: CustomerPaymentCreated }>(
-      "/customer-payments",
-      input,
+      `/customer-payments/${paymentId}/reverse`,
+      { reason },
       { idempotencyKey },
     )
   ).payment;

@@ -91,6 +91,8 @@ export function makeSupplierPayment(
     notes: null,
     supplier,
     allocations: [],
+    reversedAt: null,
+    reversalReason: null,
     ...overrides,
   };
 }
