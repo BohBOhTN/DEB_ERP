@@ -57,6 +57,7 @@ function totalsOf(store: PosStore, sessionId: string) {
     advancesReceivedTnd: "0.000",
     advancesRefundedTnd: "0.000",
     customerPaymentsTnd: "0.000",
+    customerPaymentReversalsTnd: "0.000",
   };
 }
 
