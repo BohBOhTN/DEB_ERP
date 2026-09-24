@@ -164,6 +164,51 @@ describe("PosService", () => {
     ]);
   });
 
+  // Issue #43: a cashier without pos.credit_sale posts a fully paid sale
+  // and is refused only when a remainder would be left on the customer.
+  it("needs the credit permission only when a remainder is left", async () => {
+    const prisma = new PosPrismaDouble();
+    const service = new PosService(prisma as unknown as PrismaClient);
+    await service.openSession(
+      {
+        idempotencyKey: "open-1",
+        openingCashTnd: "20.000",
+        openedAt: new Date("2026-09-21T08:00:00.000Z"),
+      },
+      { actorUserId: "user-1" },
+    );
+    const lines = [{ productId: "product-1", quantity: "2" }];
+
+    const paid = await service.postPaidSale(
+      {
+        idempotencyKey: "sale-paid",
+        sessionId: "session-1",
+        soldAt: new Date("2026-09-21T08:10:00.000Z"),
+        paidAmountTnd: "5.000",
+        creditAllowed: false,
+        lines,
+      },
+      { actorUserId: "user-1" },
+    );
+    expect(paid.sale).toMatchObject({ paymentState: "PAID" });
+
+    await expect(
+      service.postPaidSale(
+        {
+          idempotencyKey: "sale-credit",
+          sessionId: "session-1",
+          customerId: "customer-1",
+          soldAt: new Date("2026-09-21T08:10:00.000Z"),
+          paidAmountTnd: "2.000",
+          creditAllowed: false,
+          lines,
+        },
+        { actorUserId: "user-1" },
+      ),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(prisma.store.sales).toHaveLength(1);
+  });
+
   it("rejects anonymous customer credit", async () => {
     const prisma = new PosPrismaDouble();
     const service = new PosService(prisma as unknown as PrismaClient);

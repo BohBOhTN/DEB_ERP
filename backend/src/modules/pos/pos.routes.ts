@@ -199,11 +199,13 @@ export function posRouter(params: {
     async (request, response, next) => {
       try {
         const body = postSaleSchema.parse(request.body);
-        assertCreditSalePermission(body.paidAmountTnd, response);
         const result = await params.posService.postPaidSale(
           {
             ...body,
             idempotencyKey: readIdempotencyKey(request.headers),
+            // Only a sale that leaves a remainder needs pos.credit_sale; the
+            // service knows the total, so it decides (issue #43).
+            creditAllowed: hasPermission(response, "pos.credit_sale"),
           },
           actorFromResponse(response),
         );
@@ -290,25 +292,12 @@ function readIdempotencyKey(headers: IncomingHttpHeaders): string {
   return value;
 }
 
-function assertCreditSalePermission(
-  paidAmountTnd: string | undefined,
-  response: Response,
-) {
-  if (paidAmountTnd === undefined) {
-    return;
-  }
-
+function hasPermission(response: Response, permission: string): boolean {
   const user = response.locals.currentUser as {
     effectivePermissions: string[];
   };
 
-  if (!user.effectivePermissions.includes("pos.credit_sale")) {
-    throw new AppError({
-      statusCode: 403,
-      code: "PERMISSION_DENIED",
-      message: "Vous n'avez pas l'autorisation nécessaire.",
-    });
-  }
+  return user.effectivePermissions.includes(permission);
 }
 
 function parseRouteParam(value: string | string[] | undefined): string {
