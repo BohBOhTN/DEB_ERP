@@ -339,6 +339,7 @@ export async function runDemoSeed(
         "customers.update",
         "customer_payments.view",
         "customer_payments.create",
+        "customer_balances.view",
         "products.view",
       ],
     },
@@ -538,6 +539,9 @@ export async function runDemoSeed(
     const supplierId = suppliers[index % suppliers.length]!;
     const daysAgo = Math.round((purchaseCount - index) * (90 / purchaseCount));
     const lineCount = between(1, 4);
+    // The API prices a line per base unit and multiplies by the conversion
+    // factor of the entered unit, so the total is computed the same way
+    // here and the paid amount can match it exactly on paid terms.
     const lines = Array.from({ length: lineCount }, (_, lineIndex) => {
       const rawMaterial =
         rawMaterials[(index * 3 + lineIndex * 7) % rawMaterials.length]!;
@@ -546,17 +550,21 @@ export async function runDemoSeed(
         rawMaterialId: rawMaterial.id,
         enteredUnitId: byBag ? unit("bag") : unit(rawMaterial.unitCode),
         enteredQuantity: String(byBag ? between(2, 20) : between(5, 60)),
-        unitPriceTnd: money(
-          byBag
-            ? rawMaterial.priceTnd * rawMaterial.bagFactor
-            : rawMaterial.priceTnd,
-        ),
+        unitPriceTnd: money(rawMaterial.priceTnd),
+        factor: byBag ? rawMaterial.bagFactor : 1,
       };
     });
-    const total = lines.reduce(
-      (sum, line) =>
-        sum + Number(line.enteredQuantity) * Number(line.unitPriceTnd),
-      0,
+    const total = Number(
+      lines
+        .reduce(
+          (sum, line) =>
+            sum +
+            Number(line.enteredQuantity) *
+              line.factor *
+              Number(line.unitPriceTnd),
+          0,
+        )
+        .toFixed(3),
     );
     const terms =
       index % 5 === 0
@@ -564,11 +572,16 @@ export async function runDemoSeed(
         : index % 3 === 0
           ? PurchasePaymentTerms.PARTIAL
           : PurchasePaymentTerms.PAID;
+    // A partial payment is strictly between zero and the total.
+    const partial = Math.min(
+      Math.max(Number((total * 0.4).toFixed(3)), 0.5),
+      Number((total - 0.5).toFixed(3)),
+    );
     const paid =
       terms === PurchasePaymentTerms.PAID
         ? total
         : terms === PurchasePaymentTerms.PARTIAL
-          ? Math.round(total * 0.4)
+          ? partial
           : 0;
     const dueInDays =
       terms === PurchasePaymentTerms.PAID
@@ -583,7 +596,7 @@ export async function runDemoSeed(
         paymentTerms: terms,
         paidAmountTnd: money(paid),
         dueDate: dueInDays ? at(now, daysAgo - dueInDays, 9) : undefined,
-        lines,
+        lines: lines.map(({ factor: _factor, ...line }) => line),
       },
       buyer,
     );
@@ -658,6 +671,12 @@ export async function runDemoSeed(
     customerIds.push({ id: customer.id, name });
   }
   log(`customers: ${customerIds.length}`);
+  // The demo's customer starts the script with a clean balance (section
+  // 3.6 brings it back to zero): random credit sales and orders skip it.
+  const demoCustomer = customerIds[0]!;
+  const otherCustomers = customerIds.filter(
+    (row) => row.id !== demoCustomer.id,
+  );
 
   // 6. Two weeks of POS sessions with paid and credit sales, closed with a
   // small difference now and then; today's session stays open for the demo.
@@ -700,7 +719,7 @@ export async function runDemoSeed(
         0,
       );
       const onCredit = random() > 0.85;
-      const customer = onCredit || random() > 0.7 ? pick(customerIds) : null;
+      const customer = onCredit || random() > 0.7 ? pick(otherCustomers) : null;
       const paid =
         onCredit && customer ? Math.round(total * 0.5 * 1000) / 1000 : total;
       const { sale } = await pos.postPaidSale(
@@ -760,7 +779,33 @@ export async function runDemoSeed(
     `pos: ${sessionDays} closed sessions, ${creditSales.length} credit sales`,
   );
 
-  // 7. Orders across statuses for today and tomorrow, some with advances.
+  // 7. An early session today, open while the orders take their advances
+  // (cash at the till), then closed so Accueil has today's numbers and the
+  // till is free for the demo's "Ouvrir la caisse".
+  const { session: today } = await pos.openSession(
+    {
+      idempotencyKey: key("session-open", "today"),
+      openingCashTnd: money(100),
+      openedAt: at(now, 0, 5, 30),
+    },
+    cashier,
+  );
+  let todayCash = 100;
+  for (let index = 0; index < 5; index += 1) {
+    const product = cheap[index % cheap.length]!;
+    await pos.postPaidSale(
+      {
+        idempotencyKey: key("sale-today", index),
+        sessionId: today.id,
+        soldAt: at(now, 0, 5, 35 + index * 4),
+        paidAmountTnd: money(product.priceTnd * 2),
+        lines: [{ productId: product.id, quantity: "2" }],
+      },
+      cashier,
+    );
+    todayCash += product.priceTnd * 2;
+  }
+  // Orders across statuses for today and tomorrow, some with advances.
   const orderCount = small ? 8 : 20;
   const cakes = products.filter(
     (product) =>
@@ -777,7 +822,7 @@ export async function runDemoSeed(
     ],
   ];
   for (let index = 0; index < orderCount; index += 1) {
-    const customer = customerIds[index % customerIds.length]!;
+    const customer = otherCustomers[index % otherCustomers.length]!;
     const product = cakes[index % cakes.length]!;
     const requestedAt =
       index % 3 === 0
@@ -809,13 +854,23 @@ export async function runDemoSeed(
         {
           idempotencyKey: key("order-advance", index),
           amountTnd: money(Math.min(20, Math.round(product.priceTnd * 0.5))),
-          paidAt: at(now, 1, 16),
+          paidAt: at(now, 0, 5, 50),
         },
         cashier,
       );
     }
   }
   log(`orders: ${orderCount}`);
+  await pos.closeSession(
+    today.id,
+    {
+      idempotencyKey: key("session-close", "today"),
+      countedCashTnd: money(todayCash),
+      closedAt: at(now, 0, 6, 0),
+    },
+    cashier,
+  );
+  log("today: one closed early session, till free");
 
   // 8. Distributors: closed dispatches with settlements and payments, plus
   // one open dispatch each for the demo.
@@ -1062,42 +1117,6 @@ export async function runDemoSeed(
     manager,
   );
   log("simulations: 4");
-
-  // 11. An early session today, already closed, so Accueil has today's
-  // numbers while the till is free for the demo's "Ouvrir la caisse".
-  const { session: today } = await pos.openSession(
-    {
-      idempotencyKey: key("session-open", "today"),
-      openingCashTnd: money(100),
-      openedAt: at(now, 0, 5, 30),
-    },
-    cashier,
-  );
-  let todayCash = 100;
-  for (let index = 0; index < 5; index += 1) {
-    const product = cheap[index % cheap.length]!;
-    await pos.postPaidSale(
-      {
-        idempotencyKey: key("sale-today", index),
-        sessionId: today.id,
-        soldAt: at(now, 0, 5, 35 + index * 4),
-        paidAmountTnd: money(product.priceTnd * 2),
-        lines: [{ productId: product.id, quantity: "2" }],
-      },
-      cashier,
-    );
-    todayCash += product.priceTnd * 2;
-  }
-  await pos.closeSession(
-    today.id,
-    {
-      idempotencyKey: key("session-close", "today"),
-      countedCashTnd: money(todayCash),
-      closedAt: at(now, 0, 6, 0),
-    },
-    cashier,
-  );
-  log("today: one closed early session, till free");
 
   return {
     ownerUserId: ownerUser.id,
