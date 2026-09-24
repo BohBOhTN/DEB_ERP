@@ -357,6 +357,44 @@ describe("PosService", () => {
       cashDifferenceTnd: "0.000",
     });
   });
+
+  // A règlement taken at an earlier till and reversed during this session
+  // is cash handed back from this drawer.
+  it("subtracts customer payments reversed during the session from expected cash", async () => {
+    const prisma = new PosPrismaDouble();
+    const service = new PosService(prisma as unknown as PrismaClient);
+    await service.openSession(
+      {
+        idempotencyKey: "open-1",
+        openingCashTnd: "20.000",
+        openedAt: new Date("2026-09-21T08:00:00.000Z"),
+      },
+      { actorUserId: "user-1" },
+    );
+    prisma.store.customerPayments.push(
+      { sessionId: "session-1", amountTnd: "15.000" },
+      {
+        sessionId: "session-0",
+        amountTnd: "9.000",
+        reversedInSessionId: "session-1",
+      },
+    );
+
+    const result = await service.closeSession(
+      "session-1",
+      {
+        idempotencyKey: "close-1",
+        countedCashTnd: "26.000",
+        closedAt: new Date("2026-09-21T12:00:00.000Z"),
+      },
+      { actorUserId: "user-1" },
+    );
+
+    expect(result.session).toMatchObject({
+      expectedCashTnd: "26.000",
+      cashDifferenceTnd: "0.000",
+    });
+  });
 });
 
 interface PosStore {
@@ -556,10 +594,16 @@ function makeTransactionClient(store: PosStore) {
         store.customerPayments.filter(
           (payment) => payment.sessionId === args.where.sessionId,
         ),
-      aggregate: async (args: { where: { sessionId: string } }) => ({
+      aggregate: async (args: {
+        where: { sessionId?: string; reversedInSessionId?: string };
+      }) => ({
         _sum: {
           amountTnd: store.customerPayments
-            .filter((payment) => payment.sessionId === args.where.sessionId)
+            .filter((payment) =>
+              args.where.reversedInSessionId !== undefined
+                ? payment.reversedInSessionId === args.where.reversedInSessionId
+                : payment.sessionId === args.where.sessionId,
+            )
             .reduce((sum, payment) => sum + Number(payment.amountTnd), 0)
             .toFixed(3),
         },
