@@ -1027,6 +1027,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/orders/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Order queue figures */
+        get: operations["orders.summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/orders/{orderId}": {
         parameters: {
             query?: never;
@@ -6591,6 +6608,8 @@ export interface operations {
                 dueBefore?: string;
                 dueAfter?: string;
                 dueState?: "OVERDUE" | "UPCOMING";
+                q?: string;
+                search?: string;
                 page?: number;
                 pageSize?: number;
             };
@@ -6713,6 +6732,68 @@ export interface operations {
             };
             /** @description State, uniqueness, or version conflict (`STATE_CONFLICT`, `VERSION_CONFLICT`, `IDEMPOTENCY_KEY_REUSED`, or a business rule code). */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "orders.summary": {
+        parameters: {
+            query?: {
+                status?: "DRAFT" | "CONFIRMED" | "PREPARING" | "READY" | "COMPLETED" | "CANCELLED";
+                customerId?: string;
+                dueBefore?: string;
+                dueAfter?: string;
+                dueState?: "OVERDUE" | "UPCOMING";
+                q?: string;
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            summary: {
+                                [key: string]: unknown;
+                            };
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Validation failed (`VALIDATION_ERROR`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7052,7 +7133,7 @@ export interface operations {
                 "application/json": {
                     /** Format: date-time */
                     completedAt: string;
-                    paidAmountTnd?: string;
+                    paidAmountTnd: string;
                 };
             };
         };
