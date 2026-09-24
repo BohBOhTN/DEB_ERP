@@ -460,9 +460,9 @@ function CustomerPaymentsTab({ customerId }: { customerId: string }) {
           partyName={reversing.customer?.name ?? "ce client"}
           amountTnd={reversing.amountTnd}
           paidAt={reversing.paidAt}
-          documents={reversing.allocations.map(
-            (allocation) => allocation.sale?.reference ?? allocation.saleId,
-          )}
+          documents={reversing.allocations
+            .map((allocation) => allocation.sale?.reference)
+            .filter((reference): reference is string => Boolean(reference))}
           collectedAtTill={Boolean(reversing.sessionId)}
           onPost={async (idempotencyKey, reason) => {
             await reverse.mutateAsync({

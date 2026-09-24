@@ -73,6 +73,7 @@ function allocated(
   id: string,
 ): Decimal {
   return store.payments
+    .filter((payment) => !payment.reversedAt)
     .flatMap((payment) => payment.allocations)
     .filter((allocation) => allocation[key] === id)
     .reduce(
@@ -580,9 +581,34 @@ export function distributionHandlers(
       );
       return ok(
         makePage(
-          store.payments.filter(
-            (row) => !distributorId || row.distributorId === distributorId,
-          ),
+          store.payments
+            .filter(
+              (row) => !distributorId || row.distributorId === distributorId,
+            )
+            .map((payment) => ({
+              ...payment,
+              allocations: payment.allocations.map((allocation) => ({
+                ...allocation,
+                sale: store.sales.find((row) => row.id === allocation.saleId)
+                  ? {
+                      id: allocation.saleId as string,
+                      reference: store.sales.find(
+                        (row) => row.id === allocation.saleId,
+                      )?.reference as string,
+                    }
+                  : null,
+                settlement: store.settlements.find(
+                  (row) => row.id === allocation.settlementId,
+                )
+                  ? {
+                      id: allocation.settlementId as string,
+                      reference: store.settlements.find(
+                        (row) => row.id === allocation.settlementId,
+                      )?.reference as string,
+                    }
+                  : null,
+              })),
+            })),
         ),
       );
     }),
@@ -609,6 +635,60 @@ export function distributionHandlers(
           "DISTRIBUTOR_OVERPAYMENT_REJECTED",
           "Le paiement dépasse le solde dû du distributeur.",
         );
+      // Like the server: explicit allocations first, the remainder on the
+      // oldest open documents, and allocations above the amount refused.
+      const requestedTotal = body.allocations.reduce(
+        (sum, allocation) => sum.plus(allocation.amountTnd),
+        new Decimal(0),
+      );
+      if (requestedTotal.greaterThan(body.amountTnd))
+        return apiError(
+          400,
+          "PAYMENT_ALLOCATION_EXCEEDS_AMOUNT",
+          "La somme des affectations dépasse le montant payé.",
+        );
+      const keyOf = (allocation: { saleId?: string; settlementId?: string }) =>
+        allocation.saleId
+          ? `sale:${allocation.saleId}`
+          : `settlement:${allocation.settlementId}`;
+      const planned = new Map(
+        body.allocations.map((allocation) => [
+          keyOf(allocation),
+          d(allocation.amountTnd),
+        ]),
+      );
+      let remainder = d(body.amountTnd).minus(requestedTotal);
+      const openDocuments = [
+        ...store.sales
+          .filter((sale) => sale.distributorId === distributor.id)
+          .map((sale) => ({
+            key: `sale:${sale.id}`,
+            at: sale.soldAt,
+            balance: docBalance(store, sale, "saleId"),
+          })),
+        ...store.settlements
+          .filter((row) => row.distributorId === distributor.id)
+          .map((row) => ({
+            key: `settlement:${row.id}`,
+            at: row.settledAt,
+            balance: docBalance(store, row, "settlementId"),
+          })),
+      ]
+        .filter((document) => document.balance.greaterThan(0))
+        .sort((left, right) => left.at.localeCompare(right.at));
+      for (const document of openDocuments) {
+        if (!remainder.greaterThan(0)) break;
+        const available = document.balance.minus(
+          planned.get(document.key) ?? 0,
+        );
+        if (!available.greaterThan(0)) continue;
+        const take = available.lessThan(remainder) ? available : remainder;
+        planned.set(
+          document.key,
+          (planned.get(document.key) ?? new Decimal(0)).plus(take),
+        );
+        remainder = remainder.minus(take);
+      }
       sequence += 1;
       const payment = makeDistributorPayment({
         id: `dpayment-${sequence}`,
@@ -618,15 +698,62 @@ export function distributionHandlers(
         paidAt: new Date(body.paidAt).toISOString(),
         reference: body.reference ?? null,
         notes: body.notes ?? null,
-        allocations: body.allocations.map((allocation, index) => ({
-          id: `dalloc-${sequence}-${index}`,
-          saleId: allocation.saleId ?? null,
-          settlementId: allocation.settlementId ?? null,
-          amountTnd: d(allocation.amountTnd).toFixed(3),
-        })),
+        allocations: [...planned.entries()]
+          .filter(([, amount]) => amount.greaterThan(0))
+          .map(([key, amount], index) => {
+            const [kind, id] = key.split(":", 2);
+            return {
+              id: `dalloc-${sequence}-${index}`,
+              saleId: kind === "sale" ? (id ?? null) : null,
+              settlementId: kind === "settlement" ? (id ?? null) : null,
+              amountTnd: amount.toFixed(3),
+            };
+          }),
       });
       store.payments.unshift(payment);
-      return ok({ payment }, 201);
+      return ok(
+        {
+          payment,
+          allocations: payment.allocations.map((allocation) => ({
+            saleId: allocation.saleId,
+            settlementId: allocation.settlementId,
+            amountTnd: allocation.amountTnd,
+          })),
+        },
+        201,
+      );
     }),
+    http.post(
+      `${apiV1}/distributor-payments/:paymentId/reverse`,
+      async ({ params, request }) => {
+        if (!request.headers.get("Idempotency-Key"))
+          return apiError(
+            400,
+            "IDEMPOTENCY_KEY_REQUIRED",
+            "Une clé d'idempotence est requise.",
+          );
+        const body = (await request.json()) as { reason?: string };
+        const payment = store.payments.find(
+          (row) => row.id === params.paymentId,
+        );
+        if (!payment)
+          return apiError(
+            404,
+            "DISTRIBUTOR_PAYMENT_NOT_FOUND",
+            "Paiement introuvable.",
+          );
+        if (payment.reversedAt)
+          return apiError(
+            409,
+            "PAYMENT_ALREADY_REVERSED",
+            "Ce paiement a déjà été annulé.",
+          );
+        Object.assign(payment, {
+          reversedAt: new Date().toISOString(),
+          reversalReason: body.reason ?? null,
+        });
+        return ok({ payment }, 201);
+      },
+    ),
   ];
 }

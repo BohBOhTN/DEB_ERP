@@ -1305,7 +1305,12 @@ export class DistributionService {
         where,
         include: {
           distributor: true,
-          allocations: true,
+          allocations: {
+            include: {
+              sale: { select: { id: true, reference: true } },
+              settlement: { select: { id: true, reference: true } },
+            },
+          },
         },
         orderBy: orderByFor<
           "paidAt" | "amountTnd",

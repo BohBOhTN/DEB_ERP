@@ -139,6 +139,8 @@ export interface DistributorPayment {
     saleId: string | null;
     settlementId: string | null;
     amountTnd: string;
+    sale?: { id: string; reference: string } | null;
+    settlement?: { id: string; reference: string } | null;
   }>;
   /// Set when the payment was reversed; its ledger effect is compensated.
   reversedAt: string | null;

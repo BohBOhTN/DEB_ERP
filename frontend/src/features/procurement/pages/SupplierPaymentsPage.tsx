@@ -214,10 +214,9 @@ export function SupplierPaymentsPage() {
           partyName={reversing.supplier.name}
           amountTnd={reversing.amountTnd}
           paidAt={reversing.paidAt}
-          documents={reversing.allocations.map(
-            (allocation) =>
-              allocation.purchase?.reference ?? allocation.purchaseId,
-          )}
+          documents={reversing.allocations
+            .map((allocation) => allocation.purchase?.reference)
+            .filter((reference): reference is string => Boolean(reference))}
           onPost={async (idempotencyKey, reason) => {
             await reverse.mutateAsync({
               paymentId: reversing.id,

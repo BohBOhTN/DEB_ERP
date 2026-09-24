@@ -68,6 +68,7 @@ const rawMaterialNames: Record<string, string> = {
 function balanceOf(store: ProcurementStore, purchase: Purchase): Decimal {
   if (purchase.status !== "POSTED") return new Decimal(0);
   const paid = store.payments
+    .filter((payment) => !payment.reversedAt)
     .flatMap((payment) => payment.allocations)
     .filter((allocation) => allocation.purchaseId === purchase.id)
     .reduce(
@@ -438,9 +439,29 @@ export function procurementHandlers(
       const supplierId = new URL(request.url).searchParams.get("supplierId");
       return ok(
         makePage(
-          store.payments.filter(
-            (payment) => !supplierId || payment.supplierId === supplierId,
-          ),
+          store.payments
+            .filter(
+              (payment) => !supplierId || payment.supplierId === supplierId,
+            )
+            .map((payment) => ({
+              ...payment,
+              allocations: payment.allocations.map((allocation) => {
+                const purchase = store.purchases.find(
+                  (row) => row.id === allocation.purchaseId,
+                );
+                return {
+                  ...allocation,
+                  purchase: purchase
+                    ? {
+                        id: purchase.id,
+                        reference: purchase.reference,
+                        purchaseDate: purchase.purchaseDate,
+                        totalTnd: purchase.totalTnd,
+                      }
+                    : undefined,
+                };
+              }),
+            })),
         ),
       );
     }),
@@ -464,6 +485,47 @@ export function procurementHandlers(
           "SUPPLIER_OVERPAYMENT_REJECTED",
           "Le paiement dépasse le montant dû au fournisseur.",
         );
+      // Like the server: explicit allocations first, the remainder on the
+      // oldest open purchases, and allocations above the amount refused.
+      const requestedTotal = body.allocations.reduce(
+        (sum, allocation) => sum.plus(allocation.amountTnd),
+        new Decimal(0),
+      );
+      if (requestedTotal.greaterThan(body.amountTnd))
+        return apiError(
+          400,
+          "PAYMENT_ALLOCATION_EXCEEDS_AMOUNT",
+          "La somme des affectations dépasse le montant payé.",
+        );
+      const planned = new Map(
+        body.allocations.map((allocation) => [
+          allocation.purchaseId,
+          new Decimal(allocation.amountTnd),
+        ]),
+      );
+      let remainder = new Decimal(body.amountTnd).minus(requestedTotal);
+      const openPurchases = store.purchases
+        .filter(
+          (purchase) =>
+            purchase.supplierId === supplier.id &&
+            balanceOf(store, purchase).greaterThan(0),
+        )
+        .sort((left, right) =>
+          left.purchaseDate.localeCompare(right.purchaseDate),
+        );
+      for (const purchase of openPurchases) {
+        if (!remainder.greaterThan(0)) break;
+        const available = balanceOf(store, purchase).minus(
+          planned.get(purchase.id) ?? 0,
+        );
+        if (!available.greaterThan(0)) continue;
+        const take = available.lessThan(remainder) ? available : remainder;
+        planned.set(
+          purchase.id,
+          (planned.get(purchase.id) ?? new Decimal(0)).plus(take),
+        );
+        remainder = remainder.minus(take);
+      }
       sequence += 1;
       const payment = makeSupplierPayment({
         id: `payment-${sequence}`,
@@ -473,15 +535,58 @@ export function procurementHandlers(
         paidAt: new Date(body.paidAt).toISOString(),
         reference: body.reference ?? null,
         notes: body.notes ?? null,
-        allocations: body.allocations.map((allocation, index) => ({
-          id: `alloc-${sequence}-${index}`,
-          paymentId: `payment-${sequence}`,
-          purchaseId: allocation.purchaseId,
-          amountTnd: new Decimal(allocation.amountTnd).toFixed(3),
-        })),
+        allocations: openPurchases
+          .filter((purchase) => planned.has(purchase.id))
+          .map((purchase, index) => ({
+            id: `alloc-${sequence}-${index}`,
+            paymentId: `payment-${sequence}`,
+            purchaseId: purchase.id,
+            amountTnd: (planned.get(purchase.id) ?? new Decimal(0)).toFixed(3),
+          })),
       });
       store.payments.unshift(payment);
-      return ok({ payment }, 201);
+      return ok(
+        {
+          payment,
+          allocations: payment.allocations.map((allocation) => ({
+            purchaseId: allocation.purchaseId,
+            amountTnd: allocation.amountTnd,
+          })),
+        },
+        201,
+      );
     }),
+    http.post(
+      `${apiV1}/procurement/supplier-payments/:paymentId/reverse`,
+      async ({ params, request }) => {
+        if (!request.headers.get("Idempotency-Key"))
+          return apiError(
+            400,
+            "IDEMPOTENCY_KEY_REQUIRED",
+            "Une clé d'idempotence est requise.",
+          );
+        const body = (await request.json()) as { reason?: string };
+        const payment = store.payments.find(
+          (row) => row.id === params.paymentId,
+        );
+        if (!payment)
+          return apiError(
+            404,
+            "SUPPLIER_PAYMENT_NOT_FOUND",
+            "Paiement introuvable.",
+          );
+        if (payment.reversedAt)
+          return apiError(
+            409,
+            "PAYMENT_ALREADY_REVERSED",
+            "Ce paiement a déjà été annulé.",
+          );
+        Object.assign(payment, {
+          reversedAt: new Date().toISOString(),
+          reversalReason: body.reason ?? null,
+        });
+        return ok({ payment }, 201);
+      },
+    ),
   ];
 }
