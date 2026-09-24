@@ -88,6 +88,10 @@ export const createCustomerPaymentSchema = z.object({
     .default([]),
 });
 
+export const reversePaymentSchema = z.object({
+  reason: z.string().trim().min(3),
+});
+
 export function customersRouter(params: {
   authService: AuthService;
   cookie: SessionCookieConfig;
@@ -206,6 +210,27 @@ export function customersRouter(params: {
           {
             ...body,
             idempotencyKey: readIdempotencyKey(request.headers),
+          },
+          actorFromResponse(response),
+        );
+        sendCommandResult(response, 201, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/customer-payments/:paymentId/reverse",
+    requirePermission("customer_payments.create"),
+    async (request, response, next) => {
+      try {
+        const body = reversePaymentSchema.parse(request.body);
+        const result = await params.customersService.reverseCustomerPayment(
+          parseRouteParam(request.params.paymentId),
+          {
+            idempotencyKey: readIdempotencyKey(request.headers),
+            reason: body.reason,
           },
           actorFromResponse(response),
         );

@@ -200,6 +200,214 @@ describe("CustomersService customer payments", () => {
   });
 });
 
+function openSecondSale(prisma: CustomerPaymentPrismaDouble) {
+  const sale = prisma.store.sales[1];
+  if (!sale) throw new Error("missing sale-2");
+  Object.assign(sale, {
+    paidAmountTnd: "0.000",
+    remainingDueTnd: "10.000",
+    paymentState: "UNPAID",
+  });
+  prisma.store.customerLedgerEntries.push({
+    id: "ledger-sale-2",
+    customerId: "customer-1",
+    saleId: "sale-2",
+    paymentId: null,
+    balanceKind: "RECEIVABLE",
+    entryType: "SALE_RECEIVABLE",
+    amountTnd: "10.000",
+  });
+}
+
+describe("CustomersService règlements settle sales", () => {
+  // CUS-009 and CUS-011: a règlement without a named sale still settles
+  // documents, oldest first, and each sale's stored state follows.
+  it("settles the oldest open sales first when no allocation is named", async () => {
+    const prisma = new CustomerPaymentPrismaDouble();
+    openSecondSale(prisma);
+    const service = new CustomersService(prisma as unknown as PrismaClient);
+
+    const result = await service.createCustomerPayment(
+      {
+        idempotencyKey: "auto-1",
+        customerId: "customer-1",
+        paidAt: new Date("2026-09-22T08:00:00.000Z"),
+        amountTnd: "55.000",
+      },
+      { actorUserId: "user-1" },
+    );
+
+    expect(result.allocations).toEqual([
+      { saleId: "sale-1", amountTnd: "50.000" },
+      { saleId: "sale-2", amountTnd: "5.000" },
+    ]);
+    expect(prisma.store.sales[0]).toMatchObject({
+      paidAmountTnd: "50.000",
+      remainingDueTnd: "0.000",
+      paymentState: "PAID",
+    });
+    expect(prisma.store.sales[1]).toMatchObject({
+      paidAmountTnd: "5.000",
+      remainingDueTnd: "5.000",
+      paymentState: "PARTIALLY_PAID",
+    });
+    // No unallocated entry: every dinar found a sale.
+    expect(
+      prisma.store.customerLedgerEntries.filter(
+        (entry) => entry.entryType === "PAYMENT" && entry.saleId === null,
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("completes a partial allocation with the remainder on the other open sales", async () => {
+    const prisma = new CustomerPaymentPrismaDouble();
+    openSecondSale(prisma);
+    const service = new CustomersService(prisma as unknown as PrismaClient);
+
+    const result = await service.createCustomerPayment(
+      {
+        idempotencyKey: "partial-1",
+        customerId: "customer-1",
+        paidAt: new Date("2026-09-22T08:00:00.000Z"),
+        amountTnd: "20.000",
+        allocations: [{ saleId: "sale-2", amountTnd: "5.000" }],
+      },
+      { actorUserId: "user-1" },
+    );
+
+    expect(result.allocations).toEqual([
+      { saleId: "sale-1", amountTnd: "15.000" },
+      { saleId: "sale-2", amountTnd: "5.000" },
+    ]);
+  });
+
+  it("rejects allocations that together exceed the amount", async () => {
+    const prisma = new CustomerPaymentPrismaDouble();
+    openSecondSale(prisma);
+    const service = new CustomersService(prisma as unknown as PrismaClient);
+
+    await expect(
+      service.createCustomerPayment(
+        {
+          idempotencyKey: "over-1",
+          customerId: "customer-1",
+          paidAt: new Date("2026-09-22T08:00:00.000Z"),
+          amountTnd: "10.000",
+          allocations: [
+            { saleId: "sale-1", amountTnd: "8.000" },
+            { saleId: "sale-2", amountTnd: "8.000" },
+          ],
+        },
+        { actorUserId: "user-1" },
+      ),
+    ).rejects.toMatchObject({ code: "PAYMENT_ALLOCATION_EXCEEDS_AMOUNT" });
+  });
+
+  it("refuses a règlement for a deactivated customer", async () => {
+    const prisma = new CustomerPaymentPrismaDouble();
+    const customer = prisma.store.customers[0];
+    if (customer) customer.isActive = false;
+    const service = new CustomersService(prisma as unknown as PrismaClient);
+
+    await expect(
+      service.createCustomerPayment(
+        {
+          idempotencyKey: "inactive-1",
+          customerId: "customer-1",
+          paidAt: new Date("2026-09-22T08:00:00.000Z"),
+          amountTnd: "10.000",
+        },
+        { actorUserId: "user-1" },
+      ),
+    ).rejects.toMatchObject({ code: "CUSTOMER_INACTIVE" });
+  });
+
+  it("reverses a règlement and restores the sales it had settled", async () => {
+    const prisma = new CustomerPaymentPrismaDouble();
+    const service = new CustomersService(prisma as unknown as PrismaClient);
+    const created = await service.createCustomerPayment(
+      {
+        idempotencyKey: "to-reverse",
+        customerId: "customer-1",
+        paidAt: new Date("2026-09-22T08:00:00.000Z"),
+        amountTnd: "20.000",
+      },
+      { actorUserId: "user-1" },
+    );
+    expect(prisma.store.sales[0]).toMatchObject({
+      paymentState: "PARTIALLY_PAID",
+    });
+
+    const reversed = await service.reverseCustomerPayment(
+      created.payment.id,
+      { idempotencyKey: "reverse-1", reason: "Montant saisi par erreur" },
+      { actorUserId: "user-2" },
+    );
+
+    expect(reversed.payment).toMatchObject({
+      reversedByUserId: "user-2",
+      reversalReason: "Montant saisi par erreur",
+      reversedInSessionId: null,
+    });
+    expect(reversed.payment.reversedAt).toBeInstanceOf(Date);
+    expect(prisma.store.customerLedgerEntries.at(-1)).toMatchObject({
+      entryType: "PAYMENT_REVERSAL",
+      saleId: "sale-1",
+      paymentId: created.payment.id,
+      amountTnd: "20.000",
+    });
+    expect(prisma.store.sales[0]).toMatchObject({
+      paidAmountTnd: "0.000",
+      remainingDueTnd: "50.000",
+      paymentState: "UNPAID",
+    });
+    expect(prisma.store.auditEvents.at(-1)).toMatchObject({
+      action: "customer_payment.reverse",
+    });
+
+    await expect(
+      service.reverseCustomerPayment(
+        created.payment.id,
+        { idempotencyKey: "reverse-2", reason: "Deuxième tentative" },
+        { actorUserId: "user-2" },
+      ),
+    ).rejects.toMatchObject({ code: "PAYMENT_ALREADY_REVERSED" });
+  });
+
+  it("reverses a till règlement only while a session is open and records that session", async () => {
+    const prisma = new CustomerPaymentPrismaDouble();
+    prisma.store.posSessions.push({ id: "session-1", status: "OPEN" });
+    const service = new CustomersService(prisma as unknown as PrismaClient);
+    const created = await service.createCustomerPayment(
+      {
+        idempotencyKey: "till-1",
+        customerId: "customer-1",
+        paidAt: new Date("2026-09-22T08:00:00.000Z"),
+        amountTnd: "20.000",
+        collectedAtPos: true,
+      },
+      { actorUserId: "user-1" },
+    );
+
+    prisma.store.posSessions[0] = { id: "session-1", status: "CLOSED" };
+    await expect(
+      service.reverseCustomerPayment(
+        created.payment.id,
+        { idempotencyKey: "reverse-closed", reason: "Erreur de caisse" },
+        { actorUserId: "user-1" },
+      ),
+    ).rejects.toMatchObject({ code: "POS_SESSION_NOT_OPEN" });
+
+    prisma.store.posSessions.push({ id: "session-2", status: "OPEN" });
+    const reversed = await service.reverseCustomerPayment(
+      created.payment.id,
+      { idempotencyKey: "reverse-open", reason: "Erreur de caisse" },
+      { actorUserId: "user-1" },
+    );
+    expect(reversed.payment.reversedInSessionId).toBe("session-2");
+  });
+});
+
 interface CustomerPaymentStore {
   posSessions: Array<{ id: string; status: string }>;
   customers: Array<{ id: string; isActive: boolean; name: string }>;
@@ -207,7 +415,11 @@ interface CustomerPaymentStore {
     id: string;
     customerId: string;
     status: SaleStatus;
+    soldAt: Date;
     totalTnd: string;
+    paidAmountTnd: string;
+    remainingDueTnd: string;
+    paymentState: string;
   }>;
   customerLedgerEntries: Array<{
     id: string;
@@ -224,6 +436,8 @@ interface CustomerPaymentStore {
     sessionId?: string | null;
     amountTnd: string;
     reference?: string | null;
+    reversedAt?: Date | null;
+    reversedInSessionId?: string | null;
   }>;
   customerPaymentAllocations: Array<{
     paymentId: string;
@@ -273,6 +487,7 @@ class CustomerPaymentPrismaDouble {
 
 function makeCustomerPaymentTransactionClient(store: CustomerPaymentStore) {
   return {
+    $queryRaw: async () => [],
     customer: {
       findUnique: async (args: { where: { id: string } }) =>
         store.customers.find((customer) => customer.id === args.where.id) ??
@@ -318,7 +533,7 @@ function makeCustomerPaymentTransactionClient(store: CustomerPaymentStore) {
         where: {
           customerId: string;
           balanceKind?: string;
-          saleId?: { in: string[] };
+          saleId?: { in: string[] } | { not: null };
         };
       }) => {
         const groups = new Map<string, Prisma.Decimal>();
@@ -329,7 +544,8 @@ function makeCustomerPaymentTransactionClient(store: CustomerPaymentStore) {
               entry.balanceKind !== args.where.balanceKind) ||
             (args.where.saleId !== undefined &&
               (entry.saleId === null ||
-                !args.where.saleId.in.includes(entry.saleId)))
+                ("in" in args.where.saleId &&
+                  !args.where.saleId.in.includes(entry.saleId))))
           ) {
             continue;
           }
@@ -375,6 +591,30 @@ function makeCustomerPaymentTransactionClient(store: CustomerPaymentStore) {
         store.customerPayments.push(payment);
         return payment;
       },
+      findUnique: async (args: { where: { id: string } }) => {
+        const payment = store.customerPayments.find(
+          (row) => row.id === args.where.id,
+        );
+        return payment
+          ? {
+              ...payment,
+              ledgerEntries: store.customerLedgerEntries.filter(
+                (entry) => entry.paymentId === payment.id,
+              ),
+            }
+          : null;
+      },
+      update: async (args: {
+        where: { id: string };
+        data: Partial<CustomerPaymentStore["customerPayments"][number]>;
+      }) => {
+        const payment = store.customerPayments.find(
+          (row) => row.id === args.where.id,
+        );
+        if (!payment) throw new Error("missing payment");
+        Object.assign(payment, args.data);
+        return payment;
+      },
     },
     customerPaymentAllocation: {
       createMany: async (args: {
@@ -388,16 +628,31 @@ function makeCustomerPaymentTransactionClient(store: CustomerPaymentStore) {
       findMany: async (args: {
         where: {
           id: { in: string[] };
-          customerId: string;
-          status: SaleStatus;
+          customerId?: string;
+          status?: SaleStatus;
         };
       }) =>
-        store.sales.filter(
-          (sale) =>
-            args.where.id.in.includes(sale.id) &&
-            sale.customerId === args.where.customerId &&
-            sale.status === args.where.status,
-        ),
+        store.sales
+          .filter(
+            (sale) =>
+              args.where.id.in.includes(sale.id) &&
+              (args.where.customerId === undefined ||
+                sale.customerId === args.where.customerId) &&
+              (args.where.status === undefined ||
+                sale.status === args.where.status),
+          )
+          .sort(
+            (left, right) => left.soldAt.getTime() - right.soldAt.getTime(),
+          ),
+      update: async (args: {
+        where: { id: string };
+        data: Partial<CustomerPaymentStore["sales"][number]>;
+      }) => {
+        const sale = store.sales.find((row) => row.id === args.where.id);
+        if (!sale) throw new Error("missing sale");
+        Object.assign(sale, args.data);
+        return sale;
+      },
     },
     auditEvent: {
       create: async (args: { data: { action: string; targetId: string } }) => {
@@ -446,13 +701,21 @@ function createCustomerPaymentStore(): CustomerPaymentStore {
         id: "sale-1",
         customerId: "customer-1",
         status: SaleStatus.POSTED,
+        soldAt: new Date("2026-09-20T08:00:00.000Z"),
         totalTnd: "50.000",
+        paidAmountTnd: "0.000",
+        remainingDueTnd: "50.000",
+        paymentState: "UNPAID",
       },
       {
         id: "sale-2",
         customerId: "customer-1",
         status: SaleStatus.POSTED,
+        soldAt: new Date("2026-09-21T08:00:00.000Z"),
         totalTnd: "10.000",
+        paidAmountTnd: "10.000",
+        remainingDueTnd: "0.000",
+        paymentState: "PAID",
       },
     ],
     customerLedgerEntries: [

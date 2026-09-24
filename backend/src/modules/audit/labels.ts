@@ -43,6 +43,7 @@ const actionLabels: Record<string, string> = {
   "customer.create": "Création d'un client",
   "customer.update": "Modification d'un client",
   "customer_payment.create": "Règlement client",
+  "customer_payment.reverse": "Annulation d'un règlement client",
   "customer_order.create": "Création d'une commande",
   "customer_order.update": "Modification d'une commande",
   "customer_order.change_status": "Changement d'état d'une commande",

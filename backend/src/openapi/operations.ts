@@ -483,6 +483,18 @@ const customerOperations: ApiOperation[] = [
     status: 201,
     dataKey: "payment",
   }),
+  operation({
+    method: "post",
+    path: "/customer-payments/{paymentId}/reverse",
+    operationId: "customers.reversePayment",
+    summary: "Reverse a customer payment",
+    tag: "customers",
+    permissions: ["customer_payments.create"],
+    body: customers.reversePaymentSchema,
+    idempotent: true,
+    status: 201,
+    dataKey: "payment",
+  }),
 ];
 
 const distributionOperations: ApiOperation[] = [
