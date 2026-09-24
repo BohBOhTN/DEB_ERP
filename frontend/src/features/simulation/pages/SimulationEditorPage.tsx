@@ -1,5 +1,4 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
@@ -25,10 +24,10 @@ import { formatMoney } from "../../../i18n/format.js";
 import {
   getRawMaterial,
   listProducts,
-  listUnits,
   type Product,
 } from "../../catalog/catalog.api.js";
 import type { SimulationInput } from "../simulation.api.js";
+import { useUnits } from "../../catalog/catalog.queries.js";
 import {
   useCreateSimulation,
   useSimulation,
@@ -82,12 +81,7 @@ export function SimulationEditorPage() {
   const existing = useSimulation(simulationId ?? "");
   const create = useCreateSimulation();
   const update = useUpdateSimulation();
-  const units = useQuery({
-    queryKey: ["catalog", "units", "all"],
-    queryFn: () =>
-      listUnits({ page: 1, pageSize: 100, isActive: true } as never),
-    staleTime: 60_000,
-  });
+  const units = useUnits();
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [targetProduct, setTargetProduct] = useState<{
