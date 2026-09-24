@@ -31,6 +31,13 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
 
 ### Fixed
 
+- Issue #45, Commandes: a KPI row, the period filter and a search on the
+  queue, the detail page's actions on every row, `Avance` and `Reste`
+  stated by the API for every state; a completion now always states the
+  amount paid (an empty amount was recorded as paid in full); the
+  "Aujourd'hui" and "À venir" queues no longer return the same rows; the
+  deposit is capped inline, worded as a deposit and gated like its route;
+  the order editor shows the catalogue price instead of an ignored field.
 - Issue #41, one period filter: `Aujourd'hui` (default), `Hier`,
   `Cette semaine`, `Ce mois` or a custom date or range, kept in the URL,
   on the sales, session, movement, audit and expense lists.
