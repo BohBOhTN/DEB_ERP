@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { MoreHorizontal, Plus, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -8,7 +8,12 @@ import {
 import { FilterBar } from "../../../components/patterns/FilterBar/FilterBar.js";
 import { PageHeader } from "../../../components/patterns/PageHeader/PageHeader.js";
 import { PermissionGate } from "../../../components/patterns/PermissionGate/PermissionGate.js";
+import { ReversePaymentDialog } from "../../../components/patterns/ReversePaymentDialog/ReversePaymentDialog.js";
 import { Button } from "../../../components/ui/Button/Button.js";
+import { DropdownMenu } from "../../../components/ui/DropdownMenu/DropdownMenu.js";
+import { IconButton } from "../../../components/ui/IconButton/IconButton.js";
+import { StatusPill } from "../../../components/ui/StatusPill/StatusPill.js";
+import { useToast } from "../../../components/ui/Toast/useToast.js";
 import { Card, CardHeader } from "../../../components/ui/Card/Card.js";
 import { formatDate, formatMoney } from "../../../i18n/format.js";
 import { useUrlState } from "../../../lib/hooks/useUrlState.js";
@@ -20,6 +25,7 @@ import type {
 import {
   useDistributorBalances,
   useDistributorPayments,
+  useReverseDistributorPayment,
 } from "../distribution.queries.js";
 import { DistributorPaymentDialog } from "../components/DistributorPaymentDialog.js";
 import styles from "./DistributionPages.module.css";
@@ -32,6 +38,9 @@ export function DistributorPaymentsPage() {
   const permissions = useSessionPermissions();
   const [state, setState] = useUrlState(defaults);
   const [creating, setCreating] = useState(false);
+  const [reversing, setReversing] = useState<DistributorPayment | null>(null);
+  const reverse = useReverseDistributorPayment();
+  const toast = useToast();
   const balances = useDistributorBalances({
     page: state.page,
     pageSize: state.pageSize,
@@ -98,6 +107,16 @@ export function DistributorPaymentsPage() {
       id: "reference",
       header: "Référence",
       accessorFn: (row) => row.reference ?? "—",
+    },
+    {
+      id: "state",
+      header: "État",
+      cell: ({ row }) =>
+        row.original.reversedAt ? (
+          <StatusPill status="CANCELLED" label="Annulé" />
+        ) : (
+          <StatusPill status="POSTED" label="Encaissé" />
+        ),
     },
   ];
 
@@ -196,15 +215,63 @@ export function DistributorPaymentsPage() {
                   </span>
                 </span>
                 <span className={styles.muted}>
+                  {row.reversedAt ? "Annulé · " : ""}
                   {formatDate(row.paidAt)} · {row.allocations.length}{" "}
                   affectation{row.allocations.length > 1 ? "s" : ""}
                 </span>
               </>
             )}
+            rowActions={(row) =>
+              row.reversedAt ||
+              !permissions.has("distributor_payments.create") ? null : (
+                <DropdownMenu
+                  label="Actions de la ligne"
+                  trigger={
+                    <IconButton
+                      label="Actions"
+                      icon={<MoreHorizontal />}
+                      variant="ghost"
+                      size="sm"
+                    />
+                  }
+                  items={[
+                    {
+                      id: "reverse",
+                      label: "Annuler le paiement",
+                      icon: <Undo2 />,
+                      onSelect: () => setReversing(row),
+                    },
+                  ]}
+                />
+              )
+            }
           />
         </Card>
       </div>
       <DistributorPaymentDialog open={creating} onOpenChange={setCreating} />
+      {reversing ? (
+        <ReversePaymentDialog
+          open
+          kind="paiement"
+          partyName={reversing.distributor.name}
+          amountTnd={reversing.amountTnd}
+          paidAt={reversing.paidAt}
+          documents={[]}
+          onPost={async (idempotencyKey, reason) => {
+            await reverse.mutateAsync({
+              paymentId: reversing.id,
+              reason,
+              idempotencyKey,
+            });
+            toast.success(
+              "Paiement annulé",
+              `${formatMoney(reversing.amountTnd)} remis au solde du distributeur.`,
+            );
+            setReversing(null);
+          }}
+          onClose={() => setReversing(null)}
+        />
+      ) : null}
     </>
   );
 }

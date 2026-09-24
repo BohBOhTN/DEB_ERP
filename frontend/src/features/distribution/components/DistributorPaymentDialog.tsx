@@ -26,11 +26,15 @@ import {
   type DistributorPaymentFormOutput,
 } from "../distribution.schemas.js";
 import { DistributorCombobox } from "./DistributorCombobox.js";
+import { settledSummary } from "../../../components/patterns/AllocationTable/settledSummary.js";
 
 export interface DistributorPaymentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   distributor?: { id: string; name: string } | null;
+  /// Opened from a direct sale or a settlement: that document's remaining
+  /// due fills the amount and its allocation.
+  documentId?: string;
   onSaved?: (payment: DistributorPayment) => void;
 }
 
@@ -57,6 +61,7 @@ export function DistributorPaymentDialog({
   open,
   onOpenChange,
   distributor = null,
+  documentId,
   onSaved,
 }: DistributorPaymentDialogProps) {
   const toast = useToast();
@@ -85,9 +90,14 @@ export function DistributorPaymentDialog({
     }
   }, [open, distributor, form]);
 
+  // Open documents oldest first: the order the server settles them in when
+  // the user leaves part of the amount unallocated.
   useEffect(() => {
     if (!open || !first) return;
     const current = form.getValues("allocations") ?? [];
+    const typed = (id: string, balanceTnd: string) =>
+      current.find((row) => row.id === id)?.amountTnd ??
+      (documentId === id ? balanceTnd : "");
     const next = [
       ...first.sales
         .filter((sale) => Number(sale.balanceTnd) > 0)
@@ -97,7 +107,7 @@ export function DistributorPaymentDialog({
           reference: sale.reference,
           at: sale.soldAt,
           balanceTnd: sale.balanceTnd,
-          amountTnd: current.find((row) => row.id === sale.id)?.amountTnd ?? "",
+          amountTnd: typed(sale.id, sale.balanceTnd),
         })),
       ...first.settlements
         .filter((row) => Number(row.balanceTnd) > 0)
@@ -107,15 +117,18 @@ export function DistributorPaymentDialog({
           reference: row.reference,
           at: row.settledAt,
           balanceTnd: row.balanceTnd,
-          amountTnd:
-            current.find((candidate) => candidate.id === row.id)?.amountTnd ??
-            "",
+          amountTnd: typed(row.id, row.balanceTnd),
         })),
-    ];
+    ].sort((left, right) => left.at.localeCompare(right.at));
     form.setValue("balanceTnd", first.balanceTnd);
+    if (documentId && current.length === 0) {
+      const named = next.find((row) => row.id === documentId);
+      if (named && !form.getValues("amountTnd"))
+        form.setValue("amountTnd", named.balanceTnd);
+    }
     if (JSON.stringify(next) !== JSON.stringify(current))
       form.setValue("allocations", next);
-  }, [open, first, form]);
+  }, [open, first, form, documentId]);
 
   const allocationErrors: Record<string, string | undefined> = {};
   const list = errors.allocations as unknown as
@@ -158,7 +171,13 @@ export function DistributorPaymentDialog({
     });
     toast.success(
       "Paiement enregistré",
-      `${values.distributor.label} : ${formatMoney(payment.amountTnd)}.`,
+      `${values.distributor.label} : ${formatMoney(payment.amountTnd)}${settledSummary(
+        payment.allocations.map((allocation) => ({
+          id: allocation.saleId ?? allocation.settlementId ?? "",
+          amountTnd: allocation.amountTnd,
+        })),
+        values.allocations.map((row) => ({ id: row.id, label: row.reference })),
+      )}`,
     );
     onSaved?.(payment);
     onOpenChange(false);
@@ -233,7 +252,7 @@ export function DistributorPaymentDialog({
         <FormField
           label="Affectations"
           labelIsElement={false}
-          hint="Répartissez le montant entre les ventes directes et les règlements ouverts."
+          hint="Répartissez le montant entre les ventes directes et les règlements ouverts ; ce que vous laissez est affecté aux plus anciens."
         >
           <AllocationTable
             amountTnd={amountTnd}
@@ -255,7 +274,7 @@ export function DistributorPaymentDialog({
               )
             }
             errors={allocationErrors}
-            emptyText="Aucun document ouvert : le paiement restera non affecté."
+            emptyText="Aucun document ouvert : le paiement réduira le solde du distributeur."
           />
         </FormField>
       ) : null}

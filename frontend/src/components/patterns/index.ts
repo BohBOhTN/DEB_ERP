@@ -2,6 +2,7 @@ export { Accordion, type AccordionItem } from "./Accordion/Accordion.js";
 export {
   AllocationTable,
   allocatedTotal,
+  autoAllocate,
   type AllocationRow,
 } from "./AllocationTable/AllocationTable.js";
 export {
@@ -38,6 +39,7 @@ export {
 export { PageHeader, type Breadcrumb } from "./PageHeader/PageHeader.js";
 export { PaymentBox } from "./PaymentBox/PaymentBox.js";
 export { PermissionGate } from "./PermissionGate/PermissionGate.js";
+export { ReversePaymentDialog } from "./ReversePaymentDialog/ReversePaymentDialog.js";
 export { RankedList, type RankedItem } from "./RankedList/RankedList.js";
 export {
   SessionBanner,
