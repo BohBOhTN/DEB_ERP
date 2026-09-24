@@ -887,6 +887,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pos/sales/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sales figures */
+        get: operations["pos.salesSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pos/sales/{saleId}": {
         parameters: {
             query?: never;
@@ -898,6 +915,23 @@ export interface paths {
         get: operations["pos.getSale"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pos/sales/{saleId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a sale */
+        post: operations["pos.cancelSale"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4058,7 +4092,7 @@ export interface operations {
                 itemType?: "PRODUCT" | "RAW_MATERIAL";
                 itemId?: string;
                 movementType?: "OPENING_STOCK" | "PURCHASE_RECEIPT" | "POS_SALE" | "ORDER_SALE" | "DISTRIBUTOR_DIRECT_SALE" | "DISTRIBUTOR_DISPATCH_OUT" | "DISTRIBUTOR_RETURN_IN" | "DISTRIBUTOR_SETTLED_SALE" | "STOCK_ADJUSTMENT_INCREASE" | "STOCK_ADJUSTMENT_DECREASE" | "REVERSAL";
-                sourceType?: "OPENING_STOCK" | "STOCK_ADJUSTMENT" | "PURCHASE" | "PURCHASE_CANCELLATION" | "POS_SALE" | "CUSTOMER_ORDER_SALE" | "DISTRIBUTOR_DIRECT_SALE" | "DISTRIBUTOR_DISPATCH" | "DISTRIBUTOR_SETTLEMENT";
+                sourceType?: "OPENING_STOCK" | "STOCK_ADJUSTMENT" | "PURCHASE" | "PURCHASE_CANCELLATION" | "POS_SALE" | "POS_SALE_CANCELLATION" | "CUSTOMER_ORDER_SALE" | "DISTRIBUTOR_DIRECT_SALE" | "DISTRIBUTOR_DISPATCH" | "DISTRIBUTOR_SETTLEMENT";
                 from?: string;
                 to?: string;
                 sort?: string;
@@ -5789,6 +5823,9 @@ export interface operations {
                 paymentState?: "PAID" | "PARTIALLY_PAID" | "UNPAID";
                 cashierUserId?: string;
                 sessionId?: string;
+                status?: "POSTED" | "CANCELLED";
+                q?: string;
+                search?: string;
                 page?: number;
                 pageSize?: number;
             };
@@ -5921,6 +5958,70 @@ export interface operations {
             };
         };
     };
+    "pos.salesSummary": {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+                customerId?: string;
+                paymentState?: "PAID" | "PARTIALLY_PAID" | "UNPAID";
+                cashierUserId?: string;
+                sessionId?: string;
+                status?: "POSTED" | "CANCELLED";
+                q?: string;
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            summary: {
+                                [key: string]: unknown;
+                            };
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Validation failed (`VALIDATION_ERROR`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     "pos.getSale": {
         parameters: {
             query?: never;
@@ -5968,6 +6069,91 @@ export interface operations {
             };
             /** @description The target does not exist. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "pos.cancelSale": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated key (UUID recommended). The same key with the same body replays the first result; with another body it is refused. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                saleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    /** @description `true` when the response is the stored result of an earlier call with the same key. */
+                    "Idempotency-Replayed"?: "true";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            sale: {
+                                [key: string]: unknown;
+                            };
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Validation failed (`VALIDATION_ERROR`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The target does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description State, uniqueness, or version conflict (`STATE_CONFLICT`, `VERSION_CONFLICT`, `IDEMPOTENCY_KEY_REUSED`, or a business rule code). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
