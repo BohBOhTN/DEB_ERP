@@ -140,6 +140,7 @@ export const permissionCatalog = [
   permission("customers.view", "Clients", "Voir les clients"),
   permission("customers.create", "Clients", "Créer des clients"),
   permission("customers.update", "Clients", "Modifier les clients"),
+  permission("customers.deactivate", "Clients", "Désactiver un client"),
   permission(
     "customer_balances.view",
     "Soldes clients",
