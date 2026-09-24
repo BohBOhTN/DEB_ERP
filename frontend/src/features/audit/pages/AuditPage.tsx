@@ -6,7 +6,12 @@ import {
 } from "../../../components/patterns/DataTable/DataTable.js";
 import { FilterBar } from "../../../components/patterns/FilterBar/FilterBar.js";
 import { PageHeader } from "../../../components/patterns/PageHeader/PageHeader.js";
-import { DateInput } from "../../../components/ui/DateInput/DateInput.js";
+import { PeriodFilter } from "../../../components/patterns/PeriodFilter/PeriodFilter.js";
+import {
+  periodFromParams,
+  periodRange,
+  periodToParams,
+} from "../../../lib/dates/periodRange.js";
 import { Select } from "../../../components/ui/Select/Select.js";
 import { TextInput } from "../../../components/ui/TextInput/TextInput.js";
 import { formatDateTime } from "../../../i18n/format.js";
@@ -21,6 +26,7 @@ const defaults = {
   action: "",
   entity: "",
   correlationId: "",
+  period: "today",
   from: "",
   to: "",
   page: 1,
@@ -33,6 +39,8 @@ export function AuditPage() {
   const [state, setState] = useUrlState(defaults);
   const [open, setOpen] = useState<AuditEvent | null>(null);
   const filters = useAuditFilters();
+  const period = periodFromParams(state, "today");
+  const range = periodRange(period);
   const query = useAuditEvents({
     page: state.page,
     pageSize: state.pageSize,
@@ -40,14 +48,14 @@ export function AuditPage() {
     action: state.action || undefined,
     entity: state.entity || undefined,
     correlationId: state.correlationId || undefined,
-    from: state.from || undefined,
-    to: state.to || undefined,
+    from: range.from || undefined,
+    to: range.to || undefined,
   });
   const activeCount =
     (state.action ? 1 : 0) +
     (state.entity ? 1 : 0) +
     (state.correlationId ? 1 : 0) +
-    (state.from || state.to ? 1 : 0);
+    (period.preset !== "today" ? 1 : 0);
 
   const columns: DataTableColumn<AuditEvent>[] = [
     {
@@ -89,6 +97,10 @@ export function AuditPage() {
         title="Journal d'audit"
         description="Qui a fait quoi, quand, avec les valeurs avant et après."
       />
+      <PeriodFilter
+        value={period}
+        onChange={(next) => setState({ ...periodToParams(next), page: 1 })}
+      />
       <FilterBar
         activeCount={activeCount}
         onReset={() =>
@@ -96,6 +108,7 @@ export function AuditPage() {
             action: "",
             entity: "",
             correlationId: "",
+            period: "today",
             from: "",
             to: "",
             page: 1,
@@ -128,16 +141,6 @@ export function AuditPage() {
                 value: option.value,
                 label: option.labelFr,
               }))}
-            />
-            <DateInput
-              aria-label="Du"
-              value={state.from}
-              onChange={(from) => setState({ from, page: 1 })}
-            />
-            <DateInput
-              aria-label="Au"
-              value={state.to}
-              onChange={(to) => setState({ to, page: 1 })}
             />
             <TextInput
               aria-label="Identifiant de corrélation"

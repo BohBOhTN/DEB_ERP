@@ -12,7 +12,6 @@ import {
 } from "../../test/msw/handlers/expenses";
 import { server } from "../../test/msw/server";
 import { mockViewport } from "../../test/viewport";
-import { periodRange } from "./pages/ExpensesPage";
 
 const manager = makeUser({
   effectivePermissions: [
@@ -41,19 +40,6 @@ describe("Expenses", () => {
       import("./pages/ExpensesPage"),
       import("./pages/ExpenseCategoriesPage"),
     ]);
-  });
-
-  it("computes the month and previous month ranges as business days", () => {
-    expect(
-      periodRange("month", "", "", new Date("2026-09-23T12:00:00Z")),
-    ).toEqual({ from: "2026-09-01", to: "2026-09-30" });
-    expect(
-      periodRange("previous", "", "", new Date("2026-01-15T12:00:00Z")),
-    ).toEqual({ from: "2025-12-01", to: "2025-12-31" });
-    expect(periodRange("custom", "2026-09-01", "2026-09-10")).toEqual({
-      from: "2026-09-01",
-      to: "2026-09-10",
-    });
   });
 
   // AS-017 and AS-V2-21: cancelling a posted expense needs a reason, keeps
@@ -118,6 +104,58 @@ describe("Expenses", () => {
       .getByText("Facture STEG")
       .closest("tr");
     expect(cancelledRow).toHaveTextContent("Annulée");
+  });
+
+  // Issue #41: one period control on every list. "Ce mois" is the report's
+  // default; "Hier" empties it; a custom range narrows it to the days typed.
+  it("drives the report and the list from the shared period control", async () => {
+    const store = makeExpensesStore();
+    server.use(...expensesHandlers(store));
+    renderAt("/depenses");
+
+    const table = await screen.findByRole("table", { name: "Dépenses" });
+    expect(within(table).getByText("DEP-000001")).toBeInTheDocument();
+    expect(within(table).getByText("DEP-000002")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Ce mois" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+
+    await userEvent.click(screen.getByRole("radio", { name: "Hier" }));
+    expect(await screen.findByText("Aucune dépense")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByText("Total dépenses").parentElement?.parentElement,
+      ).toHaveTextContent("0,000 TND"),
+    );
+
+    await userEvent.click(screen.getByRole("radio", { name: "Personnalisée" }));
+    const from = screen.getByLabelText("Du");
+    const to = screen.getByLabelText("Au");
+    await userEvent.clear(from);
+    await userEvent.type(from, "2026-09-01");
+    await userEvent.clear(to);
+    await userEvent.type(to, "2026-09-05");
+    expect(
+      await screen.findByText("Du 01/09/2026 au 05/09/2026"),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("table", { name: "Dépenses" })).queryByText(
+          "DEP-000001",
+        ),
+      ).toBeNull(),
+    );
+    expect(
+      within(screen.getByRole("table", { name: "Dépenses" })).getByText(
+        "DEP-000002",
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByText("Total dépenses").parentElement?.parentElement,
+      ).toHaveTextContent("800,000 TND"),
+    );
   });
 
   it("records an expense posted at once from the dialog and posts a draft from the row", async () => {

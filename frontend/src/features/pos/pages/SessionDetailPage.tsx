@@ -140,7 +140,9 @@ export function SessionDetailPage() {
               {
                 label: "Ventes de la session",
                 value: (
-                  <Link to={`/caisse/ventes?sessionId=${session.id}&from=&to=`}>
+                  <Link
+                    to={`/caisse/ventes?sessionId=${session.id}&period=custom`}
+                  >
                     Voir les ventes
                   </Link>
                 ),

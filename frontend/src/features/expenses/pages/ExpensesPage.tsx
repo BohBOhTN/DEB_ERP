@@ -16,22 +16,22 @@ import {
 import { FilterBar } from "../../../components/patterns/FilterBar/FilterBar.js";
 import { KpiTile } from "../../../components/patterns/KpiTile/KpiTile.js";
 import { PageHeader } from "../../../components/patterns/PageHeader/PageHeader.js";
+import { PeriodFilter } from "../../../components/patterns/PeriodFilter/PeriodFilter.js";
+import {
+  periodFromParams,
+  periodRange,
+  periodToParams,
+} from "../../../lib/dates/periodRange.js";
 import { PermissionGate } from "../../../components/patterns/PermissionGate/PermissionGate.js";
 import { Sparkline } from "../../../components/patterns/Sparkline/Sparkline.js";
 import { Button } from "../../../components/ui/Button/Button.js";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog/ConfirmDialog.js";
-import { DateInput } from "../../../components/ui/DateInput/DateInput.js";
 import { DropdownMenu } from "../../../components/ui/DropdownMenu/DropdownMenu.js";
 import { IconButton } from "../../../components/ui/IconButton/IconButton.js";
-import { SegmentedControl } from "../../../components/ui/SegmentedControl/SegmentedControl.js";
 import { Select } from "../../../components/ui/Select/Select.js";
 import { StatusPill } from "../../../components/ui/StatusPill/StatusPill.js";
 import { useToast } from "../../../components/ui/Toast/useToast.js";
-import {
-  formatDate,
-  formatMoney,
-  toBusinessDate,
-} from "../../../i18n/format.js";
+import { formatDate, formatMoney } from "../../../i18n/format.js";
 import { useUrlState } from "../../../lib/hooks/useUrlState.js";
 import { useSessionPermissions } from "../../../app/sessionContext.js";
 import type { Expense, ExpenseStatus } from "../expenses.api.js";
@@ -46,7 +46,6 @@ import { ExpenseFormDialog } from "../components/ExpenseFormDialog.js";
 import { expenseStatusPill } from "../components/expenseLabels.js";
 import styles from "./ExpensePages.module.css";
 
-type Period = "month" | "previous" | "custom";
 const defaults = {
   period: "month",
   from: "",
@@ -58,36 +57,6 @@ const defaults = {
   pageSize: 25,
 };
 
-/// The business-day range of a period: this month, the previous month, or
-/// what the user typed.
-export function periodRange(
-  period: Period,
-  from: string,
-  to: string,
-  now = new Date(),
-): { from: string; to: string } {
-  const today = toBusinessDate(now);
-  const [year, month] = today.split("-").map(Number) as [number, number];
-  const pad = (value: number) => String(value).padStart(2, "0");
-  const lastDay = (y: number, m: number) =>
-    new Date(Date.UTC(y, m, 0)).getUTCDate();
-  if (period === "previous") {
-    const y = month === 1 ? year - 1 : year;
-    const m = month === 1 ? 12 : month - 1;
-    return {
-      from: `${y}-${pad(m)}-01`,
-      to: `${y}-${pad(m)}-${pad(lastDay(y, m))}`,
-    };
-  }
-  if (period === "custom") {
-    return { from, to };
-  }
-  return {
-    from: `${year}-${pad(month)}-01`,
-    to: `${year}-${pad(month)}-${pad(lastDay(year, month))}`,
-  };
-}
-
 /// `/depenses` (UI-17): a monthly report first (total, top categories, the
 /// day by day sparkline), then the table with its actions.
 export function ExpensesPage() {
@@ -95,12 +64,10 @@ export function ExpensesPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const [state, setState] = useUrlState(defaults);
-  const period = (
-    ["month", "previous", "custom"].includes(state.period)
-      ? state.period
-      : "month"
-  ) as Period;
-  const range = periodRange(period, state.from, state.to);
+  // The expense report is monthly by default; the other presets remain one
+  // tap away like on every list (issue #41).
+  const period = periodFromParams(state, "month");
+  const range = periodRange(period);
   const [editing, setEditing] = useState<Expense | null | "new">(null);
   const [posting, setPosting] = useState<Expense | null>(null);
   const [cancelling, setCancelling] = useState<Expense | null>(null);
@@ -195,44 +162,10 @@ export function ExpensesPage() {
         }
       />
       <div className={styles.stack}>
-        <div className={styles.header}>
-          <SegmentedControl<Period>
-            label="Période"
-            value={period}
-            onValueChange={(next) =>
-              setState({
-                period: next,
-                page: 1,
-                ...(next === "custom" && !state.from
-                  ? { from: range.from, to: range.to }
-                  : {}),
-              })
-            }
-            options={[
-              { value: "month", label: "Ce mois" },
-              { value: "previous", label: "Mois dernier" },
-              { value: "custom", label: "Personnalisée" },
-            ]}
-          />
-          {period === "custom" ? (
-            <div className={styles.range}>
-              <DateInput
-                aria-label="Du"
-                value={state.from}
-                onChange={(from) => setState({ from, page: 1 })}
-              />
-              <DateInput
-                aria-label="Au"
-                value={state.to}
-                onChange={(to) => setState({ to, page: 1 })}
-              />
-            </div>
-          ) : (
-            <span className={styles.muted}>
-              Du {formatDate(range.from)} au {formatDate(range.to)}
-            </span>
-          )}
-        </div>
+        <PeriodFilter
+          value={period}
+          onChange={(next) => setState({ ...periodToParams(next), page: 1 })}
+        />
         <div className={styles.summary}>
           <KpiTile
             label="Total dépenses"
