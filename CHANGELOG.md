@@ -31,6 +31,9 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
 
 ### Fixed
 
+- Issue #41, one period filter: `Aujourd'hui` (default), `Hier`,
+  `Cette semaine`, `Ce mois` or a custom date or range, kept in the URL,
+  on the sales, session, movement, audit and expense lists.
 - Issue #43, Caisse: the whole product card adds the product; the cashier
   stays on the till after a sale with a `Voir` action on the toast; the
   payment method control is gone (cash only); Enter on a focused tile
