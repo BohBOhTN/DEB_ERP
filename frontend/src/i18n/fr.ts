@@ -169,7 +169,6 @@ export const fr = {
   unitPrice: "Prix unitaire",
   lineTotal: "Total ligne",
   cash: "Espèces",
-  paymentMethod: "Mode de paiement",
   balance: "Solde",
   advance: "Avance",
 

@@ -5,7 +5,6 @@ import { fr } from "../../../i18n/fr.js";
 import { Button } from "../../ui/Button/Button.js";
 import { FormField } from "../../ui/FormField/FormField.js";
 import { MoneyInput } from "../../ui/MoneyInput/MoneyInput.js";
-import { Select } from "../../ui/Select/Select.js";
 import styles from "./PaymentBox.module.css";
 
 export interface PaymentBoxProps {
@@ -13,10 +12,6 @@ export interface PaymentBoxProps {
   dueTnd: string;
   amountTnd: string;
   onAmountChange: (amount: string) => void;
-  /// Cash only in V2 (OD-V2-012); the select exists so a second method is
-  /// one option away.
-  method?: "CASH";
-  onMethodChange?: (method: "CASH") => void;
   error?: string;
   disabled?: boolean;
   /// Whether paying more than the amount due is refused (payments) or
@@ -25,14 +20,14 @@ export interface PaymentBoxProps {
   className?: string;
 }
 
-/// Amount, method and the "Reste à payer" readout shared by POS, orders and
-/// the three payment screens (05 section 3.2).
+/// Amount and the "Reste à payer" readout shared by POS, orders and the
+/// three payment screens (05 section 3.2). Cash is the only method
+/// (OD-V2-012), so no method control is shown; the data model keeps the
+/// enum for the day a second method is approved.
 export function PaymentBox({
   dueTnd,
   amountTnd,
   onAmountChange,
-  method = "CASH",
-  onMethodChange,
   error,
   disabled = false,
   allowOverpayment = false,
@@ -69,14 +64,6 @@ export function PaymentBox({
             value={amountTnd}
             onChange={onAmountChange}
             disabled={disabled}
-          />
-        </FormField>
-        <FormField label={fr.paymentMethod}>
-          <Select
-            options={[{ value: "CASH", label: fr.cash }]}
-            value={method}
-            onValueChange={(next) => next && onMethodChange?.(next)}
-            disabled={disabled || !onMethodChange}
           />
         </FormField>
       </div>
