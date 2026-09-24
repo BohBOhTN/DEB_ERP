@@ -6,6 +6,7 @@ import {
   CustomerOrderAdvanceMovement,
   PosSessionStatus,
   Prisma,
+  SalePaymentMovement,
   SalePaymentState,
   SaleStatus,
   type PrismaClient,
@@ -28,6 +29,76 @@ export interface PosActor {
 export interface SaleLineInput {
   productId: string;
   quantity: string;
+}
+
+export interface SaleFilterParams {
+  from?: Date;
+  to?: Date;
+  customerId?: string;
+  paymentState?: SalePaymentState;
+  cashierUserId?: string;
+  sessionId?: string;
+  /// Posted sales unless the caller asks for the cancelled ones.
+  status?: SaleStatus;
+  /// Reference or customer name.
+  search?: string;
+}
+
+export interface SaleListParams extends SaleFilterParams {
+  sort?: SortSpec<"soldAt" | "totalTnd">;
+  page: number;
+  pageSize: number;
+}
+
+/// The list predicate (issue #44): posted sales by default, a status when
+/// asked, the reference or the customer name when searched.
+function saleListWhere(params: SaleFilterParams): Prisma.SaleWhereInput {
+  const search = params.search?.trim();
+
+  return {
+    status: params.status ?? SaleStatus.POSTED,
+    ...(params.customerId ? { customerId: params.customerId } : {}),
+    ...(params.paymentState ? { paymentState: params.paymentState } : {}),
+    ...(params.cashierUserId ? { postedByUserId: params.cashierUserId } : {}),
+    ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+    ...(params.from || params.to
+      ? {
+          soldAt: {
+            ...(params.from ? { gte: params.from } : {}),
+            ...(params.to ? { lte: params.to } : {}),
+          },
+        }
+      : {}),
+    ...(search
+      ? {
+          OR: [
+            { reference: { contains: search, mode: "insensitive" } },
+            {
+              customer: {
+                normalizedName: { contains: normalizeName(search) },
+              },
+            },
+          ],
+        }
+      : {}),
+  };
+}
+
+/// Cash through a drawer from sales: what was taken and what was handed
+/// back on cancellation, summed by the database per movement.
+function salePaymentsByMovement(
+  rows: Array<{
+    movement: SalePaymentMovement;
+    _sum: { amountTnd: Prisma.Decimal | null };
+  }>,
+) {
+  const of = (movement: SalePaymentMovement) =>
+    sumOrZero(rows.find((row) => row.movement === movement)?._sum.amountTnd);
+
+  return {
+    receipts: of(SalePaymentMovement.RECEIPT),
+    refunds: of(SalePaymentMovement.REFUND),
+  };
 }
 
 export interface PosProductListParams {
@@ -178,31 +249,8 @@ export class PosService {
   }
 
   /// Section 18: POS sales by date, customer, payment state, and cashier.
-  public async listSales(params: {
-    sort?: SortSpec<"soldAt" | "totalTnd">;
-    from?: Date;
-    to?: Date;
-    customerId?: string;
-    paymentState?: SalePaymentState;
-    cashierUserId?: string;
-    sessionId?: string;
-    page: number;
-    pageSize: number;
-  }) {
-    const where = {
-      ...(params.customerId ? { customerId: params.customerId } : {}),
-      ...(params.paymentState ? { paymentState: params.paymentState } : {}),
-      ...(params.cashierUserId ? { postedByUserId: params.cashierUserId } : {}),
-      ...(params.sessionId ? { sessionId: params.sessionId } : {}),
-      ...(params.from || params.to
-        ? {
-            soldAt: {
-              ...(params.from ? { gte: params.from } : {}),
-              ...(params.to ? { lte: params.to } : {}),
-            },
-          }
-        : {}),
-    };
+  public async listSales(params: SaleListParams) {
+    const where = saleListWhere(params);
     const [items, total] = await this.prisma.$transaction([
       this.prisma.sale.findMany({
         where,
@@ -241,6 +289,230 @@ export class PosService {
       })),
       total,
       params,
+    );
+  }
+
+  /// The KPI row of the sales list (issue #44): the same filters, no
+  /// paging; counts and sums per payment state of the posted sales, plus
+  /// the cancelled count, summed by the database.
+  public async summarizeSales(params: SaleFilterParams) {
+    const where = saleListWhere({ ...params, status: undefined });
+    const [byState, cancelled] = await Promise.all([
+      this.prisma.sale.groupBy({
+        by: ["paymentState"],
+        where: { ...where, status: SaleStatus.POSTED },
+        _count: { _all: true },
+        _sum: { totalTnd: true, paidAmountTnd: true, remainingDueTnd: true },
+      }),
+      this.prisma.sale.count({
+        where: { ...where, status: SaleStatus.CANCELLED },
+      }),
+    ]);
+    const countOf = (state: SalePaymentState) =>
+      byState.find((row) => row.paymentState === state)?._count._all ?? 0;
+    const sumOf = (
+      pick: (row: (typeof byState)[number]) => Prisma.Decimal | null,
+    ) =>
+      byState
+        .reduce(
+          (sum, row) => sum.plus(sumOrZero(pick(row))),
+          new Prisma.Decimal(0),
+        )
+        .toFixed(3);
+
+    return {
+      count: byState.reduce((sum, row) => sum + row._count._all, 0),
+      paidCount: countOf(SalePaymentState.PAID),
+      partiallyPaidCount: countOf(SalePaymentState.PARTIALLY_PAID),
+      unpaidCount: countOf(SalePaymentState.UNPAID),
+      cancelledCount: cancelled,
+      totalTnd: sumOf((row) => row._sum.totalTnd),
+      paidTnd: sumOf((row) => row._sum.paidAmountTnd),
+      remainingTnd: sumOf((row) => row._sum.remainingDueTnd),
+    };
+  }
+
+  /// Reverses a posted sale (issue #44, rule 04 section 12): the sale stays
+  /// with its reference and figures, marked cancelled with a reason; its
+  /// stock comes back, the receivable it created is reversed, and the cash
+  /// it took leaves the drawer open now. A sale created by an order, or one
+  /// that already received règlements, is refused (DEC-V2-003).
+  public async cancelSale(
+    saleId: string,
+    params: { idempotencyKey: string; reason: string },
+    actor: PosActor,
+  ) {
+    const reason = params.reason.trim();
+
+    if (reason.length < 3) {
+      throw new AppError({
+        statusCode: 400,
+        code: "REASON_REQUIRED",
+        message: "Une raison est requise.",
+      });
+    }
+
+    return this.runIdempotentCommand(
+      `pos_sale.cancel.${saleId}`,
+      params.idempotencyKey,
+      { saleId, reason },
+      async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "sales" WHERE "id" = ${saleId} FOR UPDATE`;
+        const sale = await tx.sale.findUnique({
+          where: { id: saleId },
+          include: {
+            lines: { include: { product: { select: { isStockable: true } } } },
+            payments: true,
+            order: { select: { id: true, reference: true } },
+            paymentAllocations: {
+              include: { payment: { select: { reversedAt: true } } },
+            },
+          },
+        });
+
+        if (!sale) {
+          throw new AppError({
+            statusCode: 404,
+            code: "SALE_NOT_FOUND",
+            message: "Vente introuvable.",
+          });
+        }
+
+        if (sale.status !== SaleStatus.POSTED) {
+          throw new AppError({
+            statusCode: 409,
+            code: "SALE_ALREADY_CANCELLED",
+            message: "Cette vente est déjà annulée.",
+          });
+        }
+
+        if (sale.order) {
+          throw new AppError({
+            statusCode: 409,
+            code: "SALE_LINKED_TO_ORDER",
+            message:
+              "Cette vente provient d'une commande terminée et ne peut pas être annulée ici.",
+          });
+        }
+
+        if (
+          sale.paymentAllocations.some(
+            (allocation) => allocation.payment.reversedAt === null,
+          )
+        ) {
+          throw new AppError({
+            statusCode: 409,
+            code: "SALE_HAS_ALLOCATED_PAYMENTS",
+            message:
+              "Des règlements ont été affectés à cette vente : annulez-les d'abord.",
+          });
+        }
+
+        const cancelledAt = new Date();
+        const cashTaken = sale.payments
+          .filter((payment) => payment.movement === SalePaymentMovement.RECEIPT)
+          .reduce(
+            (sum, payment) => sum.plus(payment.amountTnd),
+            new Prisma.Decimal(0),
+          );
+
+        if (cashTaken.greaterThan(0)) {
+          const session = await tx.posSession.findFirst({
+            where: {
+              status: PosSessionStatus.OPEN,
+              terminal: { code: mainTerminalCode },
+            },
+          });
+
+          if (!session) {
+            throw new AppError({
+              statusCode: 409,
+              code: "POS_SESSION_NOT_OPEN",
+              message:
+                "Ouvrez une session de caisse pour rembourser les espèces de cette vente.",
+            });
+          }
+
+          await tx.salePayment.create({
+            data: {
+              saleId: sale.id,
+              sessionId: session.id,
+              movement: SalePaymentMovement.REFUND,
+              amountTnd: cashTaken.toFixed(3),
+              paidAt: cancelledAt,
+              actorUserId: actor.actorUserId,
+              correlationId: actor.correlationId,
+            },
+          });
+        }
+
+        if (
+          sale.customerId &&
+          new Prisma.Decimal(sale.remainingDueTnd).greaterThan(0)
+        ) {
+          await tx.customerLedgerEntry.create({
+            data: {
+              customerId: sale.customerId,
+              saleId: sale.id,
+              balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+              entryType: CustomerLedgerEntryType.SALE_REVERSAL,
+              amountTnd: new Prisma.Decimal(sale.remainingDueTnd)
+                .negated()
+                .toFixed(3),
+              occurredAt: cancelledAt,
+              actorUserId: actor.actorUserId,
+              correlationId: actor.correlationId,
+            },
+          });
+        }
+
+        const stockable = sale.lines.filter((line) => line.product.isStockable);
+
+        if (stockable.length > 0) {
+          const mainLocation = await this.findMainLocation(tx);
+          await tx.inventoryMovement.createMany({
+            data: stockable.map((line) => ({
+              locationId: mainLocation.id,
+              itemType: InventoryItemType.PRODUCT,
+              productId: line.productId,
+              unitId: line.unitId,
+              movementType: InventoryMovementType.REVERSAL,
+              quantityDelta: new Prisma.Decimal(line.quantity).toFixed(6),
+              itemNameSnapshot: line.productNameSnapshot,
+              unitNameSnapshot: line.unitNameSnapshot,
+              sourceType: "POS_SALE_CANCELLATION",
+              sourceId: sale.id,
+              reason,
+              occurredAt: cancelledAt,
+              actorUserId: actor.actorUserId,
+              correlationId: actor.correlationId,
+            })),
+          });
+        }
+
+        const cancelled = await tx.sale.update({
+          where: { id: sale.id },
+          data: {
+            status: SaleStatus.CANCELLED,
+            cancelledAt,
+            cancelledByUserId: actor.actorUserId,
+            cancellationReason: reason,
+            correlationId: actor.correlationId,
+          },
+          include: { lines: true, payments: true },
+        });
+
+        await this.auditWithClient(tx, {
+          actor,
+          action: "pos_sale.cancel",
+          entity: "sale",
+          targetId: sale.id,
+          before: sale,
+          after: cancelled,
+        });
+
+        return { sale: cancelled };
+      },
     );
   }
 
@@ -357,7 +629,8 @@ export class PosService {
         // this drawer) and customer payments collected at the till. Back-office
         // payments have no session and are not counted, matching the
         // source-of-truth expected-cash formula.
-        const salePaymentTotal = await tx.salePayment.aggregate({
+        const salePaymentTotals = await tx.salePayment.groupBy({
+          by: ["movement"],
           where: { sessionId },
           _sum: { amountTnd: true },
         });
@@ -387,8 +660,10 @@ export class PosService {
             (row) => row.movement !== CustomerOrderAdvanceMovement.RECEIPT,
           )?._sum.amountTnd,
         );
+        const saleCash = salePaymentsByMovement(salePaymentTotals);
         const expectedCashTnd = new Prisma.Decimal(existing.openingCashTnd)
-          .plus(sumOrZero(salePaymentTotal._sum.amountTnd))
+          .plus(saleCash.receipts)
+          .minus(saleCash.refunds)
           .plus(advanceReceipts)
           .minus(advanceRefunds)
           .plus(sumOrZero(customerPaymentTotal._sum.amountTnd))
@@ -719,14 +994,35 @@ export class PosService {
     );
   }
 
+  /// The receipt view (issue #44): lines, the cash taken and refunded, the
+  /// order it came from, the règlements allocated to it later, the advance
+  /// applied at completion, and who cancelled it.
   public async getSale(saleId: string) {
     const sale = await this.prisma.sale.findUnique({
       where: { id: saleId },
       include: {
         customer: true,
         lines: true,
-        payments: true,
+        payments: { orderBy: [{ paidAt: "asc" }, { createdAt: "asc" }] },
         session: { include: { terminal: true } },
+        order: { select: { id: true, reference: true } },
+        paymentAllocations: {
+          include: {
+            payment: {
+              select: {
+                id: true,
+                paidAt: true,
+                reference: true,
+                amountTnd: true,
+                reversedAt: true,
+              },
+            },
+          },
+        },
+        ledgerEntries: {
+          where: { entryType: CustomerLedgerEntryType.ORDER_ADVANCE_APPLIED },
+          select: { amountTnd: true },
+        },
       },
     });
 
@@ -738,8 +1034,23 @@ export class PosService {
       });
     }
 
-    const actors = await this.actorsById([sale.postedByUserId]);
-    return { ...sale, postedBy: actors.get(sale.postedByUserId) ?? null };
+    const actors = await this.actorsById([
+      sale.postedByUserId,
+      sale.cancelledByUserId,
+    ]);
+    const { ledgerEntries, ...rest } = sale;
+    const appliedAdvanceTnd = ledgerEntries
+      .reduce((sum, entry) => sum.minus(entry.amountTnd), new Prisma.Decimal(0))
+      .toFixed(3);
+
+    return {
+      ...rest,
+      appliedAdvanceTnd,
+      postedBy: actors.get(sale.postedByUserId) ?? null,
+      cancelledBy: sale.cancelledByUserId
+        ? (actors.get(sale.cancelledByUserId) ?? null)
+        : null,
+    };
   }
 
   /// Session history for the Z-report screen.
@@ -849,7 +1160,8 @@ export class PosService {
         _count: { _all: true },
         _sum: { totalTnd: true, remainingDueTnd: true },
       }),
-      this.prisma.salePayment.aggregate({
+      this.prisma.salePayment.groupBy({
+        by: ["movement"],
         where: { sessionId },
         _sum: { amountTnd: true },
       }),
@@ -867,6 +1179,7 @@ export class PosService {
         _sum: { amountTnd: true },
       }),
     ]);
+    const saleCash = salePaymentsByMovement(salePayments);
     const advanceOf = (movement: CustomerOrderAdvanceMovement) =>
       sumOrZero(
         advances.find((row) => row.movement === movement)?._sum.amountTnd,
@@ -888,7 +1201,8 @@ export class PosService {
         salesCount: sales._count._all,
         salesTotalTnd: sumOrZero(sales._sum.totalTnd).toFixed(3),
         creditGrantedTnd: sumOrZero(sales._sum.remainingDueTnd).toFixed(3),
-        cashCollectedTnd: sumOrZero(salePayments._sum.amountTnd).toFixed(3),
+        cashCollectedTnd: saleCash.receipts.toFixed(3),
+        saleRefundsTnd: saleCash.refunds.toFixed(3),
         advancesReceivedTnd: advanceOf(
           CustomerOrderAdvanceMovement.RECEIPT,
         ).toFixed(3),

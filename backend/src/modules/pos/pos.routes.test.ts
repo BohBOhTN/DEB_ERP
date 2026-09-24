@@ -139,6 +139,10 @@ async function createTestApp(permissionKeys: string[]) {
         cashDifferenceTnd: "5.000",
       },
     }),
+    summarizeSales: vi.fn().mockResolvedValue({ count: 0 }),
+    cancelSale: vi
+      .fn()
+      .mockResolvedValue({ sale: { id: "sale-1", status: "CANCELLED" } }),
     postPaidSale: vi.fn().mockResolvedValue({
       sale: {
         id: "sale-1",
@@ -454,5 +458,56 @@ describe("pos routes", () => {
         actorUserId: "user-1",
       }),
     );
+  });
+
+  describe("sale cancellation and figures (issue #44)", () => {
+    it("cancels a sale with pos.cancel_sale, a reason and an idempotency key", async () => {
+      const { app, cookie, posService } = await createTestApp([
+        "pos.cancel_sale",
+      ]);
+
+      await request(app)
+        .post("/api/v1/pos/sales/sale-1/cancel")
+        .set("Cookie", cookie)
+        .set("Idempotency-Key", "cancel-1")
+        .send({ reason: "Erreur de saisie" })
+        .expect(201);
+
+      expect(posService.cancelSale).toHaveBeenCalledWith(
+        "sale-1",
+        { idempotencyKey: "cancel-1", reason: "Erreur de saisie" },
+        expect.objectContaining({ actorUserId: expect.any(String) }),
+      );
+    });
+
+    it("refuses the cancellation to a cashier without pos.cancel_sale", async () => {
+      const { app, cookie, posService } = await createTestApp([
+        "pos.access",
+        "pos.sell",
+        "pos.credit_sale",
+      ]);
+
+      await request(app)
+        .post("/api/v1/pos/sales/sale-1/cancel")
+        .set("Cookie", cookie)
+        .set("Idempotency-Key", "cancel-1")
+        .send({ reason: "Erreur de saisie" })
+        .expect(403);
+
+      expect(posService.cancelSale).not.toHaveBeenCalled();
+    });
+
+    it("serves the sales figures with the list's filters", async () => {
+      const { app, cookie, posService } = await createTestApp(["pos.access"]);
+
+      await request(app)
+        .get("/api/v1/pos/sales/summary?from=2026-09-24&to=2026-09-24&q=amel")
+        .set("Cookie", cookie)
+        .expect(200);
+
+      expect(posService.summarizeSales).toHaveBeenCalledWith(
+        expect.objectContaining({ search: "amel" }),
+      );
+    });
   });
 });

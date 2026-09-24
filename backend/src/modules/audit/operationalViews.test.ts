@@ -38,6 +38,26 @@ describe("operational view queries", () => {
     ]);
   });
 
+  // Issue #44: the list shows posted sales unless asked for the cancelled
+  // ones, and searches the reference or the customer name.
+  it("lists posted sales by default and searches them", async () => {
+    const prisma = new QueryCapturingPrisma();
+    const service = new PosService(prisma as unknown as PrismaClient);
+
+    await service.listSales({ search: "VT-0001", page: 1, pageSize: 25 });
+
+    expect(prisma.lastArgs.where).toMatchObject({
+      status: "POSTED",
+      OR: [
+        { reference: { contains: "VT-0001", mode: "insensitive" } },
+        { customer: { normalizedName: { contains: "vt-0001" } } },
+      ],
+    });
+
+    await service.listSales({ status: "CANCELLED", page: 1, pageSize: 25 });
+    expect(prisma.lastArgs.where).toMatchObject({ status: "CANCELLED" });
+  });
+
   it("treats an overdue purchase as posted, still owed, and past its due date", async () => {
     const prisma = new QueryCapturingPrisma();
     const service = new ProcurementService(prisma as unknown as PrismaClient);
