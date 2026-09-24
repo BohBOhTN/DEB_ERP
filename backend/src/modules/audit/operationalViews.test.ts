@@ -52,7 +52,7 @@ describe("operational view queries", () => {
 
     expect(prisma.lastArgs.where).toMatchObject({
       status: "POSTED",
-      paymentTerms: { in: ["PARTIAL", "UNPAID"] },
+      remainingDueTnd: { gt: 0 },
       dueDate: { lt: asOf },
     });
     expect(prisma.lastArgs.orderBy).toEqual([
@@ -78,7 +78,8 @@ describe("operational view queries", () => {
     });
   });
 
-  // A fully paid purchase is never "due", whatever its due date says.
+  // A fully paid purchase is never "due", whatever its due date or its
+  // entry-time terms say: the projection of its ledger decides (#47).
   it("excludes fully paid purchases from the due lists", async () => {
     const prisma = new QueryCapturingPrisma();
     const service = new ProcurementService(prisma as unknown as PrismaClient);
@@ -89,9 +90,12 @@ describe("operational view queries", () => {
       pageSize: 25,
     });
 
-    const terms = (prisma.lastArgs.where as { paymentTerms: { in: string[] } })
-      .paymentTerms.in;
-    expect(terms).not.toContain("PAID");
+    const where = prisma.lastArgs.where as {
+      remainingDueTnd: { gt: number };
+      paymentTerms?: unknown;
+    };
+    expect(where.remainingDueTnd).toEqual({ gt: 0 });
+    expect(where.paymentTerms).toBeUndefined();
   });
 
   it("treats an overdue order as still awaiting fulfilment and past its time", async () => {

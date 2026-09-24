@@ -95,7 +95,8 @@ export function planPaymentAllocations(params: {
       break;
     }
 
-    const already = planned.get(document.key)?.amountTnd ?? new Prisma.Decimal(0);
+    const already =
+      planned.get(document.key)?.amountTnd ?? new Prisma.Decimal(0);
     const available = document.balanceTnd.minus(already);
 
     if (!available.greaterThan(0)) {

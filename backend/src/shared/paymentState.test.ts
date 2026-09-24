@@ -1,11 +1,16 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import { derivePaymentState, documentPaymentProjection } from "./paymentState.js";
+import {
+  derivePaymentState,
+  documentPaymentProjection,
+} from "./paymentState.js";
 
 describe("payment state", () => {
   it("derives the three states from total and paid", () => {
     const total = new Prisma.Decimal("50.000");
-    expect(derivePaymentState(total, new Prisma.Decimal("50.000"))).toBe("PAID");
+    expect(derivePaymentState(total, new Prisma.Decimal("50.000"))).toBe(
+      "PAID",
+    );
     expect(derivePaymentState(total, new Prisma.Decimal("0"))).toBe("UNPAID");
     expect(derivePaymentState(total, new Prisma.Decimal("12.500"))).toBe(
       "PARTIALLY_PAID",
