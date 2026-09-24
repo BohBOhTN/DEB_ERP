@@ -31,6 +31,16 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
 
 ### Fixed
 
+- Issue #47, règlements tied to documents: a payment settles the party's
+  open documents (explicit allocations first, the remainder oldest first),
+  sales, distributor sales, settlements and purchases keep `Payé`, `Reste`
+  and `État` in step with the ledger, two concurrent payments can no longer
+  overpay a balance, an inactive party is refused, a purchase cancelled
+  after a later payment reverses every payment applied to it, and a
+  customer, supplier or distributor payment can be reversed with a reason
+  from its list (a till règlement leaves the drawer of the open session).
+  The allocation table splits the amount automatically and the payment
+  toast names the documents settled.
 - Found by the seeded demo replay: the palette hid server results; a
   cashier without the balances permission could not pick a customer for an
   order; the customer and supplier payment dialogs failed after a successful
