@@ -127,6 +127,42 @@ describe("operational view queries", () => {
     expect(where.requestedFulfillmentAt.lt).toEqual(asOf);
   });
 
+  // Issue #45: a due state and a date window combine. "Upcoming before the
+  // end of today" is today's queue; the window no longer disappears.
+  it("combines a due state with a date window", async () => {
+    const prisma = new QueryCapturingPrisma();
+    const service = new OrdersService(prisma as unknown as PrismaClient);
+    const asOf = new Date("2026-09-22T09:00:00.000Z");
+    const dayEnd = new Date("2026-09-22T22:59:59.999Z");
+
+    await service.listOrders({
+      dueState: "UPCOMING",
+      dueBefore: dayEnd,
+      asOf,
+      page: 1,
+      pageSize: 25,
+    });
+
+    expect(prisma.lastArgs.where).toMatchObject({
+      status: { in: ["DRAFT", "CONFIRMED", "PREPARING", "READY"] },
+      requestedFulfillmentAt: { gte: asOf, lte: dayEnd },
+    });
+  });
+
+  it("searches the queue by reference or customer name", async () => {
+    const prisma = new QueryCapturingPrisma();
+    const service = new OrdersService(prisma as unknown as PrismaClient);
+
+    await service.listOrders({ search: "Amel", page: 1, pageSize: 25 });
+
+    expect(prisma.lastArgs.where).toMatchObject({
+      OR: [
+        { reference: { contains: "Amel", mode: "insensitive" } },
+        { customer: { normalizedName: { contains: "amel" } } },
+      ],
+    });
+  });
+
   it("treats an upcoming order as due on or after now", async () => {
     const prisma = new QueryCapturingPrisma();
     const service = new OrdersService(prisma as unknown as PrismaClient);
@@ -156,11 +192,13 @@ class QueryCapturingPrisma {
       return [];
     },
     count: async () => 0,
+    groupBy: async () => [],
   };
 
   public readonly sale = this.model;
   public readonly purchase = this.model;
   public readonly customerOrder = this.model;
+  public readonly customerOrderAdvance = this.model;
 
   public async $transaction<TResult>(
     actions: Array<Promise<unknown>>,

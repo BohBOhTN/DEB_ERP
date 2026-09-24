@@ -106,6 +106,7 @@ async function createTestApp(permissionKeys: string[]) {
       pageCount: 1,
     }),
     getOrder: vi.fn().mockResolvedValue({ id: "order-1" }),
+    summarizeOrders: vi.fn().mockResolvedValue({ count: 0 }),
     createOrder: vi.fn().mockResolvedValue({ order: { id: "order-1" } }),
     updateOrder: vi.fn().mockResolvedValue({ order: { id: "order-1" } }),
     changeOrderStatus: vi.fn().mockResolvedValue({ order: { id: "order-1" } }),
@@ -312,7 +313,7 @@ describe("orders routes", () => {
       .post("/api/orders/order-1/complete")
       .set("Cookie", cookie)
       .set("Idempotency-Key", "complete-1")
-      .send({ completedAt: "2026-09-23T09:15:00.000Z" })
+      .send({ completedAt: "2026-09-23T09:15:00.000Z", paidAmountTnd: "0" })
       .expect(403);
 
     expect(response.body.error.code).toBe("PERMISSION_DENIED");
@@ -327,7 +328,7 @@ describe("orders routes", () => {
     const response = await request(app)
       .post("/api/orders/order-1/complete")
       .set("Cookie", cookie)
-      .send({ completedAt: "2026-09-23T09:15:00.000Z" })
+      .send({ completedAt: "2026-09-23T09:15:00.000Z", paidAmountTnd: "0" })
       .expect(400);
 
     expect(response.body.error.code).toBe("IDEMPOTENCY_KEY_REQUIRED");
@@ -343,7 +344,7 @@ describe("orders routes", () => {
       .post("/api/orders/order-1/complete")
       .set("Cookie", cookie)
       .set("Idempotency-Key", "complete-1")
-      .send({ completedAt: "2026-09-23T09:15:00.000Z" })
+      .send({ completedAt: "2026-09-23T09:15:00.000Z", paidAmountTnd: "0" })
       .expect(201);
 
     expect(ordersService.completeOrder).toHaveBeenCalledWith(
@@ -392,5 +393,57 @@ describe("orders routes", () => {
       }),
       expect.objectContaining({ actorUserId: "user-1" }),
     );
+  });
+
+  describe("order queue figures and completion amount (issue #45)", () => {
+    it("serves the summary with the list's filters", async () => {
+      const { app, cookie, ordersService } = await createTestApp([
+        "orders.view",
+      ]);
+
+      await request(app)
+        .get(
+          "/api/v1/orders/summary?customerId=customer-1&dueAfter=2026-09-24T00:00:00.000Z&q=CMD",
+        )
+        .set("Cookie", cookie)
+        .expect(200);
+
+      expect(ordersService.summarizeOrders).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customerId: "customer-1",
+          dueAfter: new Date("2026-09-24T00:00:00.000Z"),
+          search: "CMD",
+        }),
+      );
+    });
+
+    it("refuses the summary without orders.view", async () => {
+      const { app, cookie, ordersService } = await createTestApp([
+        "orders.create",
+      ]);
+
+      await request(app)
+        .get("/api/v1/orders/summary")
+        .set("Cookie", cookie)
+        .expect(403);
+
+      expect(ordersService.summarizeOrders).not.toHaveBeenCalled();
+    });
+
+    it("refuses a completion that does not state the amount paid", async () => {
+      const { app, cookie, ordersService } = await createTestApp([
+        "orders.complete",
+      ]);
+
+      const response = await request(app)
+        .post("/api/v1/orders/order-1/complete")
+        .set("Cookie", cookie)
+        .set("Idempotency-Key", "complete-1")
+        .send({ completedAt: "2026-09-24T10:00:00.000Z" })
+        .expect(400);
+
+      expect(response.body.error.code).toBe("VALIDATION_ERROR");
+      expect(ordersService.completeOrder).not.toHaveBeenCalled();
+    });
   });
 });

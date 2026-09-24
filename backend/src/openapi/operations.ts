@@ -854,6 +854,16 @@ const orderOperations: ApiOperation[] = [
   }),
   operation({
     method: "get",
+    path: "/orders/summary",
+    operationId: "orders.summary",
+    summary: "Order queue figures",
+    tag: "orders",
+    permissions: ["orders.view"],
+    query: orders.summaryQuerySchema,
+    dataKey: "summary",
+  }),
+  operation({
+    method: "get",
     path: "/orders/{orderId}",
     operationId: "orders.get",
     summary: "Order detail",
