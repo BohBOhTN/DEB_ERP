@@ -37,6 +37,7 @@ const actionLabels: Record<string, string> = {
   "purchase.post": "Validation d'un achat",
   "purchase.cancel": "Annulation d'un achat",
   "supplier_payment.create": "Paiement fournisseur",
+  "supplier_payment.reverse": "Annulation d'un paiement fournisseur",
   "pos_session.open": "Ouverture de caisse",
   "pos_session.close": "Clôture de caisse",
   "pos_sale.post": "Vente en caisse",

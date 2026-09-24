@@ -1158,6 +1158,18 @@ const procurementOperations: ApiOperation[] = [
     status: 201,
     dataKey: "payment",
   }),
+  operation({
+    method: "post",
+    path: "/procurement/supplier-payments/{paymentId}/reverse",
+    operationId: "procurement.reversePayment",
+    summary: "Reverse a supplier payment",
+    tag: "procurement",
+    permissions: ["supplier_payments.create"],
+    body: procurement.reversePaymentSchema,
+    idempotent: true,
+    status: 201,
+    dataKey: "payment",
+  }),
 ];
 
 const simulationOperations: ApiOperation[] = [

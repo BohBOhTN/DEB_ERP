@@ -115,6 +115,10 @@ export const cancelPurchaseSchema = z.object({
   reason: z.string().trim().min(3),
 });
 
+export const reversePaymentSchema = z.object({
+  reason: z.string().trim().min(3),
+});
+
 export const createSupplierPaymentSchema = z.object({
   supplierId: z.string().trim().min(1),
   paidAt: z.coerce.date(),
@@ -340,6 +344,27 @@ export function procurementRouter(params: {
           {
             ...body,
             idempotencyKey: readIdempotencyKey(request.headers),
+          },
+          actorFromResponse(response),
+        );
+        sendCommandResult(response, 201, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/supplier-payments/:paymentId/reverse",
+    requirePermission("supplier_payments.create"),
+    async (request, response, next) => {
+      try {
+        const body = reversePaymentSchema.parse(request.body);
+        const result = await params.procurementService.reverseSupplierPayment(
+          parseRouteParam(request.params.paymentId),
+          {
+            idempotencyKey: readIdempotencyKey(request.headers),
+            reason: body.reason,
           },
           actorFromResponse(response),
         );

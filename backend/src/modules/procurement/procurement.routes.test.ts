@@ -157,6 +157,9 @@ async function createTestApp(permissionKeys: string[]) {
         status: "CANCELLED",
       },
     }),
+    reverseSupplierPayment: vi.fn().mockResolvedValue({
+      payment: { id: "payment-2", reversedAt: "2026-09-24T10:00:00.000Z" },
+    }),
     listSupplierBalances: vi.fn().mockResolvedValue({
       items: [
         {
@@ -631,5 +634,39 @@ describe("procurement routes", () => {
         actorUserId: "user-1",
       }),
     );
+  });
+
+  it("reverses a supplier payment with supplier_payments.create and a reason", async () => {
+    const { app, cookie, procurementService } = await createTestApp([
+      "supplier_payments.create",
+    ]);
+
+    await request(app)
+      .post("/api/v1/procurement/supplier-payments/payment-2/reverse")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "reverse-1")
+      .send({ reason: "Double saisie" })
+      .expect(201);
+
+    expect(procurementService.reverseSupplierPayment).toHaveBeenCalledWith(
+      "payment-2",
+      { idempotencyKey: "reverse-1", reason: "Double saisie" },
+      expect.objectContaining({ actorUserId: expect.any(String) }),
+    );
+  });
+
+  it("refuses a supplier payment reversal without supplier_payments.create", async () => {
+    const { app, cookie, procurementService } = await createTestApp([
+      "supplier_payments.view",
+    ]);
+
+    await request(app)
+      .post("/api/v1/procurement/supplier-payments/payment-2/reverse")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "reverse-1")
+      .send({ reason: "Double saisie" })
+      .expect(403);
+
+    expect(procurementService.reverseSupplierPayment).not.toHaveBeenCalled();
   });
 });
