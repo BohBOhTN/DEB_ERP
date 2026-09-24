@@ -13,16 +13,13 @@ export function useReferenceWarmup(permissions: PermissionSet | null): void {
 
   useEffect(() => {
     if (!permissions) return;
-    if (
-      hasAny(permissions, [
-        "products.view",
-        "raw_materials.view",
-        "simulations.view",
-        "purchases.view",
-      ])
-    ) {
+    // Each reference read is gated by its own permission: a cashier without
+    // the catalogue must not trigger refused requests at every sign-in.
+    const units = hasAny(permissions, ["units.view"]);
+    const categories = hasAny(permissions, ["categories.view"]);
+    if (units || categories) {
       void import("../features/catalog/catalog.queries.js").then((m) =>
-        m.prefetchCatalogReference(queryClient),
+        m.prefetchCatalogReference(queryClient, { units, categories }),
       );
     }
   }, [permissions, queryClient]);

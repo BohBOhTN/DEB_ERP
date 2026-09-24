@@ -95,18 +95,26 @@ export function useUnits(query: CatalogListQuery = allActive) {
 /// with its options (UI-26); called by the shell, loaded on demand.
 export async function prefetchCatalogReference(
   queryClient: Parameters<typeof invalidateAfter>[0],
+  which: { units: boolean; categories: boolean } = {
+    units: true,
+    categories: true,
+  },
 ): Promise<void> {
   await Promise.all([
-    queryClient.prefetchQuery({
-      queryKey: catalogKeys.units(allActive),
-      queryFn: () => api.listUnits(allActive),
-      ...tier("reference"),
-    }),
-    queryClient.prefetchQuery({
-      queryKey: catalogKeys.categories(allActive),
-      queryFn: () => api.listCategories(allActive),
-      ...tier("reference"),
-    }),
+    which.units
+      ? queryClient.prefetchQuery({
+          queryKey: catalogKeys.units(allActive),
+          queryFn: () => api.listUnits(allActive),
+          ...tier("reference"),
+        })
+      : null,
+    which.categories
+      ? queryClient.prefetchQuery({
+          queryKey: catalogKeys.categories(allActive),
+          queryFn: () => api.listCategories(allActive),
+          ...tier("reference"),
+        })
+      : null,
   ]);
 }
 
