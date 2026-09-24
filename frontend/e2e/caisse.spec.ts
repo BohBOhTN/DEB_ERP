@@ -62,7 +62,9 @@ test("sells on a phone with change and credit, retries a lost response once, and
   await expect(
     page.getByRole("heading", { level: 1, name: "Caisse" }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Voir" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Voir", exact: true }),
+  ).toBeVisible();
 
   await tap("Ajouter Pain de mie");
   await tap("Ajouter un Pain de mie");
