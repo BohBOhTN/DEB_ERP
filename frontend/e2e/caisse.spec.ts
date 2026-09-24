@@ -58,11 +58,12 @@ test("sells on a phone with change and credit, retries a lost response once, and
   await expect(page.getByText("Vente enregistrée").first()).toBeVisible();
   expect(state.sales).toHaveLength(1);
   expect(state.saleKeys.size).toBe(1);
+  // Issue #43: the till stays open for the next customer.
   await expect(
-    page.getByRole("heading", { level: 1, name: "VT-000002" }),
+    page.getByRole("heading", { level: 1, name: "Caisse" }),
   ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Voir" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Nouvelle vente" }).click();
   await tap("Ajouter Pain de mie");
   await tap("Ajouter un Pain de mie");
   cart = await openCart("5,000 TND");
@@ -89,7 +90,6 @@ test("sells on a phone with change and credit, retries a lost response once, and
     paymentState: "PARTIALLY_PAID",
   });
 
-  await page.getByRole("button", { name: "Nouvelle vente" }).click();
   await page.getByRole("button", { name: "Clôturer" }).click();
   const closeDialog = page.getByRole("alertdialog", {
     name: "Clôturer la caisse",

@@ -6,6 +6,9 @@ export interface Hotkey {
   handler: (event: KeyboardEvent) => void;
   /// Fire even when a text field has focus (default: only for function keys).
   inInputs?: boolean;
+  /// Extra guard evaluated before the default is prevented, so a key that
+  /// does not apply (Enter on a focused button) keeps its native behaviour.
+  when?: (event: KeyboardEvent) => boolean;
 }
 
 /// Desktop keyboard shortcuts for the POS (07 section 4.6). Plain keys are
@@ -34,6 +37,7 @@ export function useHotkeys(hotkeys: Hotkey[], enabled = true): void {
         if (event.key !== hotkey.key) continue;
         const functionKey = /^F\d+$/.test(hotkey.key);
         if (typing && !functionKey && !hotkey.inInputs) continue;
+        if (hotkey.when && !hotkey.when(event)) continue;
         event.preventDefault();
         hotkey.handler(event);
         return;
