@@ -654,6 +654,18 @@ const distributionOperations: ApiOperation[] = [
     status: 201,
     dataKey: "payment",
   }),
+  operation({
+    method: "post",
+    path: "/distributor-payments/{paymentId}/reverse",
+    operationId: "distribution.reversePayment",
+    summary: "Reverse a distributor payment",
+    tag: "distribution",
+    permissions: ["distributor_payments.create"],
+    body: distribution.reversePaymentSchema,
+    idempotent: true,
+    status: 201,
+    dataKey: "payment",
+  }),
 ];
 
 const expenseOperations: ApiOperation[] = [

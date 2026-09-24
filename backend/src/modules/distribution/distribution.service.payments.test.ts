@@ -124,9 +124,79 @@ describe("DistributionService distributor payments", () => {
     });
   });
 
-  it("rejects allocations that do not sum to the payment", async () => {
+  it("completes a partial allocation with the remainder on the oldest open documents", async () => {
     const { service, prisma } = await makeServiceWithUnpaidSale();
-    const saleId = prisma.store.distributorSales[0].id as string;
+    // A second sale, posted later: the remainder goes to the first one.
+    await service.postDirectSale(
+      {
+        idempotencyKey: "sale-2",
+        distributorId: "distributor-1",
+        soldAt: new Date("2026-09-23T09:00:00.000Z"),
+        paidAmountTnd: "0",
+        lines: [
+          { productId: "product-1", quantity: "10", unitPriceTnd: "2.000" },
+        ],
+      },
+      { actorUserId: "user-1" },
+    );
+    const firstId = prisma.store.distributorSales[0]?.id as string;
+    const secondId = prisma.store.distributorSales[1]?.id as string;
+
+    const result = await service.createDistributorPayment(
+      {
+        idempotencyKey: "payment-1",
+        distributorId: "distributor-1",
+        paidAt,
+        amountTnd: "30.000",
+        allocations: [{ saleId: secondId, amountTnd: "20.000" }],
+      },
+      { actorUserId: "user-1" },
+    );
+
+    expect(result.allocations).toEqual([
+      { saleId: firstId, amountTnd: "10.000" },
+      { saleId: secondId, amountTnd: "20.000" },
+    ]);
+    // The stored state of each sale follows its ledger (GOV-006). The double
+    // swaps its store on commit, so the rows are read after the command.
+    const [firstSale, secondSale] = prisma.store.distributorSales;
+    expect(firstSale).toMatchObject({
+      paidAmountTnd: "10.000",
+      remainingDueTnd: "70.000",
+      paymentState: "PARTIALLY_PAID",
+    });
+    expect(secondSale).toMatchObject({
+      paidAmountTnd: "20.000",
+      remainingDueTnd: "0.000",
+      paymentState: "PAID",
+    });
+  });
+
+  it("settles the oldest documents first when no allocation is named", async () => {
+    const { service, prisma } = await makeServiceWithUnpaidSale();
+
+    const result = await service.createDistributorPayment(
+      {
+        idempotencyKey: "payment-1",
+        distributorId: "distributor-1",
+        paidAt,
+        amountTnd: "80.000",
+      },
+      { actorUserId: "user-1" },
+    );
+
+    expect(result.allocations).toEqual([
+      { saleId: prisma.store.distributorSales[0]?.id, amountTnd: "80.000" },
+    ]);
+    expect(prisma.store.distributorSales[0]).toMatchObject({
+      paymentState: "PAID",
+      remainingDueTnd: "0.000",
+    });
+  });
+
+  it("rejects allocations that together exceed the amount", async () => {
+    const { service, prisma } = await makeServiceWithUnpaidSale();
+    const saleId = prisma.store.distributorSales[0]?.id as string;
 
     await expect(
       service.createDistributorPayment(
@@ -134,14 +204,73 @@ describe("DistributionService distributor payments", () => {
           idempotencyKey: "payment-1",
           distributorId: "distributor-1",
           paidAt,
-          amountTnd: "30.000",
+          amountTnd: "10.000",
           allocations: [{ saleId, amountTnd: "20.000" }],
         },
         { actorUserId: "user-1" },
       ),
-    ).rejects.toMatchObject({
-      code: "PAYMENT_ALLOCATION_TOTAL_MISMATCH",
+    ).rejects.toMatchObject({ code: "PAYMENT_ALLOCATION_EXCEEDS_AMOUNT" });
+  });
+
+  it("refuses a payment for a deactivated distributor", async () => {
+    const { service, prisma } = await makeServiceWithUnpaidSale();
+    const distributor = prisma.store.distributors[0];
+    if (distributor) distributor.isActive = false;
+
+    await expect(
+      service.createDistributorPayment(
+        {
+          idempotencyKey: "payment-1",
+          distributorId: "distributor-1",
+          paidAt,
+          amountTnd: "10.000",
+        },
+        { actorUserId: "user-1" },
+      ),
+    ).rejects.toMatchObject({ code: "DISTRIBUTOR_INACTIVE" });
+  });
+
+  it("reverses a payment and restores the sale it had settled", async () => {
+    const { service, prisma } = await makeServiceWithUnpaidSale();
+    const created = await service.createDistributorPayment(
+      {
+        idempotencyKey: "payment-1",
+        distributorId: "distributor-1",
+        paidAt,
+        amountTnd: "30.000",
+      },
+      { actorUserId: "user-1" },
+    );
+    const custodyBefore = prisma.store.inventoryMovements.length;
+
+    const reversed = await service.reverseDistributorPayment(
+      created.payment.id as string,
+      { idempotencyKey: "reverse-1", reason: "Montant erroné" },
+      { actorUserId: "user-2" },
+    );
+
+    expect(reversed.payment).toMatchObject({
+      reversedByUserId: "user-2",
+      reversalReason: "Montant erroné",
     });
+    expect(prisma.store.distributorLedgerEntries.at(-1)).toMatchObject({
+      entryType: "PAYMENT_REVERSAL",
+      saleId: prisma.store.distributorSales[0]?.id,
+      amountTnd: "30.000",
+    });
+    expect(prisma.store.distributorSales[0]).toMatchObject({
+      paidAmountTnd: "0.000",
+      remainingDueTnd: "80.000",
+      paymentState: "UNPAID",
+    });
+    expect(prisma.store.inventoryMovements).toHaveLength(custodyBefore);
+    await expect(
+      service.reverseDistributorPayment(
+        created.payment.id as string,
+        { idempotencyKey: "reverse-2", reason: "Encore" },
+        { actorUserId: "user-2" },
+      ),
+    ).rejects.toMatchObject({ code: "PAYMENT_ALREADY_REVERSED" });
   });
 
   it("rejects paying more than the distributor balance", async () => {

@@ -57,6 +57,7 @@ const actionLabels: Record<string, string> = {
   "distributor_dispatch.post": "Sortie en dépôt-vente",
   "distributor_settlement.post": "Règlement de distribution",
   "distributor_payment.create": "Paiement distributeur",
+  "distributor_payment.reverse": "Annulation d'un paiement distributeur",
   "expense_category.create": "Création d'une catégorie de dépense",
   "expense_category.update": "Modification d'une catégorie de dépense",
   "expense.create": "Création d'une dépense",
