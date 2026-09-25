@@ -8,7 +8,7 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
 
 ### Added
 
-- Issue 008, Produits and Accueil: an approximate cost per product (per
+- Issue #48, Produits and Accueil: an approximate cost per product (per
   base unit, ingredients only) behind the new `margin.view` permission,
   the margin per product on the list and the page, the cost snapshotted
   on every sold line at posting, and a `Marge approximative` tile on

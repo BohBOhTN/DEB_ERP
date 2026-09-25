@@ -1,4 +1,4 @@
-# Feature 008: approximate cost per product and an approximate margin on Accueil
+# Feature #48: approximate cost per product and an approximate margin on Accueil
 
 ## Branches
 
@@ -7,12 +7,11 @@
 
 ## Scope
 
-Closes issue 008 ([issues/008](../issues/008-produits-cout-approximatif-marge.md)):
+Closes issue #48 ([issues/008](../issues/008-produits-cout-approximatif-marge.md)):
 the owner types an approximate cost per product, sees the margin per
 product, and reads an approximate margin of the day on Accueil. Decision
 `DEC-V2-005` (local decision log) records the widening of `OD-V2-001` and
-the new permission. Commits carry `(008)`; they will be re-tagged with the
-GitHub issue number once it is opened.
+the new permission. Commits carry `(#48)`.
 
 ## Summary
 
@@ -99,5 +98,5 @@ None.
 
 - [ ] CI passed
 - [ ] No real `.env` files or secrets committed
-- [ ] Scope matches issue 008
+- [ ] Scope matches issue #48
 - [ ] Target branch is `dev`

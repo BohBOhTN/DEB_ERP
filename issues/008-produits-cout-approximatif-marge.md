@@ -6,7 +6,8 @@
 | Type             | Feature                                                                                                                                                                          |
 | Priority         | Medium                                                                                                                                                                           |
 | Depends on       | 002 (the period control of Accueil), 004 (cancelled sales are excluded from every aggregate)                                                                                     |
-| Suggested branch | `feat/products-cost-margin`                                                                                                                                                      |
+| GitHub issue     | #48                                                                                                                                                                              |
+| Suggested branch | `feat/48-products-cost-margin`                                                                                                                                                   |
 | Related          | source of truth §1 ("profitability" deferred), §16 (`SIM-006` snapshots, `SIM-010` margin needs separate approval), `OD-V2-001` (operational home only), spec §4.9 margin helper |
 
 ## Owner's request
