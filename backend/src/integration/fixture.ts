@@ -353,6 +353,13 @@ export async function seedPerformanceFixture(
     })),
   });
 
+  // Fresh statistics for the planner before anything is measured. Without
+  // them a run measures whatever plans the stale statistics produce, and
+  // autovacuum may analyse the tables in the middle of the samples: one CI
+  // run measured the customer balances at 150 ms where the usual figure is
+  // 22 to 31 ms.
+  await prisma.$executeRawUnsafe("ANALYZE");
+
   return {
     runId,
     user,
