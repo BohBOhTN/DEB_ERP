@@ -1,6 +1,6 @@
 import { Pencil, Plus } from "lucide-react";
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { KeyValueList } from "../../../components/patterns/KeyValueList/KeyValueList.js";
 import { PageHeader } from "../../../components/patterns/PageHeader/PageHeader.js";
 import { PermissionGate } from "../../../components/patterns/PermissionGate/PermissionGate.js";
@@ -12,9 +12,12 @@ import { StatusPill } from "../../../components/ui/StatusPill/StatusPill.js";
 import { Tabs } from "../../../components/ui/Tabs/Tabs.js";
 import { describeError } from "../../../i18n/errors.js";
 import { formatDate, formatMoney } from "../../../i18n/format.js";
+import { fr } from "../../../i18n/fr.js";
 import { useSessionPermissions } from "../../../app/sessionContext.js";
+import { useSimulations } from "../../simulation/simulation.queries.js";
 import { useProduct } from "../catalog.queries.js";
 import { ProductFormDialog } from "../components/ProductFormDialog.js";
+import { productMargin } from "../components/productMargin.js";
 import {
   HistoryTab,
   MovementsTab,
@@ -31,6 +34,23 @@ export function ProductDetailPage() {
   const [editing, setEditing] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
   const product = query.data;
+  const canSeeMargin = permissions.has("margin.view");
+  // Issue 008: the latest saved simulation targeting this product, as a
+  // hint next to the typed cost. Simulations stay a planning tool; nothing
+  // is copied without the owner typing it (SIM-*).
+  const lastSimulation = useSimulations(
+    {
+      page: 1,
+      pageSize: 1,
+      targetProductId: productId,
+      sort: { field: "updatedAt", direction: "desc" },
+    },
+    canSeeMargin && permissions.has("simulations.view"),
+  );
+  const simulation = lastSimulation.data?.items[0];
+  const margin = product
+    ? productMargin(product.salePriceTnd, product.approximateCostTnd)
+    : null;
 
   if (query.isError) {
     const copy = describeError(query.error);
@@ -98,6 +118,49 @@ export function ProductDetailPage() {
                 value: formatMoney(product.salePriceTnd),
                 numeric: true,
               },
+              ...(canSeeMargin
+                ? [
+                    {
+                      label: fr.approximateCost,
+                      value:
+                        product.approximateCostTnd === null ||
+                        product.approximateCostTnd === undefined ? (
+                          <span>Non renseigné</span>
+                        ) : (
+                          formatMoney(product.approximateCostTnd)
+                        ),
+                      numeric: true,
+                    },
+                    {
+                      label: fr.approximateMargin,
+                      value: margin ? (
+                        <span>
+                          {formatMoney(margin.amountTnd)}
+                          {margin.rate
+                            ? ` (${margin.rate.replace(".", ",")} %)`
+                            : ""}
+                        </span>
+                      ) : null,
+                      numeric: true,
+                    },
+                    ...(simulation
+                      ? [
+                          {
+                            label: "Dernière simulation",
+                            value: (
+                              <Link to={`/simulations/${simulation.id}`}>
+                                {formatMoney(simulation.costPerOutputUnitTnd)}{" "}
+                                par{" "}
+                                {simulation.outputUnitNameSnapshot.toLowerCase()}{" "}
+                                · {simulation.name}
+                              </Link>
+                            ),
+                            numeric: true,
+                          },
+                        ]
+                      : []),
+                  ]
+                : []),
               {
                 label: "Stockable",
                 value: product.isStockable ? "Oui" : "Non",
