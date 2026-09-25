@@ -9,6 +9,14 @@ export interface SalesDay {
   creditTnd: string;
 }
 
+export interface MarginDay {
+  revenueTnd: string;
+  costedRevenueTnd: string;
+  costTnd: string;
+  marginTnd: string;
+  uncostedLinesCount: number;
+}
+
 export interface HomeSummary {
   date: string;
   generatedAt: string;
@@ -44,6 +52,9 @@ export interface HomeSummary {
     }>;
   } | null;
   expenses: { dayTnd: string; dayCount: number; previousDayTnd: string } | null;
+  /// Issue 008: revenue and cost of the day's posted sale lines that carry
+  /// a cost snapshot; `null` without `margin.view`.
+  margin: { today: MarginDay; previousDay: MarginDay } | null;
   custody: { heldLinesCount: number } | null;
   recent: Array<{
     id: string;
