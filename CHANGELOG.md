@@ -36,6 +36,12 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
 
 ### Fixed
 
+- Issue 009, line editors: product and raw-material pickers read a
+  session cache instead of calling the API on every opening; the direct
+  distributor sale takes an edited unit price, refused below the product's
+  approximate cost; every editable line accepts a typed line total that
+  sets the unit price; a `Vente directe distributeur` quick action on
+  Accueil opens the dialog on the distributors page.
 - Issue #42, Accueil: the expenses tile reads the selected business day
   ("Dépenses du jour" / "Dépenses d'hier") instead of the calendar month
   in UTC; every daily tile follows the `Aujourd'hui` / `Hier` control;
