@@ -17,6 +17,12 @@ export interface PaymentBoxProps {
   /// Whether paying more than the amount due is refused (payments) or
   /// allowed (POS change). Default refuses.
   allowOverpayment?: boolean;
+  /// Wording for a deposit ("Reste à verser", "Verser le reste") instead of
+  /// the payment defaults; presets can be hidden when they make no sense.
+  dueLabel?: string;
+  settleLabel?: string;
+  remainingLabel?: string;
+  presets?: boolean;
   className?: string;
 }
 
@@ -31,6 +37,10 @@ export function PaymentBox({
   error,
   disabled = false,
   allowOverpayment = false,
+  dueLabel = fr.amountOwed,
+  settleLabel = "Tout régler",
+  remainingLabel: remainingCopy = fr.remaining,
+  presets = true,
   className,
 }: PaymentBoxProps) {
   const due = safeDecimal(dueTnd);
@@ -41,12 +51,12 @@ export function PaymentBox({
     ? allowOverpayment
       ? "Monnaie à rendre"
       : "Dépasse le montant dû"
-    : fr.remaining;
+    : remainingCopy;
 
   return (
     <div className={cx(styles.root, className)}>
       <div className={styles.due}>
-        <span>{fr.amountOwed}</span>
+        <span>{dueLabel}</span>
         <strong className="tabular-nums">{formatMoney(dueTnd)}</strong>
       </div>
       <div className={styles.fields}>
@@ -74,19 +84,21 @@ export function PaymentBox({
           disabled={disabled}
           onClick={() => onAmountChange(due.toFixed(3))}
         >
-          Tout régler
+          {settleLabel}
         </Button>
-        {["5", "10", "20", "50"].map((preset) => (
-          <Button
-            key={preset}
-            size="sm"
-            variant="ghost"
-            disabled={disabled}
-            onClick={() => onAmountChange(preset)}
-          >
-            {preset}
-          </Button>
-        ))}
+        {presets
+          ? ["5", "10", "20", "50"].map((preset) => (
+              <Button
+                key={preset}
+                size="sm"
+                variant="ghost"
+                disabled={disabled}
+                onClick={() => onAmountChange(preset)}
+              >
+                {preset}
+              </Button>
+            ))
+          : null}
       </div>
       <div
         className={cx(

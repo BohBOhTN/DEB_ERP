@@ -36,6 +36,12 @@ export interface Order {
   requestedFulfillmentAt: string;
   totalTnd: string;
   advanceBalanceTnd: string;
+  /// Advances actually received (receipts less refunds), kept after
+  /// completion or cancellation resets the balance (issue #45).
+  advanceReceivedTnd: string;
+  /// What remains due: total less the advance while open, the linked sale's
+  /// remaining due once completed, nothing once cancelled.
+  remainingDueTnd: string;
   notes: string | null;
   version: number;
   saleId: string | null;
@@ -61,21 +67,51 @@ export interface Order {
     | null;
 }
 
-export interface OrderListQuery {
-  page: number;
-  pageSize: number;
-  sort?: SortSpec;
+export interface OrderFilterQuery {
   status?: OrderStatus;
   customerId?: string;
   dueBefore?: string;
   dueAfter?: string;
   dueState?: "OVERDUE" | "UPCOMING";
+  /// Reference or customer name.
+  q?: string;
+}
+
+export interface OrderListQuery extends OrderFilterQuery {
+  page: number;
+  pageSize: number;
+  sort?: SortSpec;
 }
 
 export function listOrders(query: OrderListQuery): Promise<PageResult<Order>> {
   return apiClient.list<Order>("/orders", {
     query: toSearchParams({ ...query }),
   });
+}
+
+/// The KPI row above the queue: the same filters, no paging.
+export interface OrdersSummary {
+  count: number;
+  openCount: number;
+  readyCount: number;
+  completedCount: number;
+  cancelledCount: number;
+  overdueCount: number;
+  dueTodayCount: number;
+  openTotalTnd: string;
+  advanceHeldTnd: string;
+  remainingTnd: string;
+  completedTotalTnd: string;
+}
+
+export async function getOrdersSummary(
+  query: OrderFilterQuery,
+): Promise<OrdersSummary> {
+  return (
+    await apiClient.get<{ summary: OrdersSummary }>("/orders/summary", {
+      query: toSearchParams({ page: 1, pageSize: 1, ...query } as never),
+    })
+  ).summary;
 }
 
 export async function getOrder(orderId: string): Promise<Order> {
@@ -123,7 +159,7 @@ export async function recordAdvance(
 
 export async function completeOrder(
   orderId: string,
-  input: { completedAt: string; paidAmountTnd?: string },
+  input: { completedAt: string; paidAmountTnd: string },
   idempotencyKey: string,
 ): Promise<Order> {
   return (

@@ -20,7 +20,8 @@ export interface OrderLineEditorProps {
 
 /// Product lines of an order (07 section 4.5): the picker searches the POS
 /// product list by name, code or barcode; picking a product fills its sale
-/// price, which stays editable on the line.
+/// price. The server prices every line from the catalogue, so the price is
+/// shown, not edited (issue #45).
 export function OrderLineEditor({
   lines,
   onChange,
@@ -78,6 +79,7 @@ export function OrderLineEditor({
     <LineEditor
       lines={lines}
       onChange={handleChange}
+      priceEditable={false}
       loadItems={loadItems}
       itemLabel="Produit"
       errors={errors}

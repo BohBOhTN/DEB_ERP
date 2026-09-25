@@ -770,6 +770,7 @@ model CustomerOrder {
   @@index([status])
   @@index([requestedFulfillmentAt])
   @@index([status, requestedFulfillmentAt])
+  @@index([customerId, requestedFulfillmentAt])
   @@map("customer_orders")
 }
 
@@ -818,6 +819,7 @@ model CustomerOrderAdvance {
   @@index([customerId])
   @@index([sessionId])
   @@index([paidAt])
+  @@index([orderId, paidAt])
   @@map("customer_order_advances")
 }
 

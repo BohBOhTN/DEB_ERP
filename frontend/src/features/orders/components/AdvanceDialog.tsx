@@ -9,6 +9,7 @@ import { TextArea } from "../../../components/ui/TextArea/TextArea.js";
 import { useToast } from "../../../components/ui/Toast/useToast.js";
 import { createIdempotencyKey } from "../../../lib/api/idempotency.js";
 import { formatMoney, toBusinessDate } from "../../../i18n/format.js";
+import { useCurrentSession } from "../../pos/pos.queries.js";
 import type { Order } from "../orders.api.js";
 import { useRecordAdvance } from "../orders.queries.js";
 import {
@@ -24,6 +25,14 @@ export interface AdvanceDialogProps {
   order: Order;
 }
 
+/// The instant a deposit dated by day was taken: now when it is today,
+/// midday in Tunis otherwise, so the list never shows it at 01:00.
+function paidAtInstant(day: string): string {
+  return day === toBusinessDate(new Date())
+    ? new Date().toISOString()
+    : new Date(`${day}T12:00:00+01:00`).toISOString();
+}
+
 /// "Encaisser un acompte" (ORD-008, ORD-009, ORD-016): cash taken at the
 /// open till before fulfilment, capped by what remains of the total, never
 /// revenue. One idempotency key per dialog open.
@@ -34,6 +43,7 @@ export function AdvanceDialog({
 }: AdvanceDialogProps) {
   const toast = useToast();
   const record = useRecordAdvance();
+  const session = useCurrentSession({ enabled: open });
   const keyRef = useRef<string | null>(null);
   const form = useForm<AdvanceFormInput, unknown, AdvanceFormOutput>({
     resolver: zodResolver(advanceSchema),
@@ -41,6 +51,7 @@ export function AdvanceDialog({
       amountTnd: "",
       paidAt: toBusinessDate(new Date()),
       notes: "",
+      remainingTnd: remainingOf(order),
     },
   });
   const errors = form.formState.errors;
@@ -52,16 +63,17 @@ export function AdvanceDialog({
         amountTnd: "",
         paidAt: toBusinessDate(new Date()),
         notes: "",
+        remainingTnd: remainingOf(order),
       });
     }
-  }, [open, form]);
+  }, [open, form, order]);
 
   const submit = async (values: AdvanceFormOutput) => {
     const result = await record.mutateAsync({
       orderId: order.id,
       body: {
         amountTnd: values.amountTnd,
-        paidAt: values.paidAt,
+        paidAt: paidAtInstant(values.paidAt),
         notes: values.notes || undefined,
       },
       idempotencyKey: keyRef.current ?? createIdempotencyKey(),
@@ -78,7 +90,11 @@ export function AdvanceDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Encaisser un acompte"
-      description="L'acompte est compté dans la caisse ouverte et reste une avance client jusqu'à la remise de la commande."
+      description={
+        session.data === null
+          ? "Ouvrez la caisse pour encaisser un acompte : l'argent entre dans la caisse ouverte."
+          : "L'acompte est compté dans la caisse ouverte et reste une avance client jusqu'à la remise de la commande."
+      }
       form={form}
       onSubmit={submit}
       submitLabel="Encaisser"
@@ -89,9 +105,14 @@ export function AdvanceDialog({
         render={({ field }) => (
           <PaymentBox
             dueTnd={remainingOf(order)}
+            dueLabel="Reste à verser"
+            settleLabel="Verser le reste"
+            remainingLabel="Reste après cet acompte"
+            presets={false}
             amountTnd={field.value ?? ""}
             onAmountChange={field.onChange}
             error={errors.amountTnd?.message}
+            disabled={session.data === null}
           />
         )}
       />

@@ -24,6 +24,7 @@ const clerk = makeUser({
     "orders.cancel",
     "customers.view",
     "customer_balances.view",
+    "customer_payments.create",
     "pos.access",
   ],
 });
@@ -83,9 +84,11 @@ describe("Orders", () => {
       screen.getByRole("textbox", { name: "Quantité 1" }),
       "10",
     );
+    // The price comes from the catalogue and is shown, not edited (#45).
     expect(
-      screen.getByRole("textbox", { name: "Prix unitaire 1" }),
-    ).toHaveValue("4,000");
+      screen.queryByRole("textbox", { name: "Prix unitaire 1" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("4,000 TND")).toBeInTheDocument();
     await userEvent.type(
       await screen.findByRole("textbox", { name: /Acompte/ }),
       "20",
@@ -225,6 +228,98 @@ describe("Orders", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  // Issue #45: the queue carries the figures and the actions of the detail
+  // page. A deposit above the remainder is refused inline; completing with
+  // nothing paid leaves the remainder on the customer's account.
+  it("acts on an order from its row: a capped deposit, then a completion that states nothing paid", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-23T09:00:00.000Z"));
+    const store = makeCustomersOrdersStore({
+      orders: [
+        makeOrder({
+          id: "order-1",
+          reference: "CMD-000001",
+          status: "CONFIRMED",
+          totalTnd: "40.000",
+          advanceBalanceTnd: "10.000",
+          advances: [
+            {
+              id: "advance-1",
+              movement: "RECEIPT",
+              amountTnd: "10.000",
+              paidAt: "2026-09-22T08:00:00.000Z",
+              notes: null,
+            },
+          ],
+          requestedFulfillmentAt: new Date(
+            Date.now() + 2 * 60 * 60 * 1000,
+          ).toISOString(),
+        }),
+      ],
+    });
+    server.use(...customersOrdersHandlers(store));
+    renderAt("/commandes", 1280);
+
+    const table = await screen.findByRole("table", { name: "Commandes" });
+    const row = within(table)
+      .getByText("CMD-000001")
+      .closest("tr") as HTMLElement;
+    expect(row).toHaveTextContent("10,000 TND");
+    expect(row).toHaveTextContent("30,000 TND");
+    expect(
+      screen.getByText("Commandes ouvertes").parentElement?.parentElement,
+    ).toHaveTextContent("1");
+    expect(
+      screen.getByText("Reste à encaisser").parentElement?.parentElement,
+    ).toHaveTextContent("30,000 TND");
+
+    await userEvent.click(within(row).getByRole("button", { name: "Actions" }));
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Encaisser un acompte" }),
+    );
+    const deposit = await screen.findByRole("dialog", {
+      name: "Encaisser un acompte",
+    });
+    expect(within(deposit).getByText("Reste à verser")).toBeInTheDocument();
+    expect(within(deposit).queryByRole("button", { name: "50" })).toBeNull();
+    await userEvent.type(
+      within(deposit).getByRole("textbox", { name: /^Montant/ }),
+      "35",
+    );
+    await userEvent.click(
+      within(deposit).getByRole("button", { name: "Encaisser" }),
+    );
+    expect(
+      await within(deposit).findByText(
+        "L'acompte dépasse le reste à verser sur la commande.",
+      ),
+    ).toBeInTheDocument();
+    // Only the fixture's advance: the refused one never reached the server.
+    expect(store.orders[0]?.advances).toHaveLength(1);
+    await userEvent.keyboard("{Escape}");
+
+    await userEvent.click(within(row).getByRole("button", { name: "Actions" }));
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Terminer" }),
+    );
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "Terminer CMD-000001",
+    });
+    expect(confirm).toHaveTextContent(
+      "Reste à payer porté au compte client : 30,000 TND.",
+    );
+    await userEvent.click(
+      within(confirm).getByRole("button", { name: "Terminer la commande" }),
+    );
+
+    expect(await screen.findByText("Commande terminée")).toBeInTheDocument();
+    expect(store.sales[0]).toMatchObject({
+      paidAmountTnd: "10.000",
+      remainingDueTnd: "30.000",
+      paymentState: "PARTIALLY_PAID",
+    });
   });
 
   it("shows the board with the today queue and hides transitions without permission", async () => {

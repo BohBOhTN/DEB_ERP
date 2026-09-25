@@ -6,8 +6,23 @@ import * as api from "./orders.api.js";
 export const orderKeys = {
   all: ["orders"] as const,
   list: (query: api.OrderListQuery) => ["orders", "list", query] as const,
+  summary: (query: api.OrderFilterQuery) =>
+    ["orders", "summary", query] as const,
   detail: (id: string) => ["orders", "detail", id] as const,
 };
+
+export function useOrdersSummary(
+  query: api.OrderFilterQuery,
+  options: { enabled?: boolean } = {},
+) {
+  return useQuery({
+    queryKey: orderKeys.summary(query),
+    queryFn: () => api.getOrdersSummary(query),
+    placeholderData: (previous) => previous,
+    enabled: options.enabled ?? true,
+    ...tier("list"),
+  });
+}
 
 export function useOrders(
   query: api.OrderListQuery,
@@ -22,11 +37,11 @@ export function useOrders(
   });
 }
 
-export function useOrder(orderId: string) {
+export function useOrder(orderId: string, options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: orderKeys.detail(orderId),
     queryFn: () => api.getOrder(orderId),
-    enabled: orderId !== "",
+    enabled: orderId !== "" && (options.enabled ?? true),
     ...tier("document"),
   });
 }
@@ -73,7 +88,7 @@ export function useCompleteOrder() {
   return useMutation({
     mutationFn: (input: {
       orderId: string;
-      body: { completedAt: string; paidAmountTnd?: string };
+      body: { completedAt: string; paidAmountTnd: string };
       idempotencyKey: string;
     }) => api.completeOrder(input.orderId, input.body, input.idempotencyKey),
     onSuccess: invalidate,

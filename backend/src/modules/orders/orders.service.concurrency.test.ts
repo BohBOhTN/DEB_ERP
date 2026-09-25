@@ -72,6 +72,7 @@ suite("OrdersService completion concurrency", () => {
             // one client retrying. Idempotency alone cannot save us here.
             idempotencyKey: `complete-${runId}-${order.id}-${index}`,
             completedAt: new Date(),
+            paidAmountTnd: "0",
           },
           { actorUserId: seeded.user.id },
         ),
@@ -147,6 +148,7 @@ suite("OrdersService completion concurrency", () => {
           {
             idempotencyKey,
             completedAt: new Date(),
+            paidAmountTnd: "0",
           },
           { actorUserId: seeded.user.id },
         ),

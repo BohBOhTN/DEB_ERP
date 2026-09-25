@@ -8,9 +8,11 @@ import {
 import { FilterBar } from "../../../components/patterns/FilterBar/FilterBar.js";
 import { PageHeader } from "../../../components/patterns/PageHeader/PageHeader.js";
 import { PermissionGate } from "../../../components/patterns/PermissionGate/PermissionGate.js";
+import { KpiGrid } from "../../../components/patterns/KpiGrid/KpiGrid.js";
+import { KpiTile } from "../../../components/patterns/KpiTile/KpiTile.js";
+import { PeriodFilter } from "../../../components/patterns/PeriodFilter/PeriodFilter.js";
 import { Button } from "../../../components/ui/Button/Button.js";
 import { Card } from "../../../components/ui/Card/Card.js";
-import { DateInput } from "../../../components/ui/DateInput/DateInput.js";
 import { EmptyState } from "../../../components/ui/EmptyState/EmptyState.js";
 import { Skeleton } from "../../../components/ui/Skeleton/Skeleton.js";
 import { StatusPill } from "../../../components/ui/StatusPill/StatusPill.js";
@@ -23,55 +25,67 @@ import {
   formatTime,
   toBusinessDate,
 } from "../../../i18n/format.js";
+import {
+  periodFromParams,
+  periodRange,
+  periodToParams,
+} from "../../../lib/dates/periodRange.js";
 import { useUrlState } from "../../../lib/hooks/useUrlState.js";
 import { useSessionPermissions } from "../../../app/sessionContext.js";
 import { CustomerCombobox } from "../../customers/components/CustomerCombobox.js";
-import type { Order, OrderListQuery } from "../orders.api.js";
-import { useOrders } from "../orders.queries.js";
+import type { Order, OrderFilterQuery } from "../orders.api.js";
+import { useOrders, useOrdersSummary } from "../orders.queries.js";
+import { OrderRowActions } from "../components/OrderRowActions.js";
 import { remainingOf } from "../components/orderLabels.js";
 import styles from "./OrderPages.module.css";
 
-type Board =
-  "upcoming" | "today" | "overdue" | "ready" | "completed" | "cancelled";
+type Board = "todo" | "overdue" | "ready" | "completed" | "cancelled";
 const boards: Array<{ value: Board; label: string }> = [
-  { value: "upcoming", label: "À venir" },
-  { value: "today", label: "Aujourd'hui" },
+  { value: "todo", label: "À traiter" },
   { value: "overdue", label: "En retard" },
   { value: "ready", label: "Prêtes" },
   { value: "completed", label: "Terminées" },
   { value: "cancelled", label: "Annulées" },
 ];
 const defaults = {
-  board: "today",
+  board: "todo",
+  q: "",
   customerId: "",
   customerName: "",
+  period: "today",
   from: "",
   to: "",
   page: 1,
   pageSize: 25,
 };
 
-/// The board tab becomes the API filter: due state and window for the open
-/// queues, a status for the closed ones.
+/// The board tab is the status dimension: open orders still to fulfil, the
+/// overdue ones, the ready ones, the closed ones. The period (issue #41) is
+/// the date dimension on the fulfilment time and combines with the tab;
+/// "En retard" ignores it since overdue is dated by definition.
 export function boardQuery(
   board: Board,
-  now = new Date(),
-): Partial<OrderListQuery> {
-  const day = toBusinessDate(now);
-  const dayEnd = new Date(`${day}T23:59:59.999+01:00`).toISOString();
+  range: { from: string; to: string },
+): Partial<OrderFilterQuery> {
+  const window = {
+    ...(board !== "overdue" && range.from
+      ? { dueAfter: new Date(`${range.from}T00:00:00+01:00`).toISOString() }
+      : {}),
+    ...(board !== "overdue" && range.to
+      ? { dueBefore: new Date(`${range.to}T23:59:59.999+01:00`).toISOString() }
+      : {}),
+  };
   switch (board) {
-    case "today":
-      return { dueState: "UPCOMING", dueBefore: dayEnd };
-    case "upcoming":
-      return { dueState: "UPCOMING", dueAfter: dayEnd };
+    case "todo":
+      return { dueState: "UPCOMING", ...window };
     case "overdue":
       return { dueState: "OVERDUE" };
     case "ready":
-      return { status: "READY" };
+      return { status: "READY", ...window };
     case "completed":
-      return { status: "COMPLETED" };
+      return { status: "COMPLETED", ...window };
     default:
-      return { status: "CANCELLED" };
+      return { status: "CANCELLED", ...window };
   }
 }
 
@@ -98,8 +112,14 @@ export function OrdersPage() {
   const phone = useMediaQuery("(max-width: 599px)");
   const [state, setState] = useUrlState(defaults);
   const board = (
-    boards.some((item) => item.value === state.board) ? state.board : "today"
+    boards.some((item) => item.value === state.board) ? state.board : "todo"
   ) as Board;
+  const period = periodFromParams(state, "today");
+  const range = periodRange(period);
+  const scope = {
+    customerId: state.customerId || undefined,
+    q: state.q || undefined,
+  };
   const query = useOrders({
     page: state.page,
     pageSize: state.pageSize,
@@ -108,16 +128,26 @@ export function OrdersPage() {
       direction:
         board === "completed" || board === "cancelled" ? "desc" : "asc",
     },
-    customerId: state.customerId || undefined,
-    ...boardQuery(board),
-    ...(state.from
-      ? { dueAfter: new Date(`${state.from}T00:00:00+01:00`).toISOString() }
+    ...scope,
+    ...boardQuery(board, range),
+  });
+  // The KPI row follows the customer, the search and the period, not the
+  // tab: it describes the whole queue the user is looking at.
+  const summary = useOrdersSummary({
+    ...scope,
+    ...(range.from
+      ? { dueAfter: new Date(`${range.from}T00:00:00+01:00`).toISOString() }
       : {}),
-    ...(state.to
-      ? { dueBefore: new Date(`${state.to}T23:59:59.999+01:00`).toISOString() }
+    ...(range.to
+      ? { dueBefore: new Date(`${range.to}T23:59:59.999+01:00`).toISOString() }
       : {}),
   });
   const rows = query.data?.items ?? [];
+  const activeCount =
+    (state.customerId ? 1 : 0) +
+    (state.q ? 1 : 0) +
+    (period.preset !== "today" ? 1 : 0);
+  const count = (value: number | undefined) => value ?? 0;
 
   const columns: DataTableColumn<Order>[] = [
     {
@@ -165,7 +195,7 @@ export function OrdersPage() {
       id: "advance",
       header: "Avance",
       meta: { align: "right" },
-      accessorFn: (row) => formatMoney(row.advanceBalanceTnd),
+      accessorFn: (row) => formatMoney(row.advanceReceivedTnd),
     },
     {
       id: "remaining",
@@ -208,6 +238,33 @@ export function OrdersPage() {
           </PermissionGate>
         }
       />
+      <KpiGrid columns={4}>
+        <KpiTile
+          label="Commandes ouvertes"
+          value={count(summary.data?.openCount)}
+          note={`${count(summary.data?.dueTodayCount)} à livrer aujourd'hui`}
+          loading={summary.isPending}
+          featured
+        />
+        <KpiTile
+          label="En retard"
+          value={count(summary.data?.overdueCount)}
+          note={`${count(summary.data?.readyCount)} prête${count(summary.data?.readyCount) > 1 ? "s" : ""}`}
+          loading={summary.isPending}
+        />
+        <KpiTile
+          label="Acomptes reçus"
+          value={formatMoney(summary.data?.advanceHeldTnd ?? "0")}
+          note={`sur ${formatMoney(summary.data?.openTotalTnd ?? "0")} de commandes ouvertes`}
+          loading={summary.isPending}
+        />
+        <KpiTile
+          label="Reste à encaisser"
+          value={formatMoney(summary.data?.remainingTnd ?? "0")}
+          note={`${count(summary.data?.completedCount)} terminée${count(summary.data?.completedCount) > 1 ? "s" : ""} pour ${formatMoney(summary.data?.completedTotalTnd ?? "0")}`}
+          loading={summary.isPending}
+        />
+      </KpiGrid>
       <Tabs<Board>
         label="File des commandes"
         value={board}
@@ -218,14 +275,25 @@ export function OrdersPage() {
           content: null,
         }))}
       />
+      {board !== "overdue" ? (
+        <PeriodFilter
+          value={period}
+          onChange={(next) => setState({ ...periodToParams(next), page: 1 })}
+        />
+      ) : (
+        <p className={styles.muted}>Toutes les commandes en retard.</p>
+      )}
       <FilterBar
-        activeCount={
-          (state.customerId ? 1 : 0) + (state.from || state.to ? 1 : 0)
-        }
+        search={state.q}
+        onSearchChange={(q) => setState({ q, page: 1 })}
+        searchPlaceholder="Référence ou client"
+        activeCount={activeCount}
         onReset={() =>
           setState({
+            q: "",
             customerId: "",
             customerName: "",
+            period: "today",
             from: "",
             to: "",
             page: 1,
@@ -251,16 +319,6 @@ export function OrdersPage() {
                   page: 1,
                 })
               }
-            />
-            <DateInput
-              aria-label="Du"
-              value={state.from}
-              onChange={(from) => setState({ from, page: 1 })}
-            />
-            <DateInput
-              aria-label="Au"
-              value={state.to}
-              onChange={(to) => setState({ to, page: 1 })}
             />
           </>
         }
@@ -294,7 +352,13 @@ export function OrdersPage() {
                       {formatTime(order.requestedFulfillmentAt)} ·{" "}
                       {dueLabel(order.requestedFulfillmentAt)}
                     </span>
-                    <StatusPill status={order.status} />
+                    <span className={styles.cardTop}>
+                      <StatusPill status={order.status} />
+                      <OrderRowActions
+                        order={order}
+                        permissions={permissions}
+                      />
+                    </span>
                   </Card>
                 ))}
               </div>
@@ -324,6 +388,9 @@ export function OrdersPage() {
           }}
           getRowId={(row) => row.id}
           onRowClick={(row) => navigate(`/commandes/${row.id}`)}
+          rowActions={(row) => (
+            <OrderRowActions order={row} permissions={permissions} />
+          )}
         />
       )}
     </>
