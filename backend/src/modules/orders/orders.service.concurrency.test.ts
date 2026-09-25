@@ -30,6 +30,8 @@ const runId = Math.random().toString(36).slice(2, 10);
 const mainCode = "main";
 const concurrentAttempts = 4;
 const orderQuantity = 16;
+/// 16 pieces at 2,500 TND, the product price seeded below.
+const orderTotalTnd = "40.000";
 const suite = integrationDatabaseUrl ? describe : describe.skip;
 
 suite("OrdersService completion concurrency", () => {
@@ -72,7 +74,9 @@ suite("OrdersService completion concurrency", () => {
             // one client retrying. Idempotency alone cannot save us here.
             idempotencyKey: `complete-${runId}-${order.id}-${index}`,
             completedAt: new Date(),
-            paidAmountTnd: "0",
+            // Paid in full now (issue #45 made the amount explicit): one
+            // payment enters the drawer and no receivable opens.
+            paidAmountTnd: orderTotalTnd,
           },
           { actorUserId: seeded.user.id },
         ),
@@ -121,7 +125,7 @@ suite("OrdersService completion concurrency", () => {
     expect(after.saleLines - before.saleLines).toBe(1);
     expect(after.movements - before.movements).toBe(1);
     expect(after.payments - before.payments).toBe(1);
-    // Completion defaulted to paying the full total, so no receivable opened.
+    // The completion paid the full total, so no receivable opened.
     expect(after.ledgerEntries - before.ledgerEntries).toBe(0);
 
     const movement = await prisma.inventoryMovement.findFirstOrThrow({
@@ -148,7 +152,7 @@ suite("OrdersService completion concurrency", () => {
           {
             idempotencyKey,
             completedAt: new Date(),
-            paidAmountTnd: "0",
+            paidAmountTnd: orderTotalTnd,
           },
           { actorUserId: seeded.user.id },
         ),
