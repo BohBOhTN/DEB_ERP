@@ -93,6 +93,14 @@ describe("Accueil", () => {
     ).toHaveTextContent("Vente en caisse");
     expect(screen.getByText("Dépenses du jour")).toBeInTheDocument();
     expect(screen.getByText("85,000 TND")).toBeInTheDocument();
+    // Issue 008: the margin of the day over the costed lines, with the
+    // share of the revenue it covers and the lines that had no cost.
+    expect(screen.getByText("Marge approximative")).toBeInTheDocument();
+    expect(screen.getByText("380,000")).toBeInTheDocument();
+    expect(screen.getByText("+13 % vs la veille")).toBeInTheDocument();
+    expect(
+      screen.getByText("sur 80 % du chiffre d'affaires · 2 lignes sans coût"),
+    ).toBeInTheDocument();
     expect(
       screen.getByText("3 dépenses validées · La veille : 40,000 TND"),
     ).toBeInTheDocument();
@@ -158,6 +166,7 @@ describe("Accueil", () => {
           orders: null,
           stock: null,
           expenses: null,
+          margin: null,
           custody: null,
           recent: null,
         }),
@@ -168,6 +177,7 @@ describe("Accueil", () => {
 
     expect(await screen.findByText("Ventes du jour")).toBeInTheDocument();
     expect(screen.queryByText("À payer fournisseurs")).not.toBeInTheDocument();
+    expect(screen.queryByText("Marge approximative")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Reste à encaisser clients"),
     ).not.toBeInTheDocument();

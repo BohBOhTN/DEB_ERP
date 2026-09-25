@@ -217,6 +217,7 @@ export async function mockApi(
               dayCount: 3,
               previousDayTnd: "40.000",
             },
+            margin: null,
             custody: { heldLinesCount: 12 },
             recent: [
               {
