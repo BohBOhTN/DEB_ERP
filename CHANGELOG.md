@@ -4,7 +4,12 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
-Release R10 polish, operations and launch, targeting `v2.0.0`.
+## [2.0.0] - 2026-09-25
+
+Release R10 polish, operations and launch (Sprints 27 and 28, then the
+issue-driven fixes #41 to #49 and the deployment pipeline). The first
+stable version of the V2 application; tagged `v2.0.0` on `dev` when the
+owner signs the R10 gate (DEC-V2-001).
 
 ### Added
 
