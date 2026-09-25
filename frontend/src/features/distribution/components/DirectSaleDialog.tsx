@@ -19,7 +19,10 @@ import {
   toBusinessDate,
 } from "../../../i18n/format.js";
 import { fr } from "../../../i18n/fr.js";
-import { OrderLineEditor } from "../../orders/components/OrderLineEditor.js";
+import {
+  OrderLineEditor,
+  type PickedProduct,
+} from "../../orders/components/OrderLineEditor.js";
 import type { DistributorSale } from "../distribution.api.js";
 import { usePostDirectSale } from "../distribution.queries.js";
 import {
@@ -63,6 +66,9 @@ export function DirectSaleDialog({
   const toast = useToast();
   const post = usePostDirectSale();
   const keyRef = useRef<string | null>(null);
+  // Issue 009: the cost of every product picked, to refuse a price below
+  // it before the confirmation (the server refuses it too).
+  const costs = useRef(new Map<string, string | null>());
   const [pending, setPending] = useState<DirectSaleFormOutput | null>(null);
   const form = useForm<DirectSaleFormInput, unknown, DirectSaleFormOutput>({
     resolver: zodResolver(directSaleSchema),
@@ -133,7 +139,25 @@ export function DirectSaleDialog({
         description="Vend au distributeur des produits qui quittent le stock immédiatement ; le reste impayé devient une créance."
         size="lg"
         form={form}
-        onSubmit={async (values) => setPending(values)}
+        onSubmit={async (values) => {
+          let belowCost = false;
+          values.lines.forEach((line, index) => {
+            const cost = line.item ? costs.current.get(line.item.value) : null;
+            if (
+              cost !== null &&
+              cost !== undefined &&
+              safeDecimal(line.unitPriceTnd).lessThan(cost)
+            ) {
+              belowCost = true;
+              form.setError(`lines.${index}.unitPriceTnd`, {
+                message: `Inférieur au coût approximatif (${formatMoney(cost)}).`,
+              });
+            }
+          });
+          if (!belowCost) {
+            setPending(values);
+          }
+        }}
         submitLabel={fr.next}
       >
         {!distributor ? (
@@ -168,7 +192,12 @@ export function DirectSaleDialog({
             )}
           />
         </FormField>
-        <FormField label="Produits" labelIsElement={false} required>
+        <FormField
+          label="Produits"
+          labelIsElement={false}
+          required
+          hint="Prix unitaire modifiable ; saisissez le total de la ligne pour en déduire le prix."
+        >
           <Controller
             control={form.control}
             name="lines"
@@ -177,6 +206,13 @@ export function DirectSaleDialog({
                 lines={(field.value ?? []) as EditorLine[]}
                 onChange={field.onChange}
                 errors={lineErrors}
+                source="catalog"
+                priceEditable
+                onProductChange={(_key, product: PickedProduct | null) => {
+                  if (product) {
+                    costs.current.set(product.id, product.approximateCostTnd);
+                  }
+                }}
               />
             )}
           />

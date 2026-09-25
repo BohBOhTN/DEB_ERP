@@ -501,6 +501,11 @@ const errorCopy: Record<string, ErrorCopy> = {
     title: "Ligne en double",
     description: "Le même produit apparaît deux fois.",
   },
+  DISTRIBUTOR_PRICE_BELOW_COST: {
+    title: "Prix inférieur au coût",
+    description:
+      "Le prix unitaire d'un produit est inférieur à son coût approximatif.",
+  },
   DISTRIBUTOR_SALE_TOTAL_REQUIRED: {
     title: "Total invalide",
     description: "Le total de la vente doit être supérieur à zéro.",
