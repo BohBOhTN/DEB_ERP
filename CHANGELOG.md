@@ -4,6 +4,14 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- The customer balances page makes three sequential database rounds
+  instead of six: the page and its count are read in parallel rather than
+  in a batch transaction, and the open-order count runs alongside the
+  ledger totals. The performance suite measured that read at the edge of
+  its 150 ms budget on the CI runner.
+
 ## [2.0.0] - 2026-09-25
 
 Release R10 polish, operations and launch (Sprints 27 and 28, then the
