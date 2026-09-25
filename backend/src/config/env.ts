@@ -9,6 +9,13 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   SESSION_COOKIE_NAME: z.string().min(1).default("deb_session"),
   SESSION_TTL_MINUTES: z.coerce.number().int().positive().default(480),
+  /// Whether the session cookie carries `Secure`. Defaults to on in
+  /// production; `false` only for a deployment reached over plain HTTP on an
+  /// address, until a hostname with TLS fronts it.
+  SESSION_COOKIE_SECURE: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === "true")),
   CORS_ALLOWED_ORIGINS: z.string().default("http://localhost:5173"),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),

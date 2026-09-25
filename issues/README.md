@@ -15,6 +15,7 @@ Workflow: branch `fix/<topic>` or `feat/<topic>` from `dev`, name the issue numb
 | [007](007-reglements-lies-aux-documents.md)      | Règlements tied to documents (clients, fournisseurs, distributeurs)                     | Highest  | —              |
 | [008](008-produits-cout-approximatif-marge.md)   | Produits: approximate cost per product, approximate margin on Accueil                   | Medium   | 002, 004       |
 | [009](009-lignes-cache-et-saisie-des-prix.md)    | Line editors: cached pickers, editable and total-based prices, direct-sale quick action | Medium   | 008            |
+| [010](010-deploiement-vps-github-actions.md)     | Deployment: build, ship and run the release on the VPS from GitHub Actions              | High     | main promoted  |
 
 Suggested order: 007 → 003 → 001 → 005 → 004 → 006 → 002 → 008. Issues 003, 005 (PR 1) and 002 are independent and can be picked up any time; 008 was added after the first seven were fixed.
 
