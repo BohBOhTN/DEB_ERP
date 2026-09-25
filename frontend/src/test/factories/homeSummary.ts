@@ -47,7 +47,7 @@ export function makeHomeSummary(
         },
       ],
     },
-    expenses: { monthTnd: "1250.000", monthCount: 9 },
+    expenses: { dayTnd: "85.000", dayCount: 3, previousDayTnd: "40.000" },
     custody: { heldLinesCount: 12 },
     recent: [
       {
@@ -87,7 +87,7 @@ export function makeFreshHomeSummary(): HomeSummary {
     payables: { suppliersTnd: "0.000", overdueCount: 0, overdueTnd: "0.000" },
     orders: { dueTodayCount: 0, overdueCount: 0, readyCount: 0 },
     stock: { negativeCount: 0, items: [] },
-    expenses: { monthTnd: "0.000", monthCount: 0 },
+    expenses: { dayTnd: "0.000", dayCount: 0, previousDayTnd: "0.000" },
     custody: { heldLinesCount: 0 },
     recent: [],
   });
