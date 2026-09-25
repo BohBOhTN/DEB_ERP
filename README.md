@@ -228,6 +228,14 @@ npm run prisma:migrate:dev --workspace backend -- --name <migration_name>
 npm run prisma:migrate:deploy --workspace backend
 ```
 
+## Deployment
+
+The release ships to the VPS from GitHub Actions: two container images
+(`backend/Dockerfile`, `frontend/Dockerfile`), the compose stack and the
+remote script under `deploy/`, and a `deploy` job in `.github/workflows/ci.yml`
+behind the `production` environment's approval. Setup, secrets, the first
+admin and day-to-day operations are in `deploy/README.md`.
+
 ## Branches
 
 - `main`: protected release baseline
