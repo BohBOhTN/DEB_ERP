@@ -17,7 +17,7 @@ import {
 import { useSessionPermissions } from "../../../app/sessionContext.js";
 import { useSale } from "../pos.queries.js";
 import { SaleRowActions } from "../components/SaleRowActions.js";
-import { salePill } from "./SalesPage.js";
+import { salePill } from "../../customers/components/customerLabels.js";
 import styles from "./PosPages.module.css";
 
 /// `/caisse/ventes/:id` (UI-15, issue #44): the receipt view with every
