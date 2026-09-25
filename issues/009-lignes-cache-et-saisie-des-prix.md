@@ -6,7 +6,8 @@
 | Type             | Fixes + small features                                                                                                                                                                                                         |
 | Priority         | Medium                                                                                                                                                                                                                         |
 | Depends on       | 008 (the product cost that bounds the direct-sale price)                                                                                                                                                                       |
-| Suggested branch | `fix/line-editors-caching-price-entry`                                                                                                                                                                                         |
+| GitHub issue     | #49                                                                                                                                                                                                                            |
+| Suggested branch | `fix/49-line-editors-caching-price-entry`                                                                                                                                                                                      |
 | Related          | `UI-26` (one cache policy), `DST-009` (prices snapshotted per line), `OD-006` (distributor price entered per transaction), spec §4.3 and §4.5                                                                                  |
 
 ## Owner's request

@@ -36,7 +36,7 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
 
 ### Fixed
 
-- Issue 009, line editors: product and raw-material pickers read a
+- Issue #49, line editors: product and raw-material pickers read a
   session cache instead of calling the API on every opening; the direct
   distributor sale takes an edited unit price, refused below the product's
   approximate cost; every editable line accepts a typed line total that

@@ -1,4 +1,4 @@
-# Fix 009: cached pickers, editable and total-based prices, a direct-sale quick action
+# Fix #49: cached pickers, editable and total-based prices, a direct-sale quick action
 
 ## Branches
 
@@ -7,13 +7,12 @@
 
 ## Scope
 
-Closes issue 009 ([issues/009](../issues/009-lignes-cache-et-saisie-des-prix.md)):
+Closes issue #49 ([issues/009](../issues/009-lignes-cache-et-saisie-des-prix.md)):
 the product and raw-material pickers stop calling the API on every
 opening, the direct distributor sale takes an edited unit price that can
 never fall below the product's approximate cost, every editable line
 accepts a typed line total, and Accueil gains a `Vente directe
-distributeur` quick action. Commits carry `(009)` until the GitHub issue
-exists.
+distributeur` quick action. Commits carry `(#49)`.
 
 ## Summary
 
@@ -113,5 +112,5 @@ None.
 
 - [ ] CI passed
 - [ ] No real `.env` files or secrets committed
-- [ ] Scope matches issue 009
+- [ ] Scope matches issue #49
 - [ ] Target branch is `dev`
