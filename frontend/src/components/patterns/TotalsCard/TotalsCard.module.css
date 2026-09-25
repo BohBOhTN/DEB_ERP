@@ -10,10 +10,16 @@
 
 .row {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-1) var(--space-4);
   font-size: var(--text-sm);
+}
+
+.row dd {
+  min-width: 0;
+  margin-left: auto;
 }
 
 .row dt {

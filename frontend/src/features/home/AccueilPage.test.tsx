@@ -32,6 +32,7 @@ const ownerPermissions = [
   "inventory.view",
   "expenses.view",
   "purchases.create",
+  "distribution.direct_sale",
   "distribution.custody.view",
   "audit.view",
 ];
@@ -88,6 +89,9 @@ describe("Accueil", () => {
     expect(
       screen.getByRole("link", { name: "Nouvelle commande" }),
     ).toHaveAttribute("href", "/commandes/nouvelle");
+    expect(
+      screen.getByRole("link", { name: "Vente directe distributeur" }),
+    ).toHaveAttribute("href", "/distributeurs?vente=directe");
     expect(
       screen.getByRole("list", { name: "Activité récente" }),
     ).toHaveTextContent("Vente en caisse");

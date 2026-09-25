@@ -4,12 +4,30 @@ import {
   type ComboboxOption,
 } from "../../../components/ui/Combobox/Combobox.js";
 import { formatQuantity } from "../../../i18n/format.js";
+import { useCachedSearch } from "../../../lib/query/cachedOptions.js";
+import { roots } from "../../../lib/query/invalidation.js";
 import {
   listProducts,
   listRawMaterials,
   type Product,
   type RawMaterial,
 } from "../../catalog/catalog.api.js";
+
+const pickerQuery = (query: string) => ({
+  page: 1,
+  pageSize: 8,
+  q: query || undefined,
+  isActive: true,
+  sort: { field: "name", direction: "asc" as const },
+});
+
+async function fetchProducts(query: string): Promise<Product[]> {
+  return (await listProducts(pickerQuery(query))).items;
+}
+
+async function fetchRawMaterials(query: string): Promise<RawMaterial[]> {
+  return (await listRawMaterials(pickerQuery(query))).items;
+}
 import type { InventoryBalance, InventoryItemType } from "../inventory.api.js";
 import { useBalances } from "../inventory.queries.js";
 import type { PickedItem } from "../inventory.schemas.js";
@@ -57,29 +75,32 @@ export function ItemCombobox({
   const balances = useBalances();
   const balancesRef = useRef<InventoryBalance[]>([]);
   balancesRef.current = balances.data ?? [];
+  // Issue 009: the two lists are read once per query for the session; the
+  // balance next to each item is applied after the read, so it stays live.
+  const searchProducts = useCachedSearch(roots.catalogProducts, fetchProducts, {
+    prefetch: itemTypes.includes("PRODUCT"),
+  });
+  const searchRawMaterials = useCachedSearch(
+    roots.catalogRawMaterials,
+    fetchRawMaterials,
+    { prefetch: itemTypes.includes("RAW_MATERIAL") },
+  );
 
   const loadOptions = useCallback(
     async (query: string): Promise<ItemOption[]> => {
-      const listQuery = {
-        page: 1,
-        pageSize: 8,
-        q: query || undefined,
-        isActive: true,
-        sort: { field: "name", direction: "asc" as const },
-      };
       const [products, rawMaterials] = await Promise.all([
         itemTypes.includes("PRODUCT")
-          ? listProducts(listQuery)
+          ? searchProducts(query)
           : Promise.resolve(null),
         itemTypes.includes("RAW_MATERIAL")
-          ? listRawMaterials(listQuery)
+          ? searchRawMaterials(query)
           : Promise.resolve(null),
       ]);
       const balanceOf = (itemId: string) =>
         balancesRef.current.find((row) => row.itemId === itemId);
 
       const options: ItemOption[] = [
-        ...(products?.items ?? [])
+        ...(products ?? [])
           .filter((product) => product.isStockable)
           .map((product) => {
             const item: PickedItem = {
@@ -97,7 +118,7 @@ export function ItemCombobox({
               source: { kind: "PRODUCT" as const, product },
             };
           }),
-        ...(rawMaterials?.items ?? []).map((rawMaterial) => {
+        ...(rawMaterials ?? []).map((rawMaterial) => {
           const item: PickedItem = {
             itemType: "RAW_MATERIAL",
             itemId: rawMaterial.id,
@@ -117,7 +138,7 @@ export function ItemCombobox({
 
       return options.sort((a, b) => a.label.localeCompare(b.label, "fr"));
     },
-    [itemTypes],
+    [itemTypes, searchProducts, searchRawMaterials],
   );
 
   const selected = useMemo<ItemOption | null>(
