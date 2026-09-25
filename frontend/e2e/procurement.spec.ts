@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectLineEditorFits } from "./lineEditor";
 import { mockApi, ownerPermissions } from "./mockApi";
 import { makeProcurementState, mockProcurement } from "./procurement";
 
@@ -30,6 +31,15 @@ test("creates and posts a purchase, then pays the supplier with allocations", as
   // string matching normalises whitespace, a regex would not.
   await expect(page.getByRole("main")).toContainText("= 200 kg · prix par kg");
   await page.getByRole("textbox", { name: "Prix unitaire 1" }).fill("1,25");
+  await expect(
+    page.getByRole("textbox", { name: "Total ligne 1" }),
+  ).toHaveValue("250,000");
+  await expectLineEditorFits(
+    page,
+    page
+      .getByRole("combobox", { name: "Matière première 1" })
+      .locator("xpath=ancestor::li[1]"),
+  );
   await page.getByRole("radio", { name: "Impayé" }).click();
   await page.getByLabel(/Échéance/).fill("2026-10-31");
   await page.getByRole("button", { name: "Valider l'achat" }).click();

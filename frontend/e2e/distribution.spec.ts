@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { makeDistributionState, mockDistribution } from "./distribution";
+import { expectLineEditorFits } from "./lineEditor";
 import { mockApi, ownerPermissions } from "./mockApi";
 
 /// AS-014, AS-015, AS-016 and AS-V2-20 at 360 and 1280 px: dispatch 40 breads
@@ -94,4 +95,27 @@ test("dispatches, settles with a reconciled equation and records a payment", asy
   await expect(page.getByRole("main")).toContainText("16,000 TND");
   expect(state.payments[0]).toMatchObject({ amountTnd: "20.000" });
   expect(state.dispatches[0]?.lines[0]?.unaccountedQuantity).toBe("2.000000");
+
+  // Issue 009: the Accueil quick action lands on the direct-sale dialog,
+  // whose lines take an edited price or a typed total and fit the dialog
+  // at every width.
+  await page.goto("/distributeurs?vente=directe");
+  const sale = page.getByRole("dialog", { name: "Vente directe" });
+  await expect(sale).toBeVisible();
+  await sale.getByRole("combobox", { name: "Produit 1" }).click();
+  await page.getByRole("option", { name: /Pain complet/ }).click();
+  await sale.getByRole("textbox", { name: "Quantité 1" }).fill("4");
+  await expect(
+    sale.getByRole("textbox", { name: "Prix unitaire 1" }),
+  ).toHaveValue("1,200");
+  await sale.getByRole("textbox", { name: "Total ligne 1" }).fill("10");
+  await expect(
+    sale.getByRole("textbox", { name: "Prix unitaire 1" }),
+  ).toHaveValue("2,500");
+  await expectLineEditorFits(
+    page,
+    sale
+      .getByRole("combobox", { name: "Produit 1" })
+      .locator("xpath=ancestor::li[1]"),
+  );
 });

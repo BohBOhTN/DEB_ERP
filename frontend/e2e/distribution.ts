@@ -174,7 +174,8 @@ export async function handleDistribution(
   const method = route.request().method();
   const body = () => route.request().postDataJSON() as Record<string, unknown>;
 
-  if (path === "/pos/products") return (route.fulfill(page([bread])), true);
+  if (path === "/pos/products" || path === "/catalog/products")
+    return (route.fulfill(page([bread])), true);
   if (path === "/distributors" && method === "GET")
     return (route.fulfill(page([distributorRow(state)])), true);
   if (path === "/distributors/distributor-1/statement") {
@@ -472,6 +473,9 @@ export async function mockDistribution(
     handleDistribution(route, state),
   );
   await page.route("**/api/v1/pos/products**", (route) =>
+    handleDistribution(route, state),
+  );
+  await page.route("**/api/v1/catalog/products**", (route) =>
     handleDistribution(route, state),
   );
 }
