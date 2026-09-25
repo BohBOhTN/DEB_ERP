@@ -43,7 +43,7 @@ export interface HomeSummary {
       quantity: string;
     }>;
   } | null;
-  expenses: { monthTnd: string; monthCount: number } | null;
+  expenses: { dayTnd: string; dayCount: number; previousDayTnd: string } | null;
   custody: { heldLinesCount: number } | null;
   recent: Array<{
     id: string;

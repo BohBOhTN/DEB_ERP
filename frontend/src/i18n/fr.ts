@@ -214,6 +214,17 @@ export const fr = {
   postedAt: "Validé le",
   dueDate: "Échéance",
 
+  // Accueil
+  salesOfDay: "Ventes du jour",
+  salesOfYesterday: "Ventes d'hier",
+  cashCollected: "Encaissé en espèces",
+  expensesOfDay: "Dépenses du jour",
+  expensesOfYesterday: "Dépenses d'hier",
+  vsPreviousDay: "vs la veille",
+  samePreviousDay: "Comme la veille",
+  previousDayWas: "La veille : {amount}",
+  currentBalance: "Solde actuel",
+
   // Shell
   navigation: "Navigation",
   mainMenu: "Menu principal",
