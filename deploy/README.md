@@ -11,7 +11,12 @@ frontend container forwards `/api` to the API container.
 ## One-time setup
 
 1. On the VPS, a deploy user in the `docker` group and a key pair whose
-   private half is the `VPS_SSH_KEY` secret.
+   private half is the `VPS_SSH_KEY` secret, pasted whole, from the
+   `-----BEGIN` line to the `-----END` line:
+   `ssh-keygen -t ed25519 -C deb-deploy -f ~/.ssh/deb_deploy -N ""`, then
+   append `deb_deploy.pub` to that user's `~/.ssh/authorized_keys`.
+   The stack folder belongs to that user:
+   `sudo mkdir -p /opt/dar-el-barka && sudo chown <user>:<user> /opt/dar-el-barka`.
 2. `docker network create pg-network` if it does not exist, then
    `docker network connect pg-network postgres-prod`.
 3. In `postgres-prod`, the application's role and database (see the
@@ -26,7 +31,7 @@ frontend container forwards `/api` to the API container.
 | `VPS_SSH_KEY`  | Private key                                                                                                                                                                                                                                                                                                                                         |
 | `VPS_SSH_PORT` | Optional, `22` by default                                                                                                                                                                                                                                                                                                                           |
 | `PUBLIC_PORT`  | Host port published for the app, `8081`                                                                                                                                                                                                                                                                                                             |
-| `PUBLIC_URL`   | `http://<ip>:8081`, used by the smoke step                                                                                                                                                                                                                                                                                                          |
+| `PUBLIC_URL`   | `http://<ip>:8081` exactly, no trailing slash, used by the smoke step                                                                                                                                                                                                                                                                               |
 | `BACKEND_ENV`  | The API's `.env`: `NODE_ENV=production`, `PORT=4000`, `DATABASE_URL=postgresql://dar_el_baraka_user:<password>@postgres-prod:5432/dar_el_baraka?schema=public&connection_limit=10&pool_timeout=10`, `CORS_ALLOWED_ORIGINS=http://<ip>:8081`, `TRUST_PROXY=1`, `SESSION_COOKIE_SECURE=false`, `LOG_PRETTY=false`, the rest as `backend/.env.example` |
 
 `SESSION_COOKIE_SECURE=false` is what plain HTTP on an address needs. Once a
