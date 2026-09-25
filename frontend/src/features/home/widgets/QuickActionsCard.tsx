@@ -2,6 +2,7 @@ import {
   ClipboardPlus,
   ShoppingCart,
   Store,
+  Truck,
   UserPlus,
   Wallet,
 } from "lucide-react";
@@ -53,6 +54,13 @@ export function quickActionsFor(
       to: "/achats/nouveau",
       icon: ShoppingCart,
       anyOf: ["purchases.create"],
+    },
+    {
+      id: "distributor-sale",
+      label: "Vente directe distributeur",
+      to: "/distributeurs?vente=directe",
+      icon: Truck,
+      anyOf: ["distribution.direct_sale"],
     },
     {
       id: "expense",
