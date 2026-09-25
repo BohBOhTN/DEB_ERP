@@ -42,7 +42,7 @@ What this repository needs done differently:
 - `backend/Dockerfile`: `node:24-alpine`; builder stage `npm ci`, `prisma generate`, `tsc -p tsconfig.build.json`, `npm prune --omit=dev`; runner stage `apk add --no-cache dumb-init wget openssl`, copies `dist/`, `node_modules/`, `prisma/` and `package.json`, `USER node`, `EXPOSE 4000`, health check on `http://localhost:4000/api/health/ready`, `CMD ["dumb-init","node","dist/server.js"]`. `.dockerignore` for `node_modules`, `dist`, `.env*`, tests.
 - `frontend/Dockerfile`: builder `npm ci` and `npm run build` (no API URL baked in: the client defaults to `/api/v1` on the same origin); runner `nginx:1.27-alpine` with `nginx.conf`: SPA fallback, `/assets/` immutable for a year, `index.html` and `manifest.webmanifest` `no-cache`, gzip, the three security headers, and `location /api/ { proxy_pass http://backend:4000/api/; }` with `X-Forwarded-For`, `X-Forwarded-Proto`, `Host`, `proxy_read_timeout 35s` (above `REQUEST_TIMEOUT_MS`). Health check on `/`.
 - Both images build in the monorepo context (`npm ci` at the root uses workspaces) with `context: .` and `file: backend/Dockerfile`, so the lockfile stays the single source.
-- Backend `TRUST_PROXY` becomes `1` behind the nginx container, `2` when the VPS also has a TLS reverse proxy in front (Caddy or Traefik). The session cookie is `secure` in production, so TLS on the public hostname is required; the host proxy provides it.
+- Backend `TRUST_PROXY` becomes `1` behind the nginx container, `2` when a TLS reverse proxy is added in front later. The session cookie is `Secure` in production by default; a new `SESSION_COOKIE_SECURE` setting turns it off for the plain-HTTP deployment on an address, and back on the day a hostname with TLS fronts the stack.
 
 ### 2. Compose and the VPS layout (same PR)
 
@@ -50,7 +50,7 @@ What this repository needs done differently:
 
 - `backend`: `ghcr.io/<owner>/dar-el-barka-backend:${IMAGE_TAG}`, `env_file: backend.env`, `environment: GIT_SHA=${IMAGE_TAG}`, `init: true`, `restart: unless-stopped`, health check, networks `app` and `pg-network` (external), no published port.
 - `migrate`: same image, `profiles: ["migrate"]`, `command: ["npx","prisma","migrate","deploy"]`, same `env_file` and networks, no restart; run once per deploy before `backend` restarts.
-- `frontend`: `ghcr.io/<owner>/dar-el-barka-frontend:${IMAGE_TAG}`, depends on `backend` healthy, network `app`, publishes `127.0.0.1:${PUBLIC_PORT}:80` (the host proxy terminates TLS; publish on `0.0.0.0` only if no host proxy exists).
+- `frontend`: `ghcr.io/<owner>/dar-el-barka-frontend:${IMAGE_TAG}`, depends on `backend` healthy, network `app`, publishes `0.0.0.0:${PUBLIC_PORT}:80` (the app is reached on the VPS address over plain HTTP for now; once a hostname with TLS fronts it, publish on `127.0.0.1` behind the proxy).
 - `networks`: `app` (internal bridge) and `pg-network` (`external: true`, the database's network; the database container is never listed here).
 
 The backend's `DATABASE_URL` in `backend.env` names the database container on `pg-network` (for example `postgresql://…@<db-container>:5432/<db>?schema=public&connection_limit=10&pool_timeout=10`), so Postgres keeps accepting internal traffic only.
@@ -107,6 +107,6 @@ The frontend needs no secret: it calls `/api/v1` on its own origin. A `FRONTEND_
 ## Open decisions to surface
 
 - Answered: the production database container is `postgres-prod` (postgres 16.2, published on `127.0.0.1:5432` only); the app gets its own role and database, created by hand like the development ones.
-- Whether a TLS reverse proxy already runs on the VPS (Caddy, Traefik, nginx) and which hostname the app gets; without one the stack must publish on `0.0.0.0` and the session cookie cannot be `Secure`, which is not acceptable for production.
+- Answered: no domain yet. The app is reached on `http://<vps-ip>:8081` (8081 is free among the ports the VPS publishes), with `SESSION_COOKIE_SECURE=false`; a domain and TLS come later and flip the cookie back to `Secure`.
 - Whether the same pipeline should also deploy a staging stack from `dev` (a second environment, a second compose directory, the same images tagged by commit). Proposed: yes, later, once the production one has run twice.
 - Owner's decision: no backup step in the pipeline. `12_DEPLOYMENT_AND_OPERATIONS.md` sections 3 and 7 still require one before production use; recorded here as a deliberate deviation.
