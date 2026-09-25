@@ -54,6 +54,7 @@ export const permissionKeys = [
   "customers.view",
   "customers.create",
   "customers.update",
+  "customers.deactivate",
   "customer_balances.view",
   "customer_payments.view",
   "customer_payments.create",
