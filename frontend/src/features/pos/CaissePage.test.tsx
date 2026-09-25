@@ -130,16 +130,18 @@ describe("Caisse", () => {
       remainingDueTnd: "0.000",
       paymentState: "PAID",
     });
+    // Issue #43: the cashier stays on the till with an empty cart; the
+    // receipt is one tap away on the toast.
     expect(
-      await screen.findByRole("heading", {
-        level: 1,
-        name: store.sales[0]?.reference ?? "",
-      }),
+      screen.getByRole("heading", { level: 1, name: "Caisse" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Panier" })).toHaveTextContent(
+      "0 article",
+    );
+    expect(
+      screen.getAllByRole("button", { name: "Voir" })[0],
     ).toBeInTheDocument();
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Nouvelle vente" }),
-    );
     await addProduct("Gâteau au kilo");
     await userEvent.click(
       screen.getByRole("button", { name: "Voir le panier" }),
@@ -190,9 +192,6 @@ describe("Caisse", () => {
       paymentState: "PARTIALLY_PAID",
     });
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Nouvelle vente" }),
-    );
     await userEvent.click(
       await screen.findByRole("button", { name: "Clôturer" }),
     );
@@ -259,7 +258,7 @@ describe("Caisse", () => {
       dropNextSaleResponse: true,
     });
     server.use(...posHandlers(store));
-    renderAt("/caisse", 1280);
+    const router = renderAt("/caisse", 1280);
 
     await addProduct("Croissant");
     await userEvent.click(screen.getByRole("button", { name: "Encaisser" }));
@@ -281,12 +280,65 @@ describe("Caisse", () => {
     ).toBeInTheDocument();
     expect(store.sales).toHaveLength(1);
     expect(store.saleKeys.size).toBe(1);
+    // "Voir" on the toast opens the receipt of the sale that was posted.
+    // Toasts of earlier tests may still be mounted: the newest one is last.
+    await userEvent.click(
+      screen.getAllByRole("button", { name: "Voir" }).at(-1) as HTMLElement,
+    );
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        `/caisse/ventes/${store.sales[0]?.id}`,
+      ),
+    );
     expect(
-      await screen.findByRole("heading", {
-        level: 1,
-        name: store.sales[0]?.reference ?? "",
-      }),
+      await screen.findByRole(
+        "heading",
+        { level: 1, name: store.sales[0]?.reference ?? "" },
+        { timeout: 3000 },
+      ),
     ).toBeInTheDocument();
+  });
+
+  // Issue #43: the whole tile is the add button; Enter on a focused tile
+  // activates that tile, not the first product of the grid; the payment
+  // method control is gone since cash is the only method.
+  it("adds from the whole tile, keeps Enter on the focused tile and shows no payment method", async () => {
+    const store = makePosStore({
+      session: makePosSession(),
+      sessions: [makePosSession()],
+    });
+    server.use(...posHandlers(store));
+    renderAt("/caisse", 1280);
+
+    const tile = await screen.findByRole("button", {
+      name: "Ajouter Croissant",
+    });
+    expect(tile).toHaveTextContent("Croissant");
+    expect(tile).toHaveTextContent("TND");
+    tile.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(useCartStore.getState().lines.map((line) => line.name)).toEqual([
+      "Croissant",
+    ]);
+    // In the search field, Enter adds the first product shown.
+    await userEvent.type(screen.getByRole("searchbox"), "pain{Enter}");
+    expect(useCartStore.getState().lines.map((line) => line.name)).toEqual([
+      "Croissant",
+      "Pain complet",
+    ]);
+    expect(screen.queryByText("Mode de paiement")).not.toBeInTheDocument();
+
+    // Emptying a cart of several lines asks first.
+    await userEvent.click(
+      screen.getByRole("button", { name: "Vider le panier" }),
+    );
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "Vider le panier ?",
+    });
+    await userEvent.click(
+      within(confirm).getByRole("button", { name: "Vider le panier" }),
+    );
+    await waitFor(() => expect(useCartStore.getState().lines).toHaveLength(0));
   });
 
   it("lists sales and sessions without identifiers", async () => {

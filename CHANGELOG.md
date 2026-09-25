@@ -31,6 +31,11 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
 
 ### Fixed
 
+- Issue #43, Caisse: the whole product card adds the product; the cashier
+  stays on the till after a sale with a `Voir` action on the toast; the
+  payment method control is gone (cash only); Enter on a focused tile
+  activates that tile; emptying a cart of several lines asks first; a
+  cashier without `pos.credit_sale` can post a fully paid sale.
 - Issue #47, règlements tied to documents: a payment settles the party's
   open documents (explicit allocations first, the remainder oldest first),
   sales, distributor sales, settlements and purchases keep `Payé`, `Reste`

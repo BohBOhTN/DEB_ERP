@@ -359,10 +359,13 @@ describe("pos routes", () => {
     );
   });
 
-  it("rejects partial sales without pos.credit_sale", async () => {
+  // Issue #43: the route no longer refuses every sale that names an amount;
+  // it tells the service whether credit may be granted and the service
+  // decides from the remainder it computes.
+  it("passes the credit permission to the service instead of refusing amounts", async () => {
     const { app, cookie, posService } = await createTestApp(["pos.sell"]);
 
-    const response = await request(app)
+    await request(app)
       .post("/api/pos/sales")
       .set("Cookie", cookie)
       .set("Idempotency-Key", "sale-credit-1")
@@ -377,10 +380,12 @@ describe("pos routes", () => {
           },
         ],
       })
-      .expect(403);
+      .expect(201);
 
-    expect(response.body.error.code).toBe("PERMISSION_DENIED");
-    expect(posService.postPaidSale).not.toHaveBeenCalled();
+    expect(posService.postPaidSale).toHaveBeenCalledWith(
+      expect.objectContaining({ creditAllowed: false }),
+      expect.anything(),
+    );
   });
 
   it("posts partial sales when the user has pos.credit_sale", async () => {
@@ -412,6 +417,7 @@ describe("pos routes", () => {
         sessionId: "session-1",
         customerId: "customer-1",
         paidAmountTnd: "2.000",
+        creditAllowed: true,
       }),
       expect.objectContaining({
         actorUserId: "user-1",

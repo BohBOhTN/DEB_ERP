@@ -20,8 +20,9 @@ export function categoryTone(categoryId: string): 1 | 2 | 3 | 4 {
   return ((hash % 4) + 1) as 1 | 2 | 3 | 4;
 }
 
-/// Product tiles (07 section 4.6): tap adds one; a product already in the
-/// cart shows its quantity with `+` and `−` on the tile.
+/// Product tiles (07 section 4.6): tapping anywhere on the tile adds one
+/// (the name and price are one button, issue #43); a product already in
+/// the cart shows its quantity with `+` and `−` under it.
 export function ProductGrid({
   products,
   quantities,
@@ -47,16 +48,16 @@ export function ProductGrid({
           >
             <button
               type="button"
-              className={styles.tileName}
+              className={styles.tileMain}
               onClick={() => onAdd(product)}
               aria-label={`Ajouter ${product.name}`}
             >
-              {product.name}
+              <span className={styles.tileName}>{product.name}</span>
+              <span className={styles.tilePrice}>
+                {formatMoney(product.salePriceTnd)} / {product.baseUnit.symbol}{" "}
+                · {product.category.name}
+              </span>
             </button>
-            <span className={styles.tilePrice}>
-              {formatMoney(product.salePriceTnd)} / {product.baseUnit.symbol} ·{" "}
-              {product.category.name}
-            </span>
             {/* The stepper row is always laid out so a tile never grows on tap:
                 a growing tile would shift its neighbours under a fast finger. */}
             {quantity ? (

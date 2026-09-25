@@ -126,11 +126,10 @@ test("2 and 3: a morning at the bakery (phone as cashier)", async ({
   await confirm.getByRole("button", { name: "Valider" }).click();
   await expect(page.getByText("Vente enregistrée").first()).toBeVisible();
   await expect(
-    page.getByRole("heading", { level: 1, name: /^VT-/ }),
+    page.getByRole("heading", { level: 1, name: "Caisse" }),
   ).toBeVisible();
 
   // 3.4 A registered customer pays 5,000 of 18,500.
-  await page.getByRole("button", { name: "Nouvelle vente" }).click();
   await page.getByRole("searchbox").first().fill("chocolat");
   await tiles
     .getByRole("button", { name: "Ajouter Gâteau au chocolat", exact: true })

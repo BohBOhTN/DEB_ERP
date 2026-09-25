@@ -58,9 +58,3 @@
   background: var(--success-soft);
   color: var(--success);
 }
-
-@media (min-width: 600px) {
-  .fields {
-    grid-template-columns: 2fr 1fr;
-  }
-}

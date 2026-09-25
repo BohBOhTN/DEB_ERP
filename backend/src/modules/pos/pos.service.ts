@@ -437,6 +437,10 @@ export class PosService {
       soldAt: Date;
       paidAmountTnd?: string;
       lines: SaleLineInput[];
+      /// False when the caller lacks `pos.credit_sale`: a sale that leaves a
+      /// remainder is then refused, a fully paid one still posts. Left unset
+      /// by callers that enforce the permission themselves.
+      creditAllowed?: boolean;
     },
     actor: PosActor,
   ) {
@@ -566,6 +570,15 @@ export class PosService {
           Awaited<ReturnType<typeof tx.customer.findUnique>> | undefined;
 
         if (remainingDueTnd.greaterThan(0)) {
+          if (params.creditAllowed === false) {
+            throw new AppError({
+              statusCode: 403,
+              code: "PERMISSION_DENIED",
+              message:
+                "Vous n'avez pas l'autorisation d'enregistrer une vente à crédit.",
+            });
+          }
+
           if (!params.customerId) {
             throw new AppError({
               statusCode: 400,

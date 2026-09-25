@@ -8,14 +8,19 @@ import { formatMoney } from "../../../i18n/format.js";
 import { cartTotal, lineTotal, useCartStore } from "../cart.store.js";
 import styles from "./PosComponents.module.css";
 
+export interface CartPanelProps {
+  /// "Vider le panier": the page owns the confirmation so the keyboard
+  /// shortcut and the button share it.
+  onClearRequest: () => void;
+}
+
 /// The cart lines with a quantity stepper, unit price, line total and
 /// removal; "Vider le panier" at the bottom (07 section 4.6).
-export function CartPanel() {
+export function CartPanel({ onClearRequest }: CartPanelProps) {
   const lines = useCartStore((state) => state.lines);
   const increment = useCartStore((state) => state.increment);
   const setQuantity = useCartStore((state) => state.setQuantity);
   const remove = useCartStore((state) => state.remove);
-  const clear = useCartStore((state) => state.clear);
 
   if (lines.length === 0) {
     return (
@@ -73,7 +78,12 @@ export function CartPanel() {
         ))}
       </ul>
       <div className={styles.cartFooter}>
-        <Button variant="ghost" size="sm" leftIcon={<Trash2 />} onClick={clear}>
+        <Button
+          variant="ghost"
+          size="sm"
+          leftIcon={<Trash2 />}
+          onClick={onClearRequest}
+        >
           Vider le panier
         </Button>
         <strong className="tabular-nums">
