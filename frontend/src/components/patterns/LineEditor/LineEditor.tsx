@@ -1,6 +1,6 @@
 import Decimal from "decimal.js-light";
 import { Plus, Trash2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { cx } from "../../../lib/cx.js";
 import { formatMoney } from "../../../i18n/format.js";
 import { fr } from "../../../i18n/fr.js";
@@ -39,9 +39,32 @@ export interface LineEditorProps {
   /// Overrides the quantity × price total, for documents whose price is per
   /// base unit while the quantity is entered in another unit (purchases).
   lineTotalFor?: (line: EditorLine) => string;
+  /// The unit price a typed line total means, when the default total ÷
+  /// quantity does not hold (purchases divide by the base quantity). `null`
+  /// leaves the price untouched (no quantity yet). Issue 009.
+  unitPriceFromTotal?: (line: EditorLine, totalTnd: string) => string | null;
   /// Extra content under the lines (a subtotal, a hint).
   footer?: ReactNode;
   className?: string;
+}
+
+/// Unit price for a typed total: total ÷ quantity, three decimals, or
+/// `null` without a positive quantity. The stored total is then quantity ×
+/// that price, which can differ from the typed total by a few millimes.
+export function unitPriceForTotal(
+  quantity: string,
+  totalTnd: string,
+): string | null {
+  try {
+    const count = new Decimal(quantity.replace(",", ".") || 0);
+    const total = new Decimal(totalTnd.replace(",", ".") || 0);
+    if (!count.greaterThan(0) || totalTnd.trim() === "") {
+      return null;
+    }
+    return total.dividedBy(count).toDecimalPlaces(3).toFixed(3);
+  } catch {
+    return null;
+  }
 }
 
 export function lineTotal(
@@ -93,13 +116,33 @@ export function LineEditor({
   disabled = false,
   lineHint,
   lineTotalFor,
+  unitPriceFromTotal,
   footer,
   className,
 }: LineEditorProps) {
+  // What the user is typing in a total field, shown until the field is
+  // left; the stored total (quantity × the derived price) shows afterwards.
+  const [totalDrafts, setTotalDrafts] = useState<Record<string, string>>({});
   const update = (key: string, patch: Partial<EditorLine>) =>
     onChange(
       lines.map((line) => (line.key === key ? { ...line, ...patch } : line)),
     );
+  const clearDraft = (key: string) =>
+    setTotalDrafts((drafts) => {
+      if (!(key in drafts)) return drafts;
+      const rest = { ...drafts };
+      delete rest[key];
+      return rest;
+    });
+  const updateFromTotal = (line: EditorLine, totalTnd: string) => {
+    setTotalDrafts((drafts) => ({ ...drafts, [line.key]: totalTnd }));
+    const unitPriceTnd = unitPriceFromTotal
+      ? unitPriceFromTotal(line, totalTnd)
+      : unitPriceForTotal(line.quantity, totalTnd);
+    if (unitPriceTnd !== null) {
+      update(line.key, { unitPriceTnd });
+    }
+  };
   const remove = (key: string) =>
     onChange(lines.filter((line) => line.key !== key));
 
@@ -160,7 +203,10 @@ export function LineEditor({
                 <QuantityInput
                   aria-label={`${fr.quantity} ${index + 1}`}
                   value={line.quantity}
-                  onChange={(quantity) => update(line.key, { quantity })}
+                  onChange={(quantity) => {
+                    clearDraft(line.key);
+                    update(line.key, { quantity });
+                  }}
                   disabled={disabled}
                   invalid={Boolean(errorFor("quantity"))}
                 />
@@ -188,9 +234,10 @@ export function LineEditor({
                     <MoneyInput
                       aria-label={`${fr.unitPrice} ${index + 1}`}
                       value={line.unitPriceTnd}
-                      onChange={(unitPriceTnd) =>
-                        update(line.key, { unitPriceTnd })
-                      }
+                      onChange={(unitPriceTnd) => {
+                        clearDraft(line.key);
+                        update(line.key, { unitPriceTnd });
+                      }}
                       disabled={disabled}
                       invalid={Boolean(errorFor("unitPriceTnd"))}
                     />
@@ -199,16 +246,32 @@ export function LineEditor({
                       {formatMoney(line.unitPriceTnd || 0)}
                     </span>
                   )}
+                  {errorFor("unitPriceTnd") ? (
+                    <p className={styles.error}>{errorFor("unitPriceTnd")}</p>
+                  ) : null}
                 </div>
               ) : null}
               {showPrice ? (
                 <div className={cx(styles.cell, styles.total)}>
                   <span className={styles.mobileLabel}>{fr.lineTotal}</span>
-                  <span className="tabular-nums">
-                    {formatMoney(
-                      lineTotalFor ? lineTotalFor(line) : lineTotal(line),
-                    )}
-                  </span>
+                  {priceEditable ? (
+                    <MoneyInput
+                      aria-label={`${fr.lineTotal} ${index + 1}`}
+                      value={
+                        totalDrafts[line.key] ??
+                        (lineTotalFor ? lineTotalFor(line) : lineTotal(line))
+                      }
+                      onChange={(totalTnd) => updateFromTotal(line, totalTnd)}
+                      onBlur={() => clearDraft(line.key)}
+                      disabled={disabled}
+                    />
+                  ) : (
+                    <span className="tabular-nums">
+                      {formatMoney(
+                        lineTotalFor ? lineTotalFor(line) : lineTotal(line),
+                      )}
+                    </span>
+                  )}
                 </div>
               ) : null}
               <div className={cx(styles.cell, styles.remove)}>
