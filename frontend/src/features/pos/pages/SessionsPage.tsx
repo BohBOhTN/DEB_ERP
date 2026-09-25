@@ -5,7 +5,12 @@ import {
 } from "../../../components/patterns/DataTable/DataTable.js";
 import { FilterBar } from "../../../components/patterns/FilterBar/FilterBar.js";
 import { PageHeader } from "../../../components/patterns/PageHeader/PageHeader.js";
-import { DateInput } from "../../../components/ui/DateInput/DateInput.js";
+import { PeriodFilter } from "../../../components/patterns/PeriodFilter/PeriodFilter.js";
+import {
+  periodFromParams,
+  periodRange,
+  periodToParams,
+} from "../../../lib/dates/periodRange.js";
 import { Select } from "../../../components/ui/Select/Select.js";
 import { StatusPill } from "../../../components/ui/StatusPill/StatusPill.js";
 import { cx } from "../../../lib/cx.js";
@@ -15,7 +20,14 @@ import type { PosSession } from "../pos.api.js";
 import { useSessions } from "../pos.queries.js";
 import styles from "./PosPages.module.css";
 
-const defaults = { from: "", to: "", status: "", page: 1, pageSize: 25 };
+const defaults = {
+  period: "today",
+  from: "",
+  to: "",
+  status: "",
+  page: 1,
+  pageSize: 25,
+};
 
 export function differenceClass(
   value: string | null | undefined,
@@ -33,11 +45,13 @@ export function differenceClass(
 export function SessionsPage() {
   const navigate = useNavigate();
   const [state, setState] = useUrlState(defaults);
+  const period = periodFromParams(state, "today");
+  const range = periodRange(period);
   const query = useSessions({
     page: state.page,
     pageSize: state.pageSize,
-    from: state.from || undefined,
-    to: state.to || undefined,
+    from: range.from || undefined,
+    to: range.to || undefined,
     status: (state.status || undefined) as "OPEN" | "CLOSED" | undefined,
     sort: { field: "openedAt", direction: "desc" },
   });
@@ -121,21 +135,25 @@ export function SessionsPage() {
         title="Sessions de caisse"
         description="Ouvertures, clôtures et écarts de caisse."
       />
+      <PeriodFilter
+        value={period}
+        onChange={(next) => setState({ ...periodToParams(next), page: 1 })}
+      />
       <FilterBar
-        activeCount={(state.status ? 1 : 0) + (state.from || state.to ? 1 : 0)}
-        onReset={() => setState({ from: "", to: "", status: "", page: 1 })}
+        activeCount={
+          (state.status ? 1 : 0) + (period.preset !== "today" ? 1 : 0)
+        }
+        onReset={() =>
+          setState({
+            period: "today",
+            from: "",
+            to: "",
+            status: "",
+            page: 1,
+          })
+        }
         filters={
           <>
-            <DateInput
-              aria-label="Du"
-              value={state.from}
-              onChange={(from) => setState({ from, page: 1 })}
-            />
-            <DateInput
-              aria-label="Au"
-              value={state.to}
-              onChange={(to) => setState({ to, page: 1 })}
-            />
             <Select
               aria-label="Statut"
               placeholder="Tous les statuts"

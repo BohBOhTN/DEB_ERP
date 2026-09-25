@@ -38,6 +38,7 @@ export {
 } from "./LineEditor/LineEditor.js";
 export { PageHeader, type Breadcrumb } from "./PageHeader/PageHeader.js";
 export { PaymentBox } from "./PaymentBox/PaymentBox.js";
+export { PeriodFilter } from "./PeriodFilter/PeriodFilter.js";
 export { PermissionGate } from "./PermissionGate/PermissionGate.js";
 export { ReversePaymentDialog } from "./ReversePaymentDialog/ReversePaymentDialog.js";
 export { RankedList, type RankedItem } from "./RankedList/RankedList.js";

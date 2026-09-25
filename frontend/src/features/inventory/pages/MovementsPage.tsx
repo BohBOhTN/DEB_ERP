@@ -6,8 +6,13 @@ import {
 } from "../../../components/patterns/DataTable/DataTable.js";
 import { FilterBar } from "../../../components/patterns/FilterBar/FilterBar.js";
 import { PageHeader } from "../../../components/patterns/PageHeader/PageHeader.js";
+import { PeriodFilter } from "../../../components/patterns/PeriodFilter/PeriodFilter.js";
+import {
+  periodFromParams,
+  periodRange,
+  periodToParams,
+} from "../../../lib/dates/periodRange.js";
 import { Badge } from "../../../components/ui/Badge/Badge.js";
-import { DateInput } from "../../../components/ui/DateInput/DateInput.js";
 import { Select } from "../../../components/ui/Select/Select.js";
 import { formatDateTime, formatQuantity } from "../../../i18n/format.js";
 import { useUrlState } from "../../../lib/hooks/useUrlState.js";
@@ -29,6 +34,7 @@ const defaults = {
   itemId: "",
   itemLabel: "",
   type: "",
+  period: "today",
   from: "",
   to: "",
   sort: "occurredAt:desc",
@@ -39,6 +45,8 @@ const defaults = {
 /// `/stock/mouvements` (UI-11): the movement ledger with filters in the URL.
 export function MovementsPage() {
   const [state, setState] = useUrlState(defaults);
+  const period = periodFromParams(state, "today");
+  const range = periodRange(period);
   const query = useMovements({
     page: state.page,
     pageSize: state.pageSize,
@@ -49,13 +57,13 @@ export function MovementsPage() {
     itemId: state.itemId || undefined,
     movementType: (state.type || undefined) as
       InventoryMovementType | undefined,
-    from: state.from || undefined,
-    to: state.to || undefined,
+    from: range.from || undefined,
+    to: range.to || undefined,
   });
   const activeCount =
     (state.itemId ? 1 : 0) +
     (state.type ? 1 : 0) +
-    (state.from || state.to ? 1 : 0);
+    (period.preset !== "today" ? 1 : 0);
 
   const pickedItem: PickedItem | null = state.itemId
     ? {
@@ -109,6 +117,10 @@ export function MovementsPage() {
         title="Mouvements"
         description="Chaque entrée et sortie de stock, avec sa source."
       />
+      <PeriodFilter
+        value={period}
+        onChange={(next) => setState({ ...periodToParams(next), page: 1 })}
+      />
       <FilterBar
         activeCount={activeCount}
         onReset={() =>
@@ -116,6 +128,7 @@ export function MovementsPage() {
             itemId: "",
             itemLabel: "",
             type: "",
+            period: "today",
             from: "",
             to: "",
             page: 1,
@@ -143,16 +156,6 @@ export function MovementsPage() {
               options={(
                 Object.keys(movementTypeLabels) as InventoryMovementType[]
               ).map((value) => ({ value, label: movementTypeLabels[value] }))}
-            />
-            <DateInput
-              aria-label="Du"
-              value={state.from}
-              onChange={(from) => setState({ from, page: 1 })}
-            />
-            <DateInput
-              aria-label="Au"
-              value={state.to}
-              onChange={(to) => setState({ to, page: 1 })}
             />
           </>
         }

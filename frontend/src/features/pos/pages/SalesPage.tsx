@@ -5,14 +5,15 @@ import {
 } from "../../../components/patterns/DataTable/DataTable.js";
 import { FilterBar } from "../../../components/patterns/FilterBar/FilterBar.js";
 import { PageHeader } from "../../../components/patterns/PageHeader/PageHeader.js";
-import { DateInput } from "../../../components/ui/DateInput/DateInput.js";
+import { PeriodFilter } from "../../../components/patterns/PeriodFilter/PeriodFilter.js";
+import {
+  periodFromParams,
+  periodRange,
+  periodToParams,
+} from "../../../lib/dates/periodRange.js";
 import { Select } from "../../../components/ui/Select/Select.js";
 import { StatusPill } from "../../../components/ui/StatusPill/StatusPill.js";
-import {
-  formatMoney,
-  formatTime,
-  toBusinessDate,
-} from "../../../i18n/format.js";
+import { formatMoney, formatTime } from "../../../i18n/format.js";
 import { useUrlState } from "../../../lib/hooks/useUrlState.js";
 import type { SalePaymentState } from "../../customers/customers.api.js";
 import { salePaymentPill } from "../../customers/components/customerLabels.js";
@@ -21,10 +22,10 @@ import { useSales } from "../pos.queries.js";
 import { PosCustomerCombobox } from "../components/PosCustomerCombobox.js";
 import styles from "./PosPages.module.css";
 
-const today = toBusinessDate(new Date());
 const defaults = {
-  from: today,
-  to: today,
+  period: "today",
+  from: "",
+  to: "",
   customerId: "",
   customerName: "",
   state: "",
@@ -44,12 +45,14 @@ export function SalesPage() {
     field: field || "soldAt",
     direction: direction === "asc" ? ("asc" as const) : ("desc" as const),
   };
+  const period = periodFromParams(state, "today");
+  const range = periodRange(period);
   const query = useSales({
     page: state.page,
     pageSize: state.pageSize,
     sort,
-    from: state.from || undefined,
-    to: state.to || undefined,
+    from: range.from || undefined,
+    to: range.to || undefined,
     customerId: state.customerId || undefined,
     paymentState: (state.state || undefined) as SalePaymentState | undefined,
     sessionId: state.sessionId || undefined,
@@ -57,7 +60,7 @@ export function SalesPage() {
   const activeCount =
     (state.customerId ? 1 : 0) +
     (state.state ? 1 : 0) +
-    (state.from !== today || state.to !== today ? 1 : 0) +
+    (period.preset !== "today" ? 1 : 0) +
     (state.sessionId ? 1 : 0);
 
   const columns: DataTableColumn<Sale>[] = [
@@ -125,12 +128,17 @@ export function SalesPage() {
         title="Ventes"
         description="Les ventes enregistrées à la caisse."
       />
+      <PeriodFilter
+        value={period}
+        onChange={(next) => setState({ ...periodToParams(next), page: 1 })}
+      />
       <FilterBar
         activeCount={activeCount}
         onReset={() =>
           setState({
-            from: today,
-            to: today,
+            period: "today",
+            from: "",
+            to: "",
             customerId: "",
             customerName: "",
             state: "",
@@ -140,16 +148,6 @@ export function SalesPage() {
         }
         filters={
           <>
-            <DateInput
-              aria-label="Du"
-              value={state.from}
-              onChange={(from) => setState({ from, page: 1 })}
-            />
-            <DateInput
-              aria-label="Au"
-              value={state.to}
-              onChange={(to) => setState({ to, page: 1 })}
-            />
             <PosCustomerCombobox
               aria-label="Client"
               value={
