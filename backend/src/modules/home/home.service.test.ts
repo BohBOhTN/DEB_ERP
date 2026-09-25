@@ -24,6 +24,11 @@ function makePrisma(overrides: Partial<Record<string, Model>> = {}) {
   const model = makeModel();
 
   return {
+    $queryRaw: vi
+      .fn()
+      .mockResolvedValue([
+        { revenue: null, costed_revenue: null, cost: null, uncosted_lines: 0n },
+      ]),
     sale: model,
     salePayment: model,
     customerOrderAdvance: model,
@@ -63,10 +68,18 @@ describe("HomeService summary scoping", () => {
         "expenses.view",
         "distribution.custody.view",
         "audit.view",
+        "margin.view",
       ]),
     });
 
     expect(summary.date).toBe("2026-09-22");
+    expect(summary.margin?.today).toEqual({
+      revenueTnd: "0.000",
+      costedRevenueTnd: "0.000",
+      costTnd: "0.000",
+      marginTnd: "0.000",
+      uncostedLinesCount: 0,
+    });
     expect(summary.sales?.today.totalTnd).toBe("0.000");
     expect(summary.receivables).toEqual({
       customersTnd: "0.000",
@@ -103,6 +116,55 @@ describe("HomeService summary scoping", () => {
     expect(summary.expenses).toBeNull();
     expect(summary.custody).toBeNull();
     expect(summary.recent).toBeNull();
+    expect(summary.margin).toBeNull();
+  });
+
+  // Issue 008: the margin covers the costed lines only and says how many
+  // lines had no cost, so 1 250 of revenue with 900 costed at 600 is a
+  // 300 margin on 900, not on 1 250.
+  it("computes the approximate margin over the costed lines of the day", async () => {
+    const prisma = makePrisma();
+    (prisma.$queryRaw as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([
+        {
+          revenue: money("1250"),
+          costed_revenue: money("900"),
+          cost: money("600"),
+          uncosted_lines: 3n,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          revenue: money("1000"),
+          costed_revenue: money("1000"),
+          cost: money("650.5"),
+          uncosted_lines: 0n,
+        },
+      ]);
+    const service = new HomeService(prisma);
+
+    const summary = await service.getSummary({
+      date: "2026-09-22",
+      permissions: new Set(["margin.view"]),
+    });
+
+    expect(summary.margin).toEqual({
+      today: {
+        revenueTnd: "1250.000",
+        costedRevenueTnd: "900.000",
+        costTnd: "600.000",
+        marginTnd: "300.000",
+        uncostedLinesCount: 3,
+      },
+      previousDay: {
+        revenueTnd: "1000.000",
+        costedRevenueTnd: "1000.000",
+        costTnd: "650.500",
+        marginTnd: "349.500",
+        uncostedLinesCount: 0,
+      },
+    });
+    expect(summary.sales).toBeNull();
   });
 
   it("shows only the distributor side of receivables when that is all the caller may see", async () => {
