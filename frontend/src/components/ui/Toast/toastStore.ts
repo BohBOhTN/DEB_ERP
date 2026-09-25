@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { randomId } from "../../../lib/ids.js";
 
 export type ToastKind = "success" | "error" | "warning" | "info";
 
@@ -30,7 +31,7 @@ export const defaultToastDurationMs = 5000;
 export const useToastStore = create<ToastState>((set) => ({
   toasts: [],
   push: (toast) => {
-    const id = crypto.randomUUID();
+    const id = randomId();
     set((state) => ({
       toasts: [...state.toasts, { ...toast, id }].slice(-maxVisibleToasts),
     }));

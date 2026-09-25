@@ -1,4 +1,5 @@
 import { ApiError, apiErrorFromBody } from "./errors.js";
+import { randomId } from "../ids.js";
 import type { PageResult } from "./pagination.js";
 
 /// The fetch wrapper every feature API file uses (06 section 3.2). It talks
@@ -99,7 +100,7 @@ export class ApiClient {
     options: RequestOptions,
   ): Promise<T> {
     const url = this.buildUrl(path, options.query);
-    const correlationId = crypto.randomUUID();
+    const correlationId = randomId();
     const headers: Record<string, string> = {
       Accept: "application/json",
       "Accept-Language": "fr",
