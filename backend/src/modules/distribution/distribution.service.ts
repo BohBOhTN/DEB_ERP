@@ -1738,6 +1738,17 @@ async function buildSaleLines(
       });
     }
 
+    // Issue 009: the price is the seller's, but never below what the owner
+    // says the product costs.
+    const cost = unitCostSnapshot(product);
+    if (cost !== null && line.unitPriceTnd.lessThan(cost)) {
+      throw new AppError({
+        statusCode: 400,
+        code: "DISTRIBUTOR_PRICE_BELOW_COST",
+        message: `Le prix unitaire de ${product.name} est inférieur à son coût approximatif (${cost} TND).`,
+      });
+    }
+
     return {
       productId: product.id,
       unitId: product.baseUnitId,
