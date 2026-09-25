@@ -224,6 +224,9 @@ export const fr = {
   samePreviousDay: "Comme la veille",
   previousDayWas: "La veille : {amount}",
   currentBalance: "Solde actuel",
+  approximateMarginOfDay: "Marge approximative",
+  approximateCost: "Coût approximatif",
+  approximateMargin: "Marge approximative",
 
   // Shell
   navigation: "Navigation",
