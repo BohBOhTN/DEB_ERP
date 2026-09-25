@@ -192,12 +192,7 @@ export function DirectSaleDialog({
             )}
           />
         </FormField>
-        <FormField
-          label="Produits"
-          labelIsElement={false}
-          required
-          hint="Prix unitaire modifiable ; saisissez le total de la ligne pour en déduire le prix."
-        >
+        <FormField label="Produits" labelIsElement={false} required>
           <Controller
             control={form.control}
             name="lines"

@@ -200,6 +200,9 @@ export function LineEditor({
                 ) : null}
               </div>
               <div className={styles.cell}>
+                <span className={styles.mobileLabel} aria-hidden="true">
+                  {fr.quantity}
+                </span>
                 <QuantityInput
                   aria-label={`${fr.quantity} ${index + 1}`}
                   value={line.quantity}
@@ -219,6 +222,9 @@ export function LineEditor({
               </div>
               {units ? (
                 <div className={styles.cell}>
+                  <span className={styles.mobileLabel} aria-hidden="true">
+                    {fr.unit}
+                  </span>
                   <Select
                     aria-label={`${fr.unit} ${index + 1}`}
                     options={units}
@@ -230,6 +236,9 @@ export function LineEditor({
               ) : null}
               {showPrice ? (
                 <div className={styles.cell}>
+                  <span className={styles.mobileLabel} aria-hidden="true">
+                    {fr.unitPrice}
+                  </span>
                   {priceEditable ? (
                     <MoneyInput
                       aria-label={`${fr.unitPrice} ${index + 1}`}
@@ -252,8 +261,12 @@ export function LineEditor({
                 </div>
               ) : null}
               {showPrice ? (
-                <div className={cx(styles.cell, styles.total)}>
-                  <span className={styles.mobileLabel}>{fr.lineTotal}</span>
+                <div
+                  className={cx(styles.cell, !priceEditable && styles.total)}
+                >
+                  <span className={styles.mobileLabel} aria-hidden="true">
+                    {fr.lineTotal}
+                  </span>
                   {priceEditable ? (
                     <MoneyInput
                       aria-label={`${fr.lineTotal} ${index + 1}`}
@@ -289,6 +302,12 @@ export function LineEditor({
         })}
       </ul>
       {errors.lines ? <p className={styles.error}>{errors.lines}</p> : null}
+      {showPrice && priceEditable ? (
+        <p className={styles.guidance}>
+          Saisissez le prix unitaire ou le total de la ligne ; l'autre se
+          calcule d'après la quantité.
+        </p>
+      ) : null}
       <div className={styles.footer}>
         <Button
           variant="secondary"

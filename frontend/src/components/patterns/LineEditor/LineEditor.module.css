@@ -2,6 +2,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  container-type: inline-size;
 }
 
 .header {
@@ -14,7 +15,12 @@
   gap: var(--space-3);
 }
 
+/* Narrow (phones, and any container under 640 px): one card per line.
+   The product spans the card, the remove button sits in its corner,
+   quantity and unit share a row, unit price and line total share the next
+   one, each with a visible label. */
 .line {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-3);
@@ -26,6 +32,11 @@
 
 .line > :first-child {
   grid-column: 1 / -1;
+  padding-right: calc(var(--space-8) + var(--space-2));
+}
+
+.line:not(.withUnit) > :nth-child(2) {
+  grid-column: 1 / -1;
 }
 
 .cell {
@@ -36,18 +47,19 @@
 }
 
 .total {
-  justify-content: center;
   font-weight: var(--weight-title);
 }
 
 .mobileLabel {
   font-size: var(--text-xs);
+  line-height: var(--leading-xs);
   color: var(--text-secondary);
 }
 
 .remove {
-  align-items: flex-end;
-  justify-content: center;
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
 }
 
 .readonly {
@@ -69,6 +81,12 @@
   color: var(--danger);
 }
 
+.guidance {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--text-secondary);
+}
+
 .footer {
   display: flex;
   flex-wrap: wrap;
@@ -81,28 +99,27 @@
   text-align: right;
 }
 
-@media (min-width: 900px) {
-  .header,
-  .line {
+/* Wide enough container: one row per line under a header row. Columns are
+   fractions with a floor, so the row always fits its container (a dialog,
+   a page next to the sidebar) instead of the viewport. Lines with a unit
+   column need a little more room and switch later. */
+@container (min-width: 640px) {
+  .header:not(.withUnit),
+  .line:not(.withUnit) {
     display: grid;
-    grid-template-columns: minmax(200px, 2fr) 120px 140px 120px 44px;
+    grid-template-columns:
+      minmax(160px, 2fr) minmax(88px, 1fr) minmax(130px, 1.2fr)
+      minmax(130px, 1.2fr) 44px;
     gap: var(--space-3);
     align-items: start;
   }
 
-  .withUnit {
-    grid-template-columns: minmax(200px, 2fr) 120px 120px 140px 120px 44px;
+  .header.noPrice:not(.withUnit),
+  .line.noPrice:not(.withUnit) {
+    grid-template-columns: minmax(160px, 2fr) minmax(88px, 1fr) 44px;
   }
 
-  .noPrice {
-    grid-template-columns: minmax(200px, 2fr) 120px 44px;
-  }
-
-  .noPrice.withUnit {
-    grid-template-columns: minmax(200px, 2fr) 120px 120px 44px;
-  }
-
-  .header {
+  .header:not(.withUnit) {
     padding: 0 var(--space-4);
     font-size: var(--text-xs);
     font-weight: var(--weight-title);
@@ -111,24 +128,84 @@
     color: var(--text-secondary);
   }
 
-  .line {
+  .line:not(.withUnit) {
     padding: var(--space-3) var(--space-4);
   }
 
-  .line > :first-child {
+  .line:not(.withUnit) > :first-child,
+  .line:not(.withUnit) > :nth-child(2) {
     grid-column: auto;
+    padding-right: 0;
   }
 
-  .total {
-    align-items: flex-end;
-    min-height: var(--control-height);
-  }
-
-  .mobileLabel {
+  .line:not(.withUnit) .mobileLabel {
     display: none;
   }
 
-  .remove {
+  .line:not(.withUnit) .total {
+    align-items: flex-end;
+    justify-content: center;
+    min-height: var(--control-height);
+  }
+
+  .line:not(.withUnit) .remove {
+    position: static;
     align-items: center;
+    justify-content: center;
+    min-height: var(--control-height);
+  }
+}
+
+@container (min-width: 760px) {
+  .header.withUnit,
+  .line.withUnit {
+    display: grid;
+    grid-template-columns:
+      minmax(160px, 2fr) minmax(88px, 1fr) minmax(96px, 1fr)
+      minmax(130px, 1.2fr) minmax(130px, 1.2fr) 44px;
+    gap: var(--space-3);
+    align-items: start;
+  }
+
+  .header.noPrice.withUnit,
+  .line.noPrice.withUnit {
+    grid-template-columns:
+      minmax(160px, 2fr) minmax(88px, 1fr) minmax(96px, 1fr)
+      44px;
+  }
+
+  .header.withUnit {
+    padding: 0 var(--space-4);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-title);
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .line.withUnit {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .line.withUnit > :first-child {
+    grid-column: auto;
+    padding-right: 0;
+  }
+
+  .line.withUnit .mobileLabel {
+    display: none;
+  }
+
+  .line.withUnit .total {
+    align-items: flex-end;
+    justify-content: center;
+    min-height: var(--control-height);
+  }
+
+  .line.withUnit .remove {
+    position: static;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--control-height);
   }
 }
