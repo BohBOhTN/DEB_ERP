@@ -41,6 +41,17 @@ exists.
   three decimals; a typed price or quantity recomputes the total; leaving
   the total field shows the stored total. The price cell now prints its
   validation message under the input.
+- **Layout.** The line editor lays itself out by its container, not the
+  viewport: a wide container (a page next to the sidebar, the direct-sale
+  dialog on a desktop) shows one row per line under a header row with
+  fraction-based columns that always fit; a narrow one shows one card per
+  line with a visible label on every field, quantity and unit on one row,
+  unit price and line total on the next, and the remove button in the
+  card's corner. One guidance line under the lines says that the unit
+  price or the line total can be typed and the other is derived. The four
+  editor pages (purchase, order, dispatch, simulation) give their grid an
+  explicit column and the totals card wraps its rows, so a wide amount no
+  longer widens the page by a pixel on a 360 px phone.
 - **Accueil.** `Vente directe distributeur` (`distribution.direct_sale`)
   opens `/distributeurs?vente=directe`; the distributors page opens the
   dialog for that parameter and gains a `Vente directe` header button.
@@ -74,7 +85,11 @@ Run locally on macOS, Node 24, on the stacked branch:
 - Playwright on the system Brave browser (`E2E_BROWSER`), the
   distribution, procurement, expenses and simulation, catalogue and stock
   and shell flows and the axe scans at three widths: 109 passed, 2
-  skipped by design
+  skipped by design; a new `expectLineEditorFits` assertion runs in the
+  purchase flow and in the direct-sale dialog at 360, 768 and 1280 px:
+  no overflow of the line or the page, the remove button inside the card,
+  field labels only in the card layout and a header row only in the wide
+  one
 
 ## Database and Migration Impact
 
