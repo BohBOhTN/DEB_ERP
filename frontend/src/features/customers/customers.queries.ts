@@ -15,6 +15,9 @@ export const customerKeys = {
   all: ["customers"] as const,
   list: (query: api.CustomerListQuery) => ["customers", "list", query] as const,
   detail: (id: string) => ["customers", "detail", id] as const,
+  summary: (id: string) => ["customers", "detail", id, "summary"] as const,
+  sales: (id: string, query: { page: number; pageSize: number }) =>
+    ["customers", "detail", id, "sales", query] as const,
   statement: (id: string, query: api.StatementQuery) =>
     ["customers", "statement", id, query] as const,
   payments: (query: api.PaymentListQuery) =>
@@ -39,6 +42,44 @@ export function useCustomer(
     queryFn: () => api.getCustomer(customerId),
     enabled: options.enabled ?? customerId !== "",
     ...tier("document"),
+  });
+}
+
+export function useCustomerSummary(customerId: string) {
+  return useQuery({
+    queryKey: customerKeys.summary(customerId),
+    queryFn: () => api.getCustomerSummary(customerId),
+    enabled: customerId !== "",
+    ...tier("document"),
+  });
+}
+
+export function useCustomerSales(
+  customerId: string,
+  query: { page: number; pageSize: number },
+) {
+  return useQuery({
+    queryKey: customerKeys.sales(customerId, query),
+    queryFn: () => api.listCustomerSales(customerId, query),
+    placeholderData: (previous) => previous,
+    enabled: customerId !== "",
+    ...tier("list"),
+  });
+}
+
+export function useSetCustomerActive() {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateAfter("customer.record");
+  return useMutation({
+    mutationFn: (input: {
+      customerId: string;
+      isActive: boolean;
+      reason?: string;
+    }) => api.setCustomerActive(input.customerId, input.isActive, input.reason),
+    onSuccess: (record, input) => {
+      primeDetail(queryClient, customerKeys.detail(input.customerId), record);
+      return invalidate();
+    },
   });
 }
 

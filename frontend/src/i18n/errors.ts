@@ -387,6 +387,19 @@ const errorCopy: Record<string, ErrorCopy> = {
     title: "Client inactif",
     description: "Choisissez un client actif.",
   },
+  CUSTOMER_HAS_BALANCE: {
+    title: "Solde en cours",
+    description:
+      "Ce client a encore un solde ou une avance : réglez-les avant de le désactiver.",
+  },
+  CUSTOMER_ALREADY_ACTIVE: {
+    title: "Client déjà actif",
+    description: "Ce client est déjà actif.",
+  },
+  CUSTOMER_ALREADY_INACTIVE: {
+    title: "Client déjà désactivé",
+    description: "Ce client est déjà désactivé.",
+  },
   CUSTOMER_BALANCE_NOT_DUE: {
     title: "Aucun montant dû",
     description: "Ce client n'a aucun montant à régler.",
