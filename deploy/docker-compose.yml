@@ -1,0 +1,60 @@
+# The production stack on the VPS, read by `deploy/remote-deploy.sh` from
+# /opt/dar-el-barka. Values come from `.env` (image tag, port, registry owner)
+# and the API's configuration from `backend.env`, both written by the deploy
+# from GitHub secrets. Postgres is not part of this stack: the API joins the
+# database's own network, `pg-network`, and the database keeps accepting
+# internal connections only.
+services:
+  backend:
+    image: ghcr.io/${REGISTRY_OWNER}/dar-el-barka-backend:${IMAGE_TAG}
+    container_name: deb-backend
+    restart: unless-stopped
+    init: true
+    env_file: backend.env
+    environment:
+      GIT_SHA: ${IMAGE_TAG}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:4000/api/health/ready",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    networks:
+      - app
+      - pg-network
+
+  # One-off: `docker compose run --rm migrate` applies the pending additive
+  # migrations before the new API starts.
+  migrate:
+    image: ghcr.io/${REGISTRY_OWNER}/dar-el-barka-backend:${IMAGE_TAG}
+    profiles:
+      - migrate
+    env_file: backend.env
+    command: ["npm", "run", "prisma:migrate:deploy"]
+    networks:
+      - pg-network
+
+  frontend:
+    image: ghcr.io/${REGISTRY_OWNER}/dar-el-barka-frontend:${IMAGE_TAG}
+    container_name: deb-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "0.0.0.0:${PUBLIC_PORT:-8081}:80"
+    networks:
+      - app
+
+networks:
+  app: {}
+  pg-network:
+    external: true

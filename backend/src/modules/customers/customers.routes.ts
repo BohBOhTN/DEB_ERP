@@ -1,31 +1,38 @@
-import { Router, type Response } from "express";
+import { Router, type Response, type RequestHandler } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
 import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok } from "../../shared/apiResponse.js";
+import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
+import {
+  dateRangeFields,
+  pageFields,
+  searchFields,
+  sortField,
+  withSearch,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { CustomersService } from "./customers.service.js";
 
-const listQuerySchema = z.object({
-  search: z.string().trim().optional(),
+export const listQuerySchema = z.object({
+  sort: sortField(["name", "createdAt"]),
+  ...searchFields,
   isActive: z
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
-const pageQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+export const pageQuerySchema = z.object({
+  ...pageFields,
 });
 
-const paymentListQuerySchema = pageQuerySchema.extend({
+export const paymentListQuerySchema = pageQuerySchema.extend({
+  sort: sortField(["paidAt", "amountTnd"]),
   customerId: z.string().trim().min(1).optional(),
 });
 
@@ -34,7 +41,27 @@ const moneyTnd = z
   .trim()
   .regex(/^\d+(\.\d{1,3})?$/);
 
-const createCustomerSchema = z.object({
+export const balanceListQuerySchema = pageQuerySchema.extend({
+  ...searchFields,
+  sort: z.enum(["name", "balance"]).optional(),
+  minBalance: moneyTnd.optional(),
+  isActive: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+});
+
+export const activationSchema = z.object({
+  reason: z.string().trim().max(300).optional(),
+});
+
+export const statementQuerySchema = z.object({
+  cursor: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  ...dateRangeFields,
+});
+
+export const createCustomerSchema = z.object({
   name: z.string().trim().min(1),
   phone: z.string().optional(),
   address: z.string().optional(),
@@ -42,7 +69,7 @@ const createCustomerSchema = z.object({
   notes: z.string().optional(),
 });
 
-const updateCustomerSchema = z.object({
+export const updateCustomerSchema = z.object({
   version: z.number().int().positive(),
   name: z.string().trim().min(1).optional(),
   phone: z.string().optional(),
@@ -52,7 +79,7 @@ const updateCustomerSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-const createCustomerPaymentSchema = z.object({
+export const createCustomerPaymentSchema = z.object({
   customerId: z.string().trim().min(1),
   paidAt: z.coerce.date(),
   amountTnd: moneyTnd,
@@ -67,6 +94,10 @@ const createCustomerPaymentSchema = z.object({
       }),
     )
     .default([]),
+});
+
+export const reversePaymentSchema = z.object({
+  reason: z.string().trim().min(3),
 });
 
 export function customersRouter(params: {
@@ -87,9 +118,9 @@ export function customersRouter(params: {
     requirePermission("customers.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const customers = await params.customersService.listCustomers(query);
-        response.json(ok({ customers }, getCorrelationId(response)));
+        response.json(okFor(response, { customers }));
       } catch (error) {
         next(error);
       }
@@ -106,7 +137,7 @@ export function customersRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok({ customer }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { customer }));
       } catch (error) {
         next(error);
       }
@@ -124,7 +155,7 @@ export function customersRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ customer }, getCorrelationId(response)));
+        response.json(okFor(response, { customer }));
       } catch (error) {
         next(error);
       }
@@ -136,14 +167,73 @@ export function customersRouter(params: {
     requirePermission("customer_balances.view"),
     async (request, response, next) => {
       try {
-        const query = pageQuerySchema.parse(request.query);
+        const query = withSearch(balanceListQuerySchema.parse(request.query));
         const customerBalances =
           await params.customersService.listCustomerBalances(query);
-        response.json(ok({ customerBalances }, getCorrelationId(response)));
+        response.json(okFor(response, { customerBalances }));
       } catch (error) {
         next(error);
       }
     },
+  );
+
+  router.get(
+    "/customers/:customerId/summary",
+    requirePermission("customer_balances.view"),
+    async (request, response, next) => {
+      try {
+        const summary = await params.customersService.getCustomerSummary(
+          parseRouteParam(request.params.customerId),
+        );
+        response.json(okFor(response, { summary }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/customers/:customerId/sales",
+    requirePermission("customer_balances.view"),
+    async (request, response, next) => {
+      try {
+        const sales = await params.customersService.listCustomerSales(
+          parseRouteParam(request.params.customerId),
+          pageQuerySchema.parse(request.query),
+        );
+        response.json(okFor(response, { sales }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  const activation =
+    (isActive: boolean): RequestHandler =>
+    async (request, response, next) => {
+      try {
+        const body = activationSchema.parse(request.body);
+        const customer = await params.customersService.setCustomerActive(
+          parseRouteParam(request.params.customerId),
+          { isActive, reason: body.reason },
+          actorFromResponse(response),
+        );
+        response.json(okFor(response, { customer }));
+      } catch (error) {
+        next(error);
+      }
+    };
+
+  router.post(
+    "/customers/:customerId/deactivate",
+    requirePermission("customers.deactivate"),
+    activation(false),
+  );
+
+  router.post(
+    "/customers/:customerId/reactivate",
+    requirePermission("customers.deactivate"),
+    activation(true),
   );
 
   router.get(
@@ -153,8 +243,9 @@ export function customersRouter(params: {
       try {
         const statement = await params.customersService.getCustomerStatement(
           parseRouteParam(request.params.customerId),
+          statementQuerySchema.parse(request.query),
         );
-        response.json(ok({ statement }, getCorrelationId(response)));
+        response.json(okFor(response, { statement }));
       } catch (error) {
         next(error);
       }
@@ -169,7 +260,7 @@ export function customersRouter(params: {
         const query = paymentListQuerySchema.parse(request.query);
         const customerPayments =
           await params.customersService.listCustomerPayments(query);
-        response.json(ok({ customerPayments }, getCorrelationId(response)));
+        response.json(okFor(response, { customerPayments }));
       } catch (error) {
         next(error);
       }
@@ -189,7 +280,43 @@ export function customersRouter(params: {
           },
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        sendCommandResult(response, 201, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/customer-payments/:paymentId/reverse",
+    requirePermission("customer_payments.create"),
+    async (request, response, next) => {
+      try {
+        const body = reversePaymentSchema.parse(request.body);
+        const result = await params.customersService.reverseCustomerPayment(
+          parseRouteParam(request.params.paymentId),
+          {
+            idempotencyKey: readIdempotencyKey(request.headers),
+            reason: body.reason,
+          },
+          actorFromResponse(response),
+        );
+        sendCommandResult(response, 201, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/customers/:customerId",
+    requirePermission("customers.view"),
+    async (request, response, next) => {
+      try {
+        const customer = await params.customersService.getCustomer(
+          parseRouteParam(request.params.customerId),
+        );
+        response.json(okFor(response, { customer }));
       } catch (error) {
         next(error);
       }
@@ -223,7 +350,7 @@ function readIdempotencyKey(headers: IncomingHttpHeaders): string {
     throw new AppError({
       statusCode: 400,
       code: "IDEMPOTENCY_KEY_REQUIRED",
-      message: "Une cle d'idempotence est requise.",
+      message: "Une clé d'idempotence est requise.",
     });
   }
 

@@ -1,10 +1,13 @@
 import {
   InventoryItemType,
   InventoryMovementType,
+  InventorySourceType,
+  Prisma,
   type PrismaClient,
 } from "@prisma/client";
-import { createHash } from "node:crypto";
 import { AppError } from "../../shared/appError.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
+import { runIdempotentCommand } from "../../shared/idempotency.js";
 
 export interface InventoryActor {
   actorUserId: string;
@@ -12,14 +15,26 @@ export interface InventoryActor {
 }
 
 export interface InventoryListParams {
+  itemType?: InventoryItemType;
+  itemId?: string;
+  movementType?: InventoryMovementType;
+  sourceType?: InventorySourceType;
+  from?: Date;
+  to?: Date;
+  sort?: SortSpec<"occurredAt">;
   page: number;
   pageSize: number;
 }
 
+/// Reads and writes inside a posting command go through the transaction
+/// client; everything else uses the shared client. Both expose the same model
+/// delegates, so helpers accept either.
+type DbClient = PrismaClient | Prisma.TransactionClient;
+
 const mainLocationCode = "main";
 
 export class InventoryService {
-  public constructor(private prisma: PrismaClient) {}
+  public constructor(private readonly prisma: PrismaClient) {}
 
   public async bootstrapInventoryData(): Promise<void> {
     await this.prisma.stockLocation.upsert({
@@ -40,22 +55,110 @@ export class InventoryService {
   }
 
   public async listMovements(params: InventoryListParams) {
+    const where: Prisma.InventoryMovementWhereInput = {
+      ...(params.itemType ? { itemType: params.itemType } : {}),
+      ...(params.itemId
+        ? {
+            OR: [
+              { productId: params.itemId },
+              { rawMaterialId: params.itemId },
+            ],
+          }
+        : {}),
+      ...(params.movementType ? { movementType: params.movementType } : {}),
+      ...(params.sourceType ? { sourceType: params.sourceType } : {}),
+      ...(params.from || params.to
+        ? {
+            occurredAt: {
+              ...(params.from ? { gte: params.from } : {}),
+              ...(params.to ? { lte: params.to } : {}),
+            },
+          }
+        : {}),
+    };
     const [items, total] = await this.prisma.$transaction([
+      // Item and unit names are snapshotted on the row, so no join is needed
+      // to render the list.
       this.prisma.inventoryMovement.findMany({
-        include: {
-          location: true,
-          product: true,
-          rawMaterial: true,
-          unit: true,
-        },
-        orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
+        where,
+        orderBy: orderByFor<
+          "occurredAt",
+          Prisma.InventoryMovementOrderByWithRelationInput
+        >(
+          params.sort,
+          { occurredAt: (direction) => [{ occurredAt: direction }] },
+          [{ occurredAt: "desc" }, { createdAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
-      this.prisma.inventoryMovement.count(),
+      this.prisma.inventoryMovement.count({ where }),
     ]);
 
-    return paginated(items, total, params);
+    return paginated(await this.decorateMovements(items), total, params);
+  }
+
+  /// The screen shows who posted a movement and the document it came from;
+  /// actors and references are batch-loaded for the page, never per row.
+  private async decorateMovements<
+    TRow extends {
+      actorUserId: string;
+      sourceType: InventorySourceType;
+      sourceId: string | null;
+    },
+  >(rows: TRow[]) {
+    if (rows.length === 0) {
+      return [];
+    }
+
+    const actorIds = [...new Set(rows.map((row) => row.actorUserId))];
+    const purchaseIds = rows
+      .filter(
+        (row) =>
+          row.sourceId &&
+          (row.sourceType === InventorySourceType.PURCHASE ||
+            row.sourceType === InventorySourceType.PURCHASE_CANCELLATION),
+      )
+      .map((row) => row.sourceId as string);
+    const saleIds = rows
+      .filter(
+        (row) =>
+          row.sourceId &&
+          (row.sourceType === InventorySourceType.POS_SALE ||
+            row.sourceType === InventorySourceType.CUSTOMER_ORDER_SALE),
+      )
+      .map((row) => row.sourceId as string);
+    const [actors, purchases, sales] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { id: { in: actorIds } },
+        select: { id: true, displayName: true },
+      }),
+      purchaseIds.length > 0
+        ? this.prisma.purchase.findMany({
+            where: { id: { in: purchaseIds } },
+            select: { id: true, reference: true },
+          })
+        : Promise.resolve([]),
+      saleIds.length > 0
+        ? this.prisma.sale.findMany({
+            where: { id: { in: saleIds } },
+            select: { id: true, reference: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    const references = new Map<string, string | null>([
+      ...purchases.map((row) => [row.id, row.reference] as const),
+      ...sales.map((row) => [row.id, row.reference] as const),
+    ]);
+
+    return rows.map((row) => ({
+      ...row,
+      createdBy: actors.find((actor) => actor.id === row.actorUserId) ?? null,
+      sourceReference: row.sourceId
+        ? (references.get(row.sourceId) ?? null)
+        : null,
+    }));
   }
 
   public async listBalances() {
@@ -72,6 +175,9 @@ export class InventoryService {
           _sum: {
             quantityDelta: true,
           },
+          _max: {
+            occurredAt: true,
+          },
         }),
         this.prisma.inventoryMovement.groupBy({
           by: ["rawMaterialId", "unitId"],
@@ -83,6 +189,9 @@ export class InventoryService {
           orderBy: [{ rawMaterialId: "asc" }, { unitId: "asc" }],
           _sum: {
             quantityDelta: true,
+          },
+          _max: {
+            occurredAt: true,
           },
         }),
       ]);
@@ -120,9 +229,11 @@ export class InventoryService {
           itemType: InventoryItemType.PRODUCT,
           itemId: balance.productId,
           itemName: product?.name ?? "Produit",
-          unitName: product?.baseUnit.name ?? "Unite",
+          unitName: product?.baseUnit.name ?? "Unité",
+          unitSymbol: product?.baseUnit.symbol ?? "",
           quantity,
           isNegative: Number(quantity) < 0,
+          lastMovementAt: balance._max?.occurredAt ?? null,
         };
       }),
       ...rawMaterialBalances.map((balance) => {
@@ -133,10 +244,12 @@ export class InventoryService {
         return {
           itemType: InventoryItemType.RAW_MATERIAL,
           itemId: balance.rawMaterialId,
-          itemName: rawMaterial?.name ?? "Matiere premiere",
-          unitName: rawMaterial?.baseUnit.name ?? "Unite",
+          itemName: rawMaterial?.name ?? "Matière première",
+          unitName: rawMaterial?.baseUnit.name ?? "Unité",
+          unitSymbol: rawMaterial?.baseUnit.symbol ?? "",
           quantity,
           isNegative: Number(quantity) < 0,
+          lastMovementAt: balance._max?.occurredAt ?? null,
         };
       }),
     ].sort((left, right) => left.itemName.localeCompare(right.itemName));
@@ -153,12 +266,13 @@ export class InventoryService {
     actor: InventoryActor,
   ) {
     const quantity = toPositiveDecimalString(params.quantity);
-    return this.runIdempotentCommand(
-      "inventory.opening_stock",
-      params.idempotencyKey,
-      { ...params, quantity },
-      async () => {
-        const movement = await this.createMovement({
+    return runIdempotentCommand({
+      prisma: this.prisma,
+      scope: "inventory.opening_stock",
+      key: params.idempotencyKey,
+      payload: { ...params, quantity },
+      execute: async (tx) => {
+        const movement = await this.createMovement(tx, {
           itemType: params.itemType,
           itemId: params.itemId,
           quantityDelta: quantity,
@@ -170,7 +284,7 @@ export class InventoryService {
 
         return { movement };
       },
-    );
+    });
   }
 
   public async postAdjustment(
@@ -184,12 +298,13 @@ export class InventoryService {
     actor: InventoryActor,
   ) {
     const quantityDelta = toNonZeroDecimalString(params.quantityDelta);
-    return this.runIdempotentCommand(
-      "inventory.adjustment",
-      params.idempotencyKey,
-      { ...params, quantityDelta },
-      async () => {
-        const movement = await this.createMovement({
+    return runIdempotentCommand({
+      prisma: this.prisma,
+      scope: "inventory.adjustment",
+      key: params.idempotencyKey,
+      payload: { ...params, quantityDelta },
+      execute: async (tx) => {
+        const movement = await this.createMovement(tx, {
           itemType: params.itemType,
           itemId: params.itemId,
           quantityDelta,
@@ -203,24 +318,27 @@ export class InventoryService {
 
         return { movement };
       },
-    );
+    });
   }
 
-  private async createMovement(params: {
-    itemType: InventoryItemType;
-    itemId: string;
-    quantityDelta: string;
-    movementType: InventoryMovementType;
-    sourceType: string;
-    reason: string;
-    actor: InventoryActor;
-  }) {
+  private async createMovement(
+    db: DbClient,
+    params: {
+      itemType: InventoryItemType;
+      itemId: string;
+      quantityDelta: string;
+      movementType: InventoryMovementType;
+      sourceType: InventorySourceType;
+      reason: string;
+      actor: InventoryActor;
+    },
+  ) {
     const [location, item] = await Promise.all([
-      this.findMainLocation(),
-      this.findInventoryItem(params.itemType, params.itemId),
+      findMainLocation(db),
+      findInventoryItem(db, params.itemType, params.itemId),
     ]);
 
-    const movement = await this.prisma.inventoryMovement.create({
+    const movement = await db.inventoryMovement.create({
       data: {
         locationId: location.id,
         itemType: params.itemType,
@@ -248,131 +366,46 @@ export class InventoryService {
       },
     });
 
-    await this.audit({
-      actor: params.actor,
-      action: "inventory.movement.create",
-      entity: "inventory_movement",
-      targetId: movement.id,
-      after: movement,
+    await db.auditEvent.create({
+      data: {
+        actorUserId: params.actor.actorUserId,
+        action: "inventory.movement.create",
+        entity: "inventory_movement",
+        targetId: movement.id,
+        correlationId: params.actor.correlationId,
+        after: movement,
+      },
     });
 
     return movement;
   }
+}
 
-  private async runIdempotentCommand<TResponse>(
-    scope: string,
-    key: string,
-    payload: unknown,
-    action: () => Promise<TResponse>,
-  ): Promise<TResponse> {
-    if (!key.trim()) {
-      throw new AppError({
-        statusCode: 400,
-        code: "IDEMPOTENCY_KEY_REQUIRED",
-        message: "Une cle d'idempotence est requise.",
-      });
-    }
+async function findMainLocation(db: DbClient) {
+  const location = await db.stockLocation.findUnique({
+    where: {
+      code: mainLocationCode,
+    },
+  });
 
-    const requestHash = hashPayload(payload);
-    const existing = await this.prisma.idempotencyRecord.findUnique({
-      where: {
-        scope_key: {
-          scope,
-          key,
-        },
-      },
-    });
-
-    if (existing) {
-      if (existing.requestHash !== requestHash) {
-        throw new AppError({
-          statusCode: 409,
-          code: "IDEMPOTENCY_CONFLICT",
-          message: "Cette cle a deja ete utilisee pour une autre demande.",
-        });
-      }
-
-      if (existing.response) {
-        return existing.response as TResponse;
-      }
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.idempotencyRecord.create({
-        data: {
-          scope,
-          key,
-          requestHash,
-        },
-      });
-
-      const original = this.prisma;
-      this.prisma = tx as unknown as PrismaClient;
-      try {
-        const response = await action();
-        await tx.idempotencyRecord.update({
-          where: {
-            scope_key: {
-              scope,
-              key,
-            },
-          },
-          data: {
-            response: response as object,
-          },
-        });
-        return response;
-      } finally {
-        this.prisma = original;
-      }
+  if (!location) {
+    throw new AppError({
+      statusCode: 500,
+      code: "MAIN_STOCK_LOCATION_MISSING",
+      message: "Le stock principal est introuvable.",
     });
   }
 
-  private async findMainLocation() {
-    const location = await this.prisma.stockLocation.findUnique({
-      where: {
-        code: mainLocationCode,
-      },
-    });
+  return location;
+}
 
-    if (!location) {
-      throw new AppError({
-        statusCode: 500,
-        code: "MAIN_STOCK_LOCATION_MISSING",
-        message: "Le stock principal est introuvable.",
-      });
-    }
-
-    return location;
-  }
-
-  private async findInventoryItem(itemType: InventoryItemType, itemId: string) {
-    if (itemType === InventoryItemType.PRODUCT) {
-      const product = await this.prisma.product.findUnique({
-        where: {
-          id: itemId,
-        },
-        include: {
-          baseUnit: true,
-        },
-      });
-
-      if (!product || !product.isActive || !product.isStockable) {
-        throw new AppError({
-          statusCode: 400,
-          code: "STOCKABLE_PRODUCT_REQUIRED",
-          message: "Un produit stockable actif est requis.",
-        });
-      }
-
-      return {
-        name: product.name,
-        unitId: product.baseUnitId,
-        unitName: product.baseUnit.name,
-      };
-    }
-
-    const rawMaterial = await this.prisma.rawMaterial.findUnique({
+async function findInventoryItem(
+  db: DbClient,
+  itemType: InventoryItemType,
+  itemId: string,
+) {
+  if (itemType === InventoryItemType.PRODUCT) {
+    const product = await db.product.findUnique({
       where: {
         id: itemId,
       },
@@ -381,39 +414,43 @@ export class InventoryService {
       },
     });
 
-    if (!rawMaterial || !rawMaterial.isActive) {
+    if (!product || !product.isActive || !product.isStockable) {
       throw new AppError({
         statusCode: 400,
-        code: "ACTIVE_RAW_MATERIAL_REQUIRED",
-        message: "Une matiere premiere active est requise.",
+        code: "STOCKABLE_PRODUCT_REQUIRED",
+        message: "Un produit stockable actif est requis.",
       });
     }
 
     return {
-      name: rawMaterial.name,
-      unitId: rawMaterial.baseUnitId,
-      unitName: rawMaterial.baseUnit.name,
+      name: product.name,
+      unitId: product.baseUnitId,
+      unitName: product.baseUnit.name,
     };
   }
 
-  private async audit(params: {
-    actor: InventoryActor;
-    action: string;
-    entity: string;
-    targetId: string;
-    after: unknown;
-  }) {
-    await this.prisma.auditEvent.create({
-      data: {
-        actorUserId: params.actor.actorUserId,
-        action: params.action,
-        entity: params.entity,
-        targetId: params.targetId,
-        correlationId: params.actor.correlationId,
-        after: params.after ?? undefined,
-      },
+  const rawMaterial = await db.rawMaterial.findUnique({
+    where: {
+      id: itemId,
+    },
+    include: {
+      baseUnit: true,
+    },
+  });
+
+  if (!rawMaterial || !rawMaterial.isActive) {
+    throw new AppError({
+      statusCode: 400,
+      code: "ACTIVE_RAW_MATERIAL_REQUIRED",
+      message: "Une matière première active est requise.",
     });
   }
+
+  return {
+    name: rawMaterial.name,
+    unitId: rawMaterial.baseUnitId,
+    unitName: rawMaterial.baseUnit.name,
+  };
 }
 
 function toPositiveDecimalString(value: string): string {
@@ -423,7 +460,7 @@ function toPositiveDecimalString(value: string): string {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_QUANTITY_REQUIRED",
-      message: "La quantite doit etre positive.",
+      message: "La quantité doit être positive.",
     });
   }
 
@@ -437,7 +474,7 @@ function toNonZeroDecimalString(value: string): string {
     throw new AppError({
       statusCode: 400,
       code: "NON_ZERO_QUANTITY_REQUIRED",
-      message: "La quantite doit etre differente de zero.",
+      message: "La quantité doit être différente de zéro.",
     });
   }
 
@@ -456,10 +493,6 @@ function requireReason(value: string): string {
   }
 
   return reason;
-}
-
-function hashPayload(payload: unknown): string {
-  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
 function paginated<TItem>(

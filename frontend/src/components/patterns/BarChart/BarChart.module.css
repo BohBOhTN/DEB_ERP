@@ -1,0 +1,90 @@
+.root {
+  width: 100%;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) 2fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.rowLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track {
+  height: 10px;
+  overflow: hidden;
+  background: var(--chart-track);
+  border-radius: var(--radius-full);
+}
+
+.bar {
+  height: 100%;
+  background: var(--chart-2);
+  border-radius: var(--radius-full);
+  transition: width var(--motion-slow) var(--ease-out);
+}
+
+.columnBar {
+  background: var(--chart-1);
+}
+
+.highlight .columnBar,
+.bar.highlight {
+  background: var(--chart-1);
+}
+
+.rowValue {
+  font-weight: var(--weight-title);
+}
+
+.vertical {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-1);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.column {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  padding: 0 2px;
+  border-radius: var(--radius-sm);
+}
+
+.column:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.column:hover .columnBar {
+  width: 100%;
+  min-height: 2px;
+  background: var(--chart-2);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  transition: height var(--motion-slow) var(--ease-out);
+}
+
+.columnLabel {
+  position: absolute;
+  bottom: calc(-1 * var(--space-6) + 4px);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}

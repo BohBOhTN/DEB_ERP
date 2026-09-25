@@ -1,0 +1,24 @@
+# Build context is the repository root so the workspace lockfile is the one
+# source of dependencies. Only the sources needed to build ship to Docker.
+.git
+.github
+.claude
+node_modules
+**/node_modules
+**/dist
+**/coverage
+**/playwright-report
+**/test-results
+**/.env
+**/.env.*
+!**/.env.example
+internal-docs
+issues
+prs
+ops
+deploy
+frontend/e2e
+frontend/e2e-seeded
+*.log
+*.md
+.DS_Store

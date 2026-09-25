@@ -23,12 +23,25 @@ export interface SecurityAuditRecorder {
   }): Promise<void>;
 }
 
+export interface AuthServiceOptions {
+  /// A session's `lastUsedAt` is refreshed at most this often. Writing it on
+  /// every request turned the hottest read path into a write path.
+  touchIntervalMs?: number;
+}
+
+const defaultTouchIntervalMs = 5 * 60 * 1000;
+
 export class AuthService {
+  private readonly touchIntervalMs: number;
+
   public constructor(
     private readonly repository: AuthRepository,
     private readonly sessionTtlMinutes: number,
     private readonly securityAudit?: SecurityAuditRecorder,
-  ) {}
+    options: AuthServiceOptions = {},
+  ) {
+    this.touchIntervalMs = options.touchIntervalMs ?? defaultTouchIntervalMs;
+  }
 
   public async login(params: { email: string; password: string }): Promise<{
     user: AuthenticatedUser;
@@ -82,7 +95,7 @@ export class AuthService {
     });
 
     return {
-      user: await this.toAuthenticatedUser(user),
+      user: await this.toAuthenticatedUser(user, expiresAt),
       sessionToken,
       expiresAt,
     };
@@ -108,9 +121,16 @@ export class AuthService {
       throw authenticationRequired();
     }
 
-    await this.repository.touchSession(session.id);
+    const lastUsedAt = session.lastUsedAt?.getTime();
+    if (
+      lastUsedAt === undefined ||
+      lastUsedAt === null ||
+      Date.now() - lastUsedAt >= this.touchIntervalMs
+    ) {
+      await this.repository.touchSession(session.id);
+    }
 
-    return this.toAuthenticatedUser(session.user);
+    return this.toAuthenticatedUser(session.user, session.expiresAt);
   }
 
   public async logout(sessionToken: string | undefined): Promise<void> {
@@ -169,14 +189,20 @@ export class AuthService {
 
   private async toAuthenticatedUser(
     user: StoredUser,
+    sessionExpiresAt?: Date,
   ): Promise<AuthenticatedUser> {
+    const [effectivePermissions, roles] = await Promise.all([
+      this.repository.findEffectivePermissionKeys(user.id),
+      this.repository.findUserRoles?.(user.id) ?? Promise.resolve([]),
+    ]);
+
     return {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
-      effectivePermissions: await this.repository.findEffectivePermissionKeys(
-        user.id,
-      ),
+      effectivePermissions,
+      roles,
+      sessionExpiresAt: sessionExpiresAt?.toISOString() ?? null,
     };
   }
 }

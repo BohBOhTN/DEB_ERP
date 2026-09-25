@@ -1,0 +1,22 @@
+.root {
+  display: block;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.line {
+  stroke: var(--chart-1);
+}
+
+.area {
+  fill: var(--chart-1);
+  opacity: 0.1;
+}
+
+.accent .line {
+  stroke: var(--chart-2);
+}
+
+.accent .area {
+  fill: var(--chart-2);
+}

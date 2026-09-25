@@ -1,5 +1,8 @@
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { postingTransactionOptions } from "../../shared/idempotency.js";
+import type { SortSpec } from "../../shared/listQuery.js";
+import { orderByFor } from "../../shared/listQuery.js";
 import {
   permissionCatalog,
   permissionKeys,
@@ -7,14 +10,54 @@ import {
 } from "./permissions.js";
 import { hashPassword } from "../auth/password.service.js";
 import { normalizeEmail } from "../auth/auth.service.js";
+import type { PermissionCache } from "../auth/permissionCache.js";
 
 export interface ActorContext {
   actorUserId: string;
   correlationId?: string;
 }
 
+export type UserSortField = "displayName" | "email" | "createdAt";
+
+export interface UserListParams {
+  page: number;
+  pageSize: number;
+  search?: string;
+  isActive?: boolean;
+  roleId?: string;
+  sort?: SortSpec<UserSortField>;
+}
+
+const userSelect = {
+  id: true,
+  email: true,
+  displayName: true,
+  isActive: true,
+  version: true,
+  createdAt: true,
+  roles: {
+    select: {
+      role: {
+        select: {
+          id: true,
+          name: true,
+          isActive: true,
+          isSystem: true,
+          systemKey: true,
+        },
+      },
+    },
+    orderBy: { role: { name: "asc" as const } },
+  },
+} satisfies Prisma.UserSelect;
+
 export class AccessService {
-  public constructor(private readonly prisma: PrismaClient) {}
+  public constructor(
+    private readonly prisma: PrismaClient,
+    /// IAM-012: a permission change takes effect on the next request, so
+    /// every mutation below drops the cached effective permissions.
+    private readonly permissionCache?: PermissionCache,
+  ) {}
 
   public async bootstrapSystemAccess(): Promise<void> {
     await this.seedPermissionCatalog();
@@ -104,17 +147,39 @@ export class AccessService {
     }
   }
 
+  /// The catalogue is seeded once at boot; a read must never write.
   public async listPermissions() {
-    await this.seedPermissionCatalog();
-
     return this.prisma.permission.findMany({
       orderBy: [{ module: "asc" }, { key: "asc" }],
     });
   }
 
+  /// BE-38: the same catalogue grouped for the role editor, one group per
+  /// module in catalogue order, without a second query.
+  public async listPermissionGroups() {
+    const permissions = await this.listPermissions();
+    const groups = new Map<string, typeof permissions>();
+
+    for (const permission of permissions) {
+      const group = groups.get(permission.module) ?? [];
+      group.push(permission);
+      groups.set(permission.module, group);
+    }
+
+    return [...groups.entries()].map(([module, items]) => ({
+      module,
+      permissions: items.map((item) => ({
+        key: item.key,
+        labelFr: item.labelFr,
+        descriptionFr: item.descriptionFr,
+      })),
+    }));
+  }
+
   public async listRoles() {
     return this.prisma.role.findMany({
       include: {
+        _count: { select: { permissions: true, users: true } },
         permissions: {
           select: {
             permissionKey: true,
@@ -206,6 +271,7 @@ export class AccessService {
       before: serializeRole(existing),
       after: serializeRole(role),
     });
+    this.permissionCache?.invalidateAll();
 
     return role;
   }
@@ -244,7 +310,7 @@ export class AccessService {
           permissions: true,
         },
       });
-    });
+    }, postingTransactionOptions);
 
     await this.audit({
       actor,
@@ -258,6 +324,7 @@ export class AccessService {
         permissionKeys: validKeys,
       },
     });
+    this.permissionCache?.invalidateAll();
 
     return result;
   }
@@ -269,6 +336,7 @@ export class AccessService {
         email: true,
         displayName: true,
         isActive: true,
+        version: true,
         roles: {
           select: {
             role: {
@@ -292,6 +360,125 @@ export class AccessService {
         displayName: "asc",
       },
     });
+  }
+
+  /// Paginated, filtered user list for the V2 screen. The legacy list stays
+  /// whole because the V1 screen renders it in one go.
+  public async searchUsers(params: UserListParams) {
+    const where: Prisma.UserWhereInput = {
+      isActive: params.isActive,
+      roles: params.roleId ? { some: { roleId: params.roleId } } : undefined,
+      OR: params.search
+        ? [
+            { displayName: { contains: params.search, mode: "insensitive" } },
+            { email: { contains: params.search, mode: "insensitive" } },
+          ]
+        : undefined,
+    };
+    const orderBy = orderByFor<
+      UserSortField,
+      Prisma.UserOrderByWithRelationInput
+    >(
+      params.sort,
+      {
+        displayName: (direction) => [{ displayName: direction }],
+        email: (direction) => [{ email: direction }],
+        createdAt: (direction) => [{ createdAt: direction }],
+      },
+      [{ displayName: "asc" }],
+      { id: "asc" },
+    );
+    const [total, items] = await Promise.all([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({
+        where,
+        select: userSelect,
+        orderBy,
+        skip: (params.page - 1) * params.pageSize,
+        take: params.pageSize,
+      }),
+    ]);
+
+    return {
+      items,
+      page: params.page,
+      pageSize: params.pageSize,
+      total,
+      pageCount: Math.max(1, Math.ceil(total / params.pageSize)),
+    };
+  }
+
+  public async updateUser(
+    userId: string,
+    params: { displayName?: string; email?: string; version: number },
+    actor: ActorContext,
+  ) {
+    const before = await this.findUserOrThrow(userId);
+    const data: Prisma.UserUpdateManyMutationInput = {
+      version: { increment: 1 },
+    };
+
+    if (params.displayName !== undefined) {
+      data.displayName = params.displayName.trim();
+    }
+
+    if (params.email !== undefined) {
+      data.email = normalizeEmail(params.email);
+    }
+
+    const updated = await this.prisma.user.updateMany({
+      where: { id: userId, version: params.version },
+      data,
+    });
+    assertVersionUpdated(updated.count);
+
+    await this.audit({
+      actor,
+      action: "user.update",
+      entity: "user",
+      targetId: userId,
+      before: { email: before.email, displayName: before.displayName },
+      after: {
+        email: data.email ?? before.email,
+        displayName: data.displayName ?? before.displayName,
+      },
+    });
+
+    return this.getUser(userId);
+  }
+
+  /// A reset replaces the hash and ends every open session of the target so
+  /// the old credential cannot be used again; the password itself is never
+  /// written to the audit log.
+  public async resetPassword(
+    userId: string,
+    params: { password: string },
+    actor: ActorContext,
+  ) {
+    await this.findUserOrThrow(userId);
+    const passwordHash = await hashPassword(params.password);
+    const now = new Date();
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash,
+        sessions: {
+          updateMany: { where: { revokedAt: null }, data: { revokedAt: now } },
+        },
+      },
+    });
+
+    await this.audit({
+      actor,
+      action: "user.password_reset",
+      entity: "user",
+      targetId: userId,
+      after: { sessionsRevokedAt: now },
+    });
+    this.permissionCache?.invalidateUser(userId);
+
+    return this.getUser(userId);
   }
 
   public async createUser(
@@ -321,6 +508,7 @@ export class AccessService {
         email: true,
         displayName: true,
         isActive: true,
+        version: true,
         roles: {
           select: {
             role: {
@@ -395,7 +583,7 @@ export class AccessService {
           },
         },
       });
-    });
+    }, postingTransactionOptions);
 
     await this.audit({
       actor,
@@ -409,6 +597,7 @@ export class AccessService {
         roleIds: validRoleIds,
       },
     });
+    this.permissionCache?.invalidateUser(userId);
 
     return result;
   }
@@ -458,7 +647,7 @@ export class AccessService {
                 statusCode: 409,
                 code: "LAST_SUPER_ADMIN_REQUIRED",
                 message:
-                  "Le dernier Super Admin actif ne peut pas etre desactive.",
+                  "Le dernier Super Admin actif ne peut pas être désactivé.",
               });
             }
           }
@@ -486,7 +675,7 @@ export class AccessService {
               },
         },
       });
-    });
+    }, postingTransactionOptions);
 
     await this.audit({
       actor,
@@ -500,8 +689,68 @@ export class AccessService {
         isActive: updated.isActive,
       },
     });
+    this.permissionCache?.invalidateUser(userId);
 
     return updated;
+  }
+
+  public async getUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        isActive: true,
+        version: true,
+        roles: {
+          select: {
+            role: {
+              select: {
+                id: true,
+                name: true,
+                isActive: true,
+                isSystem: true,
+                systemKey: true,
+              },
+            },
+          },
+          orderBy: { role: { name: "asc" } },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new AppError({
+        statusCode: 404,
+        code: "USER_NOT_FOUND",
+        message: "Utilisateur introuvable.",
+      });
+    }
+
+    return user;
+  }
+
+  public async getRole(roleId: string) {
+    const role = await this.prisma.role.findUnique({
+      where: { id: roleId },
+      include: {
+        permissions: {
+          select: { permissionKey: true },
+          orderBy: { permissionKey: "asc" },
+        },
+      },
+    });
+
+    if (!role) {
+      throw new AppError({
+        statusCode: 404,
+        code: "ROLE_NOT_FOUND",
+        message: "Rôle introuvable.",
+      });
+    }
+
+    return role;
   }
 
   private async validatePermissionKeys(keys: string[]): Promise<string[]> {
@@ -608,11 +857,21 @@ export class AccessService {
   }
 }
 
+function assertVersionUpdated(count: number) {
+  if (count !== 1) {
+    throw new AppError({
+      statusCode: 409,
+      code: "VERSION_CONFLICT",
+      message: "Cette fiche a été modifiée. Rechargez puis réessayez.",
+    });
+  }
+}
+
 function protectedRoleError(): AppError {
   return new AppError({
     statusCode: 409,
     code: "PROTECTED_SYSTEM_ROLE",
-    message: "Le role Super Admin protege ne peut pas etre modifie ainsi.",
+    message: "Le role Super Admin protégé ne peut pas être modifié ainsi.",
   });
 }
 

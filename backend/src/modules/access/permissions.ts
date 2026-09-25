@@ -1,60 +1,92 @@
 export const SUPER_ADMIN_SYSTEM_KEY = "SUPER_ADMIN";
 
+/// Short label for the action part of a key; the module gives the object.
+const actionLabels: Record<string, string> = {
+  view: "Voir",
+  create: "Créer",
+  update: "Modifier",
+  activate: "Activer / désactiver",
+  assign_roles: "Attribuer les rôles",
+  assign_permissions: "Attribuer les autorisations",
+  reset_password: "Réinitialiser le mot de passe",
+  manage: "Gérer",
+  adjust: "Ajuster",
+  opening_stock: "Stock initial",
+  post: "Valider",
+  cancel: "Annuler",
+  access: "Accéder",
+  open_session: "Ouvrir une session",
+  close_session: "Clôturer une session",
+  sell: "Vendre",
+  credit_sale: "Vendre à crédit",
+  complete: "Terminer",
+  change_status: "Changer l'état",
+  direct_sale: "Vente directe",
+  dispatch: "Sortie en dépôt-vente",
+  settle: "Régler",
+  delete: "Supprimer",
+};
+
 export const permissionCatalog = [
   permission("users.view", "Utilisateurs", "Voir les utilisateurs"),
-  permission("users.create", "Utilisateurs", "Creer des utilisateurs"),
+  permission("users.create", "Utilisateurs", "Créer des utilisateurs"),
   permission("users.update", "Utilisateurs", "Modifier les utilisateurs"),
   permission(
     "users.activate",
     "Utilisateurs",
-    "Activer ou desactiver les utilisateurs",
+    "Activer ou désactiver les utilisateurs",
   ),
   permission(
     "users.assign_roles",
     "Utilisateurs",
-    "Attribuer les roles aux utilisateurs",
+    "Attribuer les rôles aux utilisateurs",
   ),
-  permission("roles.view", "Roles", "Voir les roles"),
-  permission("roles.create", "Roles", "Creer des roles"),
-  permission("roles.update", "Roles", "Modifier les roles"),
-  permission("roles.activate", "Roles", "Activer ou desactiver les roles"),
+  permission(
+    "users.reset_password",
+    "Utilisateurs",
+    "Réinitialiser le mot de passe d'un utilisateur",
+  ),
+  permission("roles.view", "Rôles", "Voir les rôles"),
+  permission("roles.create", "Rôles", "Créer des rôles"),
+  permission("roles.update", "Rôles", "Modifier les rôles"),
+  permission("roles.activate", "Rôles", "Activer ou désactiver les rôles"),
   permission(
     "roles.assign_permissions",
-    "Roles",
-    "Attribuer les autorisations aux roles",
+    "Rôles",
+    "Attribuer les autorisations aux rôles",
   ),
   permission("products.view", "Produits", "Voir les produits"),
-  permission("products.create", "Produits", "Creer des produits"),
+  permission("products.create", "Produits", "Créer des produits"),
   permission("products.update", "Produits", "Modifier les produits"),
   permission(
     "products.activate",
     "Produits",
-    "Activer ou desactiver les produits",
+    "Activer ou désactiver les produits",
   ),
-  permission("categories.view", "Categories", "Voir les categories"),
-  permission("categories.manage", "Categories", "Gerer les categories"),
+  permission("categories.view", "Catégories", "Voir les catégories"),
+  permission("categories.manage", "Catégories", "Gérer les catégories"),
   permission(
     "raw_materials.view",
-    "Matieres premieres",
-    "Voir les matieres premieres",
+    "Matières premières",
+    "Voir les matières premières",
   ),
   permission(
     "raw_materials.create",
-    "Matieres premieres",
-    "Creer des matieres premieres",
+    "Matières premières",
+    "Créer des matières premières",
   ),
   permission(
     "raw_materials.update",
-    "Matieres premieres",
-    "Modifier les matieres premieres",
+    "Matières premières",
+    "Modifier les matières premières",
   ),
   permission(
     "raw_materials.activate",
-    "Matieres premieres",
-    "Activer ou desactiver les matieres premieres",
+    "Matières premières",
+    "Activer ou désactiver les matières premières",
   ),
-  permission("units.view", "Unites", "Voir les unites"),
-  permission("units.manage", "Unites", "Gerer les unites"),
+  permission("units.view", "Unités", "Voir les unités"),
+  permission("units.manage", "Unités", "Gérer les unités"),
   permission("inventory.view", "Stock", "Voir le stock"),
   permission(
     "inventory.movements.view",
@@ -64,10 +96,10 @@ export const permissionCatalog = [
   permission("inventory.adjust", "Stock", "Ajuster le stock"),
   permission("inventory.opening_stock", "Stock", "Saisir le stock initial"),
   permission("suppliers.view", "Fournisseurs", "Voir les fournisseurs"),
-  permission("suppliers.create", "Fournisseurs", "Creer des fournisseurs"),
+  permission("suppliers.create", "Fournisseurs", "Créer des fournisseurs"),
   permission("suppliers.update", "Fournisseurs", "Modifier les fournisseurs"),
   permission("purchases.view", "Achats", "Voir les achats"),
-  permission("purchases.create", "Achats", "Creer des achats"),
+  permission("purchases.create", "Achats", "Créer des achats"),
   permission("purchases.post", "Achats", "Valider les achats"),
   permission("purchases.cancel", "Achats", "Annuler les achats"),
   permission(
@@ -78,20 +110,21 @@ export const permissionCatalog = [
   permission(
     "supplier_payments.create",
     "Paiements fournisseurs",
-    "Creer des paiements fournisseurs",
+    "Créer des paiements fournisseurs",
   ),
   permission(
     "supplier_balances.view",
     "Soldes fournisseurs",
     "Voir les soldes fournisseurs",
   ),
-  permission("pos.access", "Caisse", "Acceder a la caisse"),
+  permission("pos.access", "Caisse", "Accéder à la caisse"),
   permission("pos.open_session", "Caisse", "Ouvrir une session de caisse"),
   permission("pos.sell", "Caisse", "Enregistrer une vente"),
-  permission("pos.credit_sale", "Caisse", "Enregistrer une vente a credit"),
+  permission("pos.credit_sale", "Caisse", "Enregistrer une vente à crédit"),
+  permission("pos.cancel_sale", "Caisse", "Annuler une vente"),
   permission("pos.close_session", "Caisse", "Fermer une session de caisse"),
   permission("orders.view", "Commandes client", "Voir les commandes client"),
-  permission("orders.create", "Commandes client", "Creer des commandes client"),
+  permission("orders.create", "Commandes client", "Créer des commandes client"),
   permission(
     "orders.update",
     "Commandes client",
@@ -105,8 +138,9 @@ export const permissionCatalog = [
   permission("orders.cancel", "Commandes client", "Annuler les commandes"),
   permission("orders.complete", "Commandes client", "Terminer les commandes"),
   permission("customers.view", "Clients", "Voir les clients"),
-  permission("customers.create", "Clients", "Creer des clients"),
+  permission("customers.create", "Clients", "Créer des clients"),
   permission("customers.update", "Clients", "Modifier les clients"),
+  permission("customers.deactivate", "Clients", "Désactiver un client"),
   permission(
     "customer_balances.view",
     "Soldes clients",
@@ -120,10 +154,10 @@ export const permissionCatalog = [
   permission(
     "customer_payments.create",
     "Paiements clients",
-    "Creer des paiements clients",
+    "Créer des paiements clients",
   ),
   permission("distributors.view", "Distributeurs", "Voir les distributeurs"),
-  permission("distributors.create", "Distributeurs", "Creer des distributeurs"),
+  permission("distributors.create", "Distributeurs", "Créer des distributeurs"),
   permission(
     "distributors.update",
     "Distributeurs",
@@ -162,21 +196,22 @@ export const permissionCatalog = [
   permission(
     "distributor_payments.create",
     "Paiements distributeurs",
-    "Creer des paiements distributeurs",
+    "Créer des paiements distributeurs",
   ),
-  permission("expenses.view", "Depenses", "Voir les depenses"),
-  permission("expenses.create", "Depenses", "Creer des depenses"),
-  permission("expenses.cancel", "Depenses", "Annuler les depenses"),
+  permission("expenses.view", "Dépenses", "Voir les dépenses"),
+  permission("expenses.create", "Dépenses", "Créer des dépenses"),
+  permission("expenses.cancel", "Dépenses", "Annuler les dépenses"),
   permission(
     "expense_categories.manage",
-    "Categories de depenses",
-    "Gerer les categories de depenses",
+    "Catégories de dépenses",
+    "Gérer les catégories de dépenses",
   ),
   permission("simulations.view", "Simulations", "Voir les simulations"),
-  permission("simulations.create", "Simulations", "Creer des simulations"),
+  permission("simulations.create", "Simulations", "Créer des simulations"),
   permission("simulations.update", "Simulations", "Modifier les simulations"),
   permission("simulations.delete", "Simulations", "Supprimer les simulations"),
   permission("audit.view", "Audit", "Voir le journal d'audit"),
+  permission("margin.view", "Marge", "Voir la marge approximative"),
 ] as const;
 
 export type PermissionKey = (typeof permissionCatalog)[number]["key"];
@@ -184,10 +219,12 @@ export type PermissionKey = (typeof permissionCatalog)[number]["key"];
 export const permissionKeys = permissionCatalog.map((item) => item.key);
 
 function permission(key: string, module: string, descriptionFr: string) {
+  const action = key.slice(key.lastIndexOf(".") + 1);
+
   return {
     key,
     module,
-    labelFr: key,
+    labelFr: actionLabels[action] ?? descriptionFr,
     descriptionFr,
   };
 }

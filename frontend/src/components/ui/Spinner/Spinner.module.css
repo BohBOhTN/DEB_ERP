@@ -1,0 +1,19 @@
+.root {
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.track {
+  stroke: currentcolor;
+  opacity: 0.2;
+}
+
+.head {
+  stroke: currentcolor;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

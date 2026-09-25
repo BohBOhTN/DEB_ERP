@@ -1,0 +1,70 @@
+.root {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: var(--space-2) 0;
+}
+
+.disabled {
+  opacity: 0.55;
+}
+
+.box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-inverse);
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.box:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.box[data-state="checked"],
+.box[data-state="indeterminate"] {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.box:disabled {
+  cursor: not-allowed;
+}
+
+.indicator {
+  display: inline-flex;
+}
+
+.indicator > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.label {
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  cursor: pointer;
+}
+
+.description {
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--text-secondary);
+}

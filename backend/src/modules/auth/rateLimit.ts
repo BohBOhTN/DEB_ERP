@@ -1,43 +1,31 @@
-import type { NextFunction, Request, Response } from "express";
+import { rateLimit, type RateLimitRequestHandler } from "express-rate-limit";
 import { AppError } from "../../shared/appError.js";
+import { messages } from "../../shared/messages.js";
 
-interface AttemptBucket {
-  count: number;
-  resetAt: number;
-}
-
+/// Backed by express-rate-limit's memory store, which prunes expired buckets
+/// on its own; the previous hand-rolled map grew by one entry per distinct
+/// client address for the life of the process. The client address respects
+/// `trust proxy`, which `createApp` sets from configuration.
+///
+/// Rate-limit headers are deliberately disabled: the limit is not something the
+/// interface needs, and the security tests assert it is never revealed.
 export function createRateLimiter(params: {
   maxAttempts: number;
   windowMs: number;
-}) {
-  const attempts = new Map<string, AttemptBucket>();
-
-  return (request: Request, _response: Response, next: NextFunction): void => {
-    const key = request.ip ?? "unknown";
-    const now = Date.now();
-    const bucket = attempts.get(key);
-
-    if (!bucket || bucket.resetAt <= now) {
-      attempts.set(key, {
-        count: 1,
-        resetAt: now + params.windowMs,
-      });
-      next();
-      return;
-    }
-
-    if (bucket.count >= params.maxAttempts) {
+}): RateLimitRequestHandler {
+  return rateLimit({
+    windowMs: params.windowMs,
+    limit: params.maxAttempts,
+    standardHeaders: false,
+    legacyHeaders: false,
+    handler: (_request, _response, next) => {
       next(
         new AppError({
           statusCode: 429,
           code: "RATE_LIMITED",
-          message: "Trop de tentatives. Veuillez reessayer plus tard.",
+          message: messages.RATE_LIMITED,
         }),
       );
-      return;
-    }
-
-    bucket.count += 1;
-    next();
-  };
+    },
+  });
 }

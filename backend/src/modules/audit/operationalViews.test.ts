@@ -38,6 +38,26 @@ describe("operational view queries", () => {
     ]);
   });
 
+  // Issue #44: the list shows posted sales unless asked for the cancelled
+  // ones, and searches the reference or the customer name.
+  it("lists posted sales by default and searches them", async () => {
+    const prisma = new QueryCapturingPrisma();
+    const service = new PosService(prisma as unknown as PrismaClient);
+
+    await service.listSales({ search: "VT-0001", page: 1, pageSize: 25 });
+
+    expect(prisma.lastArgs.where).toMatchObject({
+      status: "POSTED",
+      OR: [
+        { reference: { contains: "VT-0001", mode: "insensitive" } },
+        { customer: { normalizedName: { contains: "vt-0001" } } },
+      ],
+    });
+
+    await service.listSales({ status: "CANCELLED", page: 1, pageSize: 25 });
+    expect(prisma.lastArgs.where).toMatchObject({ status: "CANCELLED" });
+  });
+
   it("treats an overdue purchase as posted, still owed, and past its due date", async () => {
     const prisma = new QueryCapturingPrisma();
     const service = new ProcurementService(prisma as unknown as PrismaClient);
@@ -52,7 +72,7 @@ describe("operational view queries", () => {
 
     expect(prisma.lastArgs.where).toMatchObject({
       status: "POSTED",
-      paymentTerms: { in: ["PARTIAL", "UNPAID"] },
+      remainingDueTnd: { gt: 0 },
       dueDate: { lt: asOf },
     });
     expect(prisma.lastArgs.orderBy).toEqual([
@@ -78,7 +98,8 @@ describe("operational view queries", () => {
     });
   });
 
-  // A fully paid purchase is never "due", whatever its due date says.
+  // A fully paid purchase is never "due", whatever its due date or its
+  // entry-time terms say: the projection of its ledger decides (#47).
   it("excludes fully paid purchases from the due lists", async () => {
     const prisma = new QueryCapturingPrisma();
     const service = new ProcurementService(prisma as unknown as PrismaClient);
@@ -89,9 +110,12 @@ describe("operational view queries", () => {
       pageSize: 25,
     });
 
-    const terms = (prisma.lastArgs.where as { paymentTerms: { in: string[] } })
-      .paymentTerms.in;
-    expect(terms).not.toContain("PAID");
+    const where = prisma.lastArgs.where as {
+      remainingDueTnd: { gt: number };
+      paymentTerms?: unknown;
+    };
+    expect(where.remainingDueTnd).toEqual({ gt: 0 });
+    expect(where.paymentTerms).toBeUndefined();
   });
 
   it("treats an overdue order as still awaiting fulfilment and past its time", async () => {
@@ -123,6 +147,42 @@ describe("operational view queries", () => {
     expect(where.requestedFulfillmentAt.lt).toEqual(asOf);
   });
 
+  // Issue #45: a due state and a date window combine. "Upcoming before the
+  // end of today" is today's queue; the window no longer disappears.
+  it("combines a due state with a date window", async () => {
+    const prisma = new QueryCapturingPrisma();
+    const service = new OrdersService(prisma as unknown as PrismaClient);
+    const asOf = new Date("2026-09-22T09:00:00.000Z");
+    const dayEnd = new Date("2026-09-22T22:59:59.999Z");
+
+    await service.listOrders({
+      dueState: "UPCOMING",
+      dueBefore: dayEnd,
+      asOf,
+      page: 1,
+      pageSize: 25,
+    });
+
+    expect(prisma.lastArgs.where).toMatchObject({
+      status: { in: ["DRAFT", "CONFIRMED", "PREPARING", "READY"] },
+      requestedFulfillmentAt: { gte: asOf, lte: dayEnd },
+    });
+  });
+
+  it("searches the queue by reference or customer name", async () => {
+    const prisma = new QueryCapturingPrisma();
+    const service = new OrdersService(prisma as unknown as PrismaClient);
+
+    await service.listOrders({ search: "Amel", page: 1, pageSize: 25 });
+
+    expect(prisma.lastArgs.where).toMatchObject({
+      OR: [
+        { reference: { contains: "Amel", mode: "insensitive" } },
+        { customer: { normalizedName: { contains: "amel" } } },
+      ],
+    });
+  });
+
   it("treats an upcoming order as due on or after now", async () => {
     const prisma = new QueryCapturingPrisma();
     const service = new OrdersService(prisma as unknown as PrismaClient);
@@ -152,11 +212,13 @@ class QueryCapturingPrisma {
       return [];
     },
     count: async () => 0,
+    groupBy: async () => [],
   };
 
   public readonly sale = this.model;
   public readonly purchase = this.model;
   public readonly customerOrder = this.model;
+  public readonly customerOrderAdvance = this.model;
 
   public async $transaction<TResult>(
     actions: Array<Promise<unknown>>,

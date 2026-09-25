@@ -143,6 +143,9 @@ async function createTestApp(permissionKeys: string[]) {
     createDistributorPayment: vi
       .fn()
       .mockResolvedValue({ payment: { id: "payment-1" }, allocations: [] }),
+    reverseDistributorPayment: vi
+      .fn()
+      .mockResolvedValue({ payment: { id: "payment-1", reversedAt: null } }),
   };
 
   const app = createApp({
@@ -525,6 +528,7 @@ describe("distribution routes", () => {
     expect(distributionService.listDistributorBalances).toHaveBeenCalled();
     expect(distributionService.getDistributorStatement).toHaveBeenCalledWith(
       "distributor-1",
+      expect.any(Object),
     );
   });
 
@@ -585,5 +589,41 @@ describe("distribution routes", () => {
       }),
       expect.objectContaining({ actorUserId: "user-1" }),
     );
+  });
+
+  it("reverses a distributor payment with distributor_payments.create and a reason", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distributor_payments.create",
+    ]);
+
+    await request(app)
+      .post("/api/v1/distributor-payments/payment-1/reverse")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "reverse-1")
+      .send({ reason: "Montant erroné" })
+      .expect(201);
+
+    expect(distributionService.reverseDistributorPayment).toHaveBeenCalledWith(
+      "payment-1",
+      { idempotencyKey: "reverse-1", reason: "Montant erroné" },
+      expect.objectContaining({ actorUserId: "user-1" }),
+    );
+  });
+
+  it("refuses a distributor payment reversal without distributor_payments.create", async () => {
+    const { app, cookie, distributionService } = await createTestApp([
+      "distributor_payments.view",
+    ]);
+
+    await request(app)
+      .post("/api/v1/distributor-payments/payment-1/reverse")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "reverse-1")
+      .send({ reason: "Montant erroné" })
+      .expect(403);
+
+    expect(
+      distributionService.reverseDistributorPayment,
+    ).not.toHaveBeenCalled();
   });
 });

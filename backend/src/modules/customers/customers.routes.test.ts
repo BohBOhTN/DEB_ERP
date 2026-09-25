@@ -124,6 +124,20 @@ async function createTestApp(permissionKeys: string[]) {
       ledgerEntries: [],
       payments: [],
     }),
+    setCustomerActive: vi
+      .fn()
+      .mockResolvedValue({ id: "customer-1", isActive: false, version: 2 }),
+    getCustomerSummary: vi.fn().mockResolvedValue({ ordersCount: 0 }),
+    listCustomerSales: vi.fn().mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 25,
+      total: 0,
+      pageCount: 0,
+    }),
+    reverseCustomerPayment: vi.fn().mockResolvedValue({
+      payment: { id: "payment-1", reversedAt: "2026-09-24T10:00:00.000Z" },
+    }),
     listCustomerPayments: vi.fn().mockResolvedValue({
       items: [],
       page: 1,
@@ -319,5 +333,166 @@ describe("customer routes", () => {
         actorUserId: "user-1",
       }),
     );
+  });
+});
+
+describe("customer payment reversal", () => {
+  it("refuses the reversal without customer_payments.create", async () => {
+    const { app, cookie, customersService } = await createTestApp([
+      "customer_payments.view",
+    ]);
+
+    await request(app)
+      .post("/api/v1/customer-payments/payment-1/reverse")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "reverse-1")
+      .send({ reason: "Montant saisi par erreur" })
+      .expect(403);
+
+    expect(customersService.reverseCustomerPayment).not.toHaveBeenCalled();
+  });
+
+  it("reverses a payment with a reason and an idempotency key", async () => {
+    const { app, cookie, customersService } = await createTestApp([
+      "customer_payments.create",
+    ]);
+
+    await request(app)
+      .post("/api/v1/customer-payments/payment-1/reverse")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "reverse-1")
+      .send({ reason: "Montant saisi par erreur" })
+      .expect(201);
+
+    expect(customersService.reverseCustomerPayment).toHaveBeenCalledWith(
+      "payment-1",
+      { idempotencyKey: "reverse-1", reason: "Montant saisi par erreur" },
+      expect.objectContaining({ actorUserId: expect.any(String) }),
+    );
+  });
+});
+
+/// AS-V2-07: every router serves both prefixes. The v1 contract returns a
+/// list as the data itself; the legacy prefix keeps the V1 wrapper and says
+/// it is deprecated.
+describe("api versioning", () => {
+  it("serves the v1 list envelope under /api/v1", async () => {
+    const { app, cookie } = await createTestApp(["customers.view"]);
+
+    const response = await request(app)
+      .get("/api/v1/customers")
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(response.body.data).toMatchObject({
+      items: [{ id: "customer-1" }],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+      pageCount: 1,
+    });
+    expect(response.body.data.customers).toBeUndefined();
+    expect(response.headers.deprecation).toBeUndefined();
+    expect(response.body.meta.correlationId).toEqual(expect.any(String));
+  });
+
+  it("keeps the legacy wrapper under /api and marks it deprecated", async () => {
+    const { app, cookie } = await createTestApp(["customers.view"]);
+
+    const response = await request(app)
+      .get("/api/customers")
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(response.body.data.customers.items).toHaveLength(1);
+    expect(response.headers.deprecation).toBe("true");
+  });
+
+  it("keeps single resources under their key on both prefixes", async () => {
+    const { app, cookie } = await createTestApp(["customer_balances.view"]);
+
+    const v1 = await request(app)
+      .get("/api/v1/customers/customer-1/statement")
+      .set("Cookie", cookie)
+      .expect(200);
+    const legacy = await request(app)
+      .get("/api/customers/customer-1/statement")
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(v1.body.data.statement.balanceTnd).toBe("30.000");
+    expect(legacy.body.data.statement.balanceTnd).toBe("30.000");
+  });
+
+  describe("customer lifecycle and figures (issue #46)", () => {
+    it("deactivates a customer with customers.deactivate", async () => {
+      const { app, cookie, customersService } = await createTestApp([
+        "customers.deactivate",
+      ]);
+
+      await request(app)
+        .post("/api/v1/customers/customer-1/deactivate")
+        .set("Cookie", cookie)
+        .send({ reason: "Doublon" })
+        .expect(200);
+
+      expect(customersService.setCustomerActive).toHaveBeenCalledWith(
+        "customer-1",
+        { isActive: false, reason: "Doublon" },
+        expect.objectContaining({ actorUserId: expect.any(String) }),
+      );
+    });
+
+    it("refuses the deactivation with customers.update alone", async () => {
+      const { app, cookie, customersService } = await createTestApp([
+        "customers.update",
+      ]);
+
+      await request(app)
+        .post("/api/v1/customers/customer-1/deactivate")
+        .set("Cookie", cookie)
+        .send({})
+        .expect(403);
+
+      expect(customersService.setCustomerActive).not.toHaveBeenCalled();
+    });
+
+    it("serves the figures and the sales page with customer_balances.view", async () => {
+      const { app, cookie, customersService } = await createTestApp([
+        "customer_balances.view",
+      ]);
+
+      await request(app)
+        .get("/api/v1/customers/customer-1/summary")
+        .set("Cookie", cookie)
+        .expect(200);
+      await request(app)
+        .get("/api/v1/customers/customer-1/sales?page=2&pageSize=10")
+        .set("Cookie", cookie)
+        .expect(200);
+
+      expect(customersService.getCustomerSummary).toHaveBeenCalledWith(
+        "customer-1",
+      );
+      expect(customersService.listCustomerSales).toHaveBeenCalledWith(
+        "customer-1",
+        { page: 2, pageSize: 10 },
+      );
+    });
+
+    it("filters the balances by activity", async () => {
+      const { app, cookie, customersService } = await createTestApp([
+        "customer_balances.view",
+      ]);
+
+      await request(app)
+        .get("/api/v1/customer-balances?isActive=false")
+        .set("Cookie", cookie)
+        .expect(200);
+
+      expect(customersService.listCustomerBalances).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: false }),
+      );
+    });
   });
 });

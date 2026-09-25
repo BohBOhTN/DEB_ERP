@@ -12,8 +12,22 @@ import {
   SaleStatus,
   type PrismaClient,
 } from "@prisma/client";
-import { createHash } from "node:crypto";
 import { AppError } from "../../shared/appError.js";
+import {
+  businessDateOf,
+  endOfBusinessDay,
+  orderByFor,
+  startOfBusinessDay,
+  type SortSpec,
+} from "../../shared/listQuery.js";
+import { unitCostSnapshot } from "../../shared/costSnapshot.js";
+import { sumOrZero } from "../../shared/ledger.js";
+import { normalizeName } from "../../shared/text.js";
+import {
+  runIdempotentCommand,
+  postingTransactionOptions,
+} from "../../shared/idempotency.js";
+import { nextSaleReference } from "../../shared/references.js";
 
 const mainTerminalCode = "main";
 const mainLocationCode = "main";
@@ -64,7 +78,7 @@ export interface OrderLineInput {
   quantity: string;
 }
 
-export interface OrderListParams {
+export interface OrderFilterParams {
   status?: CustomerOrderStatus;
   customerId?: string;
   dueBefore?: Date;
@@ -72,7 +86,13 @@ export interface OrderListParams {
   /// Section 18: overdue and upcoming orders. Only an order still awaiting
   /// fulfilment can be either; a completed or cancelled one is neither.
   dueState?: "OVERDUE" | "UPCOMING";
+  /// Reference or customer name.
+  search?: string;
   asOf?: Date;
+}
+
+export interface OrderListParams extends OrderFilterParams {
+  sort?: SortSpec<"requestedFulfillmentAt" | "createdAt" | "totalTnd">;
   page: number;
   pageSize: number;
 }
@@ -102,44 +122,130 @@ export class OrdersService {
   public constructor(private readonly prisma: PrismaClient) {}
 
   public async listOrders(params: OrderListParams) {
-    const asOf = params.asOf ?? new Date();
-    const where = {
-      ...(params.status ? { status: params.status } : {}),
-      ...(params.customerId ? { customerId: params.customerId } : {}),
-      ...(params.dueBefore || params.dueAfter
-        ? {
-            requestedFulfillmentAt: {
-              ...(params.dueAfter ? { gte: params.dueAfter } : {}),
-              ...(params.dueBefore ? { lte: params.dueBefore } : {}),
-            },
-          }
-        : {}),
-      ...(params.dueState
-        ? {
-            status: {
-              in: [...awaitingFulfilment],
-            },
-            requestedFulfillmentAt:
-              params.dueState === "OVERDUE" ? { lt: asOf } : { gte: asOf },
-          }
-        : {}),
-    };
+    const where = orderListWhere(params);
     const [items, total] = await this.prisma.$transaction([
       this.prisma.customerOrder.findMany({
         where,
+        // The queue shows header fields and the line count; lines are read
+        // with the order detail.
         include: {
           customer: true,
-          lines: true,
+          _count: { select: { lines: true } },
+          sale: { select: { paidAmountTnd: true, remainingDueTnd: true } },
         },
         // NFR-005: stable sort, soonest due first.
-        orderBy: [{ requestedFulfillmentAt: "asc" }, { id: "asc" }],
+        orderBy: orderByFor<
+          "requestedFulfillmentAt" | "createdAt" | "totalTnd",
+          Prisma.CustomerOrderOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            requestedFulfillmentAt: (direction) => [
+              { requestedFulfillmentAt: direction },
+            ],
+            createdAt: (direction) => [{ createdAt: direction }],
+            totalTnd: (direction) => [{ totalTnd: direction }],
+          },
+          [{ requestedFulfillmentAt: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
       this.prisma.customerOrder.count({ where }),
     ]);
+    // The advances actually received per order of the page, summed by the
+    // database: `advanceBalanceTnd` is reset on completion and cancellation
+    // so it cannot tell what was paid (issue #45).
+    const received = items.length
+      ? await this.prisma.customerOrderAdvance.groupBy({
+          by: ["orderId", "movement"],
+          where: { orderId: { in: items.map((order) => order.id) } },
+          _sum: { amountTnd: true },
+        })
+      : [];
+    const receivedByOrder = new Map<string, Prisma.Decimal>();
+    for (const row of received) {
+      const amount = sumOrZero(row._sum.amountTnd);
+      receivedByOrder.set(
+        row.orderId,
+        (receivedByOrder.get(row.orderId) ?? new Prisma.Decimal(0)).plus(
+          row.movement === CustomerOrderAdvanceMovement.RECEIPT
+            ? amount
+            : amount.negated(),
+        ),
+      );
+    }
 
-    return paginated(items, total, params);
+    return paginated(
+      items.map((order) =>
+        withOrderFigures(
+          order,
+          receivedByOrder.get(order.id) ?? new Prisma.Decimal(0),
+        ),
+      ),
+      total,
+      params,
+    );
+  }
+
+  /// The KPI row of the queue: the same filters as the list, no paging,
+  /// summed by the database. Overdue and due-today counts ignore the
+  /// period since they are dated by definition.
+  public async summarizeOrders(params: OrderFilterParams) {
+    const asOf = params.asOf ?? new Date();
+    const where = orderListWhere(params);
+    const scope = orderScopeWhere(params);
+    const dayStart = startOfBusinessDay(businessDateOf(asOf));
+    const dayEnd = endOfBusinessDay(businessDateOf(asOf));
+    const [byStatus, open, overdue, dueToday] = await Promise.all([
+      this.prisma.customerOrder.groupBy({
+        by: ["status"],
+        where,
+        _count: { _all: true },
+        _sum: { totalTnd: true },
+      }),
+      this.prisma.customerOrder.aggregate({
+        where: { ...where, status: { in: [...awaitingFulfilment] } },
+        _count: { _all: true },
+        _sum: { totalTnd: true, advanceBalanceTnd: true },
+      }),
+      this.prisma.customerOrder.count({
+        where: {
+          ...scope,
+          status: { in: [...awaitingFulfilment] },
+          requestedFulfillmentAt: { lt: asOf },
+        },
+      }),
+      this.prisma.customerOrder.count({
+        where: {
+          ...scope,
+          status: { in: [...awaitingFulfilment] },
+          requestedFulfillmentAt: { gte: dayStart, lte: dayEnd },
+        },
+      }),
+    ]);
+    const countOf = (status: CustomerOrderStatus) =>
+      byStatus.find((row) => row.status === status)?._count._all ?? 0;
+    const openTotal = sumOrZero(open._sum.totalTnd);
+    const openAdvances = sumOrZero(open._sum.advanceBalanceTnd);
+
+    return {
+      count: byStatus.reduce((sum, row) => sum + row._count._all, 0),
+      openCount: open._count._all,
+      readyCount: countOf(CustomerOrderStatus.READY),
+      completedCount: countOf(CustomerOrderStatus.COMPLETED),
+      cancelledCount: countOf(CustomerOrderStatus.CANCELLED),
+      overdueCount: overdue,
+      dueTodayCount: dueToday,
+      openTotalTnd: openTotal.toFixed(3),
+      advanceHeldTnd: openAdvances.toFixed(3),
+      remainingTnd: openTotal.minus(openAdvances).toFixed(3),
+      completedTotalTnd: sumOrZero(
+        byStatus.find((row) => row.status === CustomerOrderStatus.COMPLETED)
+          ?._sum.totalTnd,
+      ).toFixed(3),
+    };
   }
 
   public async getOrder(orderId: string) {
@@ -195,7 +301,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "ORDER_TOTAL_REQUIRED",
-            message: "Le total de la commande doit etre superieur a zero.",
+            message: "Le total de la commande doit être supérieur à zéro.",
           });
         }
 
@@ -251,7 +357,7 @@ export class OrdersService {
         throw new AppError({
           statusCode: 409,
           code: "ORDER_NOT_EDITABLE",
-          message: "Cette commande ne peut plus etre modifiee.",
+          message: "Cette commande ne peut plus être modifiée.",
         });
       }
 
@@ -269,7 +375,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "ORDER_TOTAL_REQUIRED",
-            message: "Le total de la commande doit etre superieur a zero.",
+            message: "Le total de la commande doit être supérieur à zéro.",
           });
         }
       }
@@ -283,7 +389,7 @@ export class OrdersService {
           statusCode: 409,
           code: "ORDER_TOTAL_BELOW_ADVANCE",
           message:
-            "Le total ne peut pas etre inferieur a l'avance deja encaissee. Remboursez ou creditez l'avance d'abord.",
+            "Le total ne peut pas être inférieur à l'avance déjà encaissée. Remboursez ou créditez l'avance d'abord.",
         });
       }
 
@@ -341,7 +447,7 @@ export class OrdersService {
       });
 
       return { order };
-    });
+    }, postingTransactionOptions);
   }
 
   public async changeOrderStatus(
@@ -360,7 +466,7 @@ export class OrdersService {
         throw new AppError({
           statusCode: 409,
           code: "ORDER_STATUS_TRANSITION_INVALID",
-          message: "Ce changement de statut n'est pas autorise.",
+          message: "Ce changement de statut n'est pas autorisé.",
         });
       }
 
@@ -397,7 +503,7 @@ export class OrdersService {
       });
 
       return { order };
-    });
+    }, postingTransactionOptions);
   }
 
   /// ORD-009: money received before fulfilment is a customer advance. It is
@@ -443,7 +549,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "ORDER_ADVANCE_EXCEEDS_TOTAL",
-            message: "L'avance ne peut pas depasser le total de la commande.",
+            message: "L'avance ne peut pas dépasser le total de la commande.",
           });
         }
 
@@ -517,7 +623,9 @@ export class OrdersService {
     params: {
       idempotencyKey: string;
       completedAt: Date;
-      paidAmountTnd?: string;
+      /// What the customer pays now; "0.000" leaves the remainder on the
+      /// account. Always stated so nothing is inferred (issue #45).
+      paidAmountTnd: string;
     },
     actor: OrderActor,
   ) {
@@ -535,7 +643,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_NOT_COMPLETABLE",
-            message: "Cette commande ne peut pas etre terminee.",
+            message: "Cette commande ne peut pas être terminée.",
           });
         }
 
@@ -558,7 +666,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_LINES_REQUIRED",
-            message: "Une commande sans ligne ne peut pas etre terminee.",
+            message: "Une commande sans ligne ne peut pas être terminée.",
           });
         }
 
@@ -566,10 +674,9 @@ export class OrdersService {
         const advanceAppliedTnd = new Prisma.Decimal(
           existing.advanceBalanceTnd,
         );
-        const completionPaymentTnd =
-          params.paidAmountTnd === undefined
-            ? totalTnd.minus(advanceAppliedTnd)
-            : parseNonNegativeMoney(params.paidAmountTnd);
+        const completionPaymentTnd = parseNonNegativeMoney(
+          params.paidAmountTnd,
+        );
         const paidAmountTnd = advanceAppliedTnd
           .plus(completionPaymentTnd)
           .toDecimalPlaces(3, Prisma.Decimal.ROUND_HALF_UP);
@@ -578,7 +685,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "SALE_OVERPAYMENT_REJECTED",
-            message: "Le paiement ne peut pas depasser le total de la vente.",
+            message: "Le paiement ne peut pas dépasser le total de la vente.",
           });
         }
 
@@ -587,6 +694,7 @@ export class OrdersService {
           .toDecimalPlaces(3, Prisma.Decimal.ROUND_HALF_UP);
         const sale = await tx.sale.create({
           data: {
+            reference: await nextSaleReference(tx),
             sessionId: session.id,
             customerId: customer.id,
             status: SaleStatus.POSTED,
@@ -610,6 +718,7 @@ export class OrdersService {
                   lineTotalTnd: new Prisma.Decimal(line.lineTotalTnd).toFixed(
                     3,
                   ),
+                  unitCostTnd: unitCostSnapshot(line.product),
                   productNameSnapshot: line.productNameSnapshot,
                   unitNameSnapshot: line.unitNameSnapshot,
                 })),
@@ -720,7 +829,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_ALREADY_COMPLETED",
-            message: "Cette commande a deja ete terminee.",
+            message: "Cette commande a déjà été terminée.",
           });
         }
 
@@ -782,7 +891,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_NOT_CANCELLABLE",
-            message: "Cette commande ne peut plus etre annulee.",
+            message: "Cette commande ne peut plus être annulée.",
           });
         }
 
@@ -794,7 +903,7 @@ export class OrdersService {
             statusCode: 400,
             code: "ORDER_ADVANCE_DISPOSITION_REQUIRED",
             message:
-              "Choisissez le remboursement ou le credit client pour l'avance.",
+              "Choisissez le remboursement ou le crédit client pour l'avance.",
           });
         }
 
@@ -802,7 +911,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "ORDER_ADVANCE_DISPOSITION_NOT_APPLICABLE",
-            message: "Cette commande n'a aucune avance a traiter.",
+            message: "Cette commande n'a aucune avance à traiter.",
           });
         }
 
@@ -890,7 +999,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 409,
             code: "ORDER_NOT_CANCELLABLE",
-            message: "Cette commande ne peut plus etre annulee.",
+            message: "Cette commande ne peut plus être annulée.",
           });
         }
 
@@ -915,67 +1024,18 @@ export class OrdersService {
     );
   }
 
-  private async runIdempotentCommand<TResponse>(
+  private runIdempotentCommand<TResponse>(
     scope: string,
     key: string,
     payload: unknown,
-    action: (tx: Prisma.TransactionClient) => Promise<TResponse>,
+    execute: (tx: Prisma.TransactionClient) => Promise<TResponse>,
   ): Promise<TResponse> {
-    if (!key.trim()) {
-      throw new AppError({
-        statusCode: 400,
-        code: "IDEMPOTENCY_KEY_REQUIRED",
-        message: "Une cle d'idempotence est requise.",
-      });
-    }
-
-    const requestHash = hashPayload(payload);
-    const existing = await this.prisma.idempotencyRecord.findUnique({
-      where: {
-        scope_key: {
-          scope,
-          key,
-        },
-      },
-    });
-
-    if (existing) {
-      if (existing.requestHash !== requestHash) {
-        throw new AppError({
-          statusCode: 409,
-          code: "IDEMPOTENCY_CONFLICT",
-          message: "Cette cle a deja ete utilisee pour une autre demande.",
-        });
-      }
-
-      if (existing.response) {
-        return existing.response as TResponse;
-      }
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.idempotencyRecord.create({
-        data: {
-          scope,
-          key,
-          requestHash,
-        },
-      });
-
-      const response = await action(tx);
-      await tx.idempotencyRecord.update({
-        where: {
-          scope_key: {
-            scope,
-            key,
-          },
-        },
-        data: {
-          response: response as object,
-        },
-      });
-
-      return response;
+    return runIdempotentCommand({
+      prisma: this.prisma,
+      scope,
+      key,
+      payload,
+      execute,
     });
   }
 }
@@ -1007,7 +1067,7 @@ function normalizeOrderLines(lines: OrderLineInput[]) {
     throw new AppError({
       statusCode: 400,
       code: "ORDER_LINES_REQUIRED",
-      message: "Ajoutez au moins une ligne a la commande.",
+      message: "Ajoutez au moins une ligne à la commande.",
     });
   }
 
@@ -1020,7 +1080,7 @@ function normalizeOrderLines(lines: OrderLineInput[]) {
     throw new AppError({
       statusCode: 400,
       code: "DUPLICATE_ORDER_LINE",
-      message: "Un produit ne peut apparaitre qu'une seule fois.",
+      message: "Un produit ne peut apparaître qu'une seule fois.",
     });
   }
 
@@ -1069,6 +1129,103 @@ async function buildOrderLines(
       unitNameSnapshot: product.baseUnit.name,
     };
   });
+}
+
+/// Customer, reference or name scope of the queue, without the dates.
+function orderScopeWhere(
+  params: OrderFilterParams,
+): Prisma.CustomerOrderWhereInput {
+  const search = params.search?.trim();
+
+  return {
+    ...(params.customerId ? { customerId: params.customerId } : {}),
+    ...(search
+      ? {
+          OR: [
+            { reference: { contains: search, mode: "insensitive" } },
+            {
+              customer: {
+                normalizedName: { contains: normalizeName(search) },
+              },
+            },
+          ],
+        }
+      : {}),
+  };
+}
+
+/// The list predicate. A due state and a date window combine: "upcoming
+/// before the end of today" is today's queue, not every future order
+/// (issue #45).
+function orderListWhere(
+  params: OrderFilterParams,
+): Prisma.CustomerOrderWhereInput {
+  const asOf = params.asOf ?? new Date();
+  const bounds: Prisma.DateTimeFilter = {
+    ...(params.dueAfter ? { gte: params.dueAfter } : {}),
+    ...(params.dueBefore ? { lte: params.dueBefore } : {}),
+  };
+
+  if (params.dueState === "OVERDUE") {
+    bounds.lt = asOf;
+  } else if (params.dueState === "UPCOMING") {
+    bounds.gte =
+      params.dueAfter && params.dueAfter > asOf ? params.dueAfter : asOf;
+  }
+
+  return {
+    ...orderScopeWhere(params),
+    ...(params.dueState
+      ? { status: { in: [...awaitingFulfilment] } }
+      : params.status
+        ? { status: params.status }
+        : {}),
+    ...(Object.keys(bounds).length > 0
+      ? { requestedFulfillmentAt: bounds }
+      : {}),
+  };
+}
+
+/// Figures every screen needs per order (issue #45): the advances actually
+/// received, and what remains due, which depends on the state. Open: the
+/// total less the advance held; completed: the linked sale's remaining
+/// due; cancelled: nothing.
+function withOrderFigures<
+  TOrder extends {
+    status: CustomerOrderStatus;
+    totalTnd: Prisma.Decimal;
+    advanceBalanceTnd: Prisma.Decimal;
+    sale?: { remainingDueTnd: Prisma.Decimal } | null;
+    advances?: Array<{
+      movement: CustomerOrderAdvanceMovement;
+      amountTnd: Prisma.Decimal;
+    }>;
+  },
+>(order: TOrder, receivedTnd?: Prisma.Decimal) {
+  const received =
+    receivedTnd ??
+    (order.advances ?? []).reduce(
+      (sum, advance) =>
+        advance.movement === CustomerOrderAdvanceMovement.RECEIPT
+          ? sum.plus(advance.amountTnd)
+          : sum.minus(advance.amountTnd),
+      new Prisma.Decimal(0),
+    );
+  const remaining =
+    order.status === CustomerOrderStatus.CANCELLED
+      ? new Prisma.Decimal(0)
+      : order.status === CustomerOrderStatus.COMPLETED
+        ? sumOrZero(order.sale?.remainingDueTnd)
+        : new Prisma.Decimal(order.totalTnd).minus(order.advanceBalanceTnd);
+
+  return {
+    ...order,
+    advanceReceivedTnd: received.toFixed(3),
+    remainingDueTnd: (remaining.lessThan(0)
+      ? new Prisma.Decimal(0)
+      : remaining
+    ).toFixed(3),
+  };
 }
 
 /// Serializes concurrent commands on one order. A second completion attempt
@@ -1128,7 +1285,7 @@ async function requireOpenSession(client: Prisma.TransactionClient) {
     throw new AppError({
       statusCode: 409,
       code: "POS_SESSION_NOT_OPEN",
-      message: "Ouvrez une session de caisse avant cette operation.",
+      message: "Ouvrez une session de caisse avant cette opération.",
     });
   }
 
@@ -1208,7 +1365,7 @@ function parsePositiveQuantity(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_QUANTITY_REQUIRED",
-      message: "La quantite doit etre superieure a zero.",
+      message: "La quantité doit être supérieure à zéro.",
     });
   }
 
@@ -1222,7 +1379,7 @@ function parsePositiveMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_AMOUNT_REQUIRED",
-      message: "Le montant doit etre superieur a zero.",
+      message: "Le montant doit être supérieur à zéro.",
     });
   }
 
@@ -1236,7 +1393,7 @@ function parseNonNegativeMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "NON_NEGATIVE_AMOUNT_REQUIRED",
-      message: "Le montant doit etre positif ou nul.",
+      message: "Le montant doit être positif ou nul.",
     });
   }
 
@@ -1253,8 +1410,8 @@ function assertVersionUpdated(count: number) {
   if (count === 0) {
     throw new AppError({
       statusCode: 409,
-      code: "CONCURRENT_UPDATE",
-      message: "Cette commande a ete modifiee entre-temps.",
+      code: "VERSION_CONFLICT",
+      message: "Cette commande a été modifiée entre-temps.",
     });
   }
 }
@@ -1266,29 +1423,6 @@ function emptyToNull(value: string | undefined): string | null {
 
 function toJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-}
-
-function hashPayload(payload: unknown): string {
-  return createHash("sha256").update(stableStringify(payload)).digest("hex");
-}
-
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
-  }
-
-  if (value instanceof Date) {
-    return JSON.stringify(value.toISOString());
-  }
-
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
-      .join(",")}}`;
-  }
-
-  return JSON.stringify(value);
 }
 
 function findDuplicate(values: string[]): string | undefined {

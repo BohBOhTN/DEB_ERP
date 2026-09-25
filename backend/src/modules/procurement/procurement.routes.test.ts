@@ -134,6 +134,13 @@ async function createTestApp(permissionKeys: string[]) {
       totalTnd: "250.000",
       paidAmountTnd: "100.000",
     }),
+    updateDraftPurchase: vi.fn().mockResolvedValue({
+      id: "purchase-1",
+      supplierId: "supplier-1",
+      status: "DRAFT",
+      totalTnd: "300.000",
+      paidAmountTnd: "0.000",
+    }),
     postPurchase: vi.fn().mockResolvedValue({
       purchase: {
         id: "purchase-1",
@@ -149,6 +156,9 @@ async function createTestApp(permissionKeys: string[]) {
         id: "purchase-1",
         status: "CANCELLED",
       },
+    }),
+    reverseSupplierPayment: vi.fn().mockResolvedValue({
+      payment: { id: "payment-2", reversedAt: "2026-09-24T10:00:00.000Z" },
     }),
     listSupplierBalances: vi.fn().mockResolvedValue({
       items: [
@@ -396,6 +406,62 @@ describe("procurement routes", () => {
     );
   });
 
+  it("replaces a draft purchase when the user has purchases.create", async () => {
+    const { app, cookie, procurementService } = await createTestApp([
+      "purchases.create",
+    ]);
+
+    const response = await request(app)
+      .patch("/api/procurement/purchases/purchase-1")
+      .set("Cookie", cookie)
+      .send({
+        supplierId: "supplier-1",
+        purchaseDate: "2026-09-21T08:00:00.000Z",
+        paymentTerms: "UNPAID",
+        dueDate: "2026-09-30T08:00:00.000Z",
+        lines: [
+          {
+            rawMaterialId: "raw-material-1",
+            enteredUnitId: "unit-bag",
+            enteredQuantity: "6",
+            unitPriceTnd: "50.000",
+          },
+        ],
+      })
+      .expect(200);
+
+    expect(response.body.data.purchase).toMatchObject({
+      id: "purchase-1",
+      status: "DRAFT",
+      totalTnd: "300.000",
+    });
+    expect(procurementService.updateDraftPurchase).toHaveBeenCalledWith(
+      "purchase-1",
+      expect.objectContaining({
+        supplierId: "supplier-1",
+        paymentTerms: "UNPAID",
+        paidAmountTnd: "0",
+      }),
+      expect.objectContaining({
+        actorUserId: "user-1",
+      }),
+    );
+  });
+
+  it("refuses to replace a draft purchase without purchases.create", async () => {
+    const { app, cookie, procurementService } = await createTestApp([
+      "purchases.view",
+    ]);
+
+    await request(app)
+      .patch("/api/procurement/purchases/purchase-1")
+      .set("Cookie", cookie)
+      .send({})
+      .expect(403);
+
+    expect(procurementService.updateDraftPurchase).not.toHaveBeenCalled();
+  });
+
   it("requires an idempotency key to post purchases", async () => {
     const { app, cookie, procurementService } = await createTestApp([
       "purchases.post",
@@ -484,6 +550,7 @@ describe("procurement routes", () => {
     });
     expect(procurementService.getSupplierStatement).toHaveBeenCalledWith(
       "supplier-1",
+      expect.any(Object),
     );
   });
 
@@ -567,5 +634,39 @@ describe("procurement routes", () => {
         actorUserId: "user-1",
       }),
     );
+  });
+
+  it("reverses a supplier payment with supplier_payments.create and a reason", async () => {
+    const { app, cookie, procurementService } = await createTestApp([
+      "supplier_payments.create",
+    ]);
+
+    await request(app)
+      .post("/api/v1/procurement/supplier-payments/payment-2/reverse")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "reverse-1")
+      .send({ reason: "Double saisie" })
+      .expect(201);
+
+    expect(procurementService.reverseSupplierPayment).toHaveBeenCalledWith(
+      "payment-2",
+      { idempotencyKey: "reverse-1", reason: "Double saisie" },
+      expect.objectContaining({ actorUserId: expect.any(String) }),
+    );
+  });
+
+  it("refuses a supplier payment reversal without supplier_payments.create", async () => {
+    const { app, cookie, procurementService } = await createTestApp([
+      "supplier_payments.view",
+    ]);
+
+    await request(app)
+      .post("/api/v1/procurement/supplier-payments/payment-2/reverse")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "reverse-1")
+      .send({ reason: "Double saisie" })
+      .expect(403);
+
+    expect(procurementService.reverseSupplierPayment).not.toHaveBeenCalled();
   });
 });

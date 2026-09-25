@@ -35,7 +35,7 @@ function toFrenchMessage(issue: ZodIssue): string {
       return "Le format de ce champ est invalide.";
     case "invalid_value":
     case "invalid_union":
-      return "Cette valeur n'est pas autorisee.";
+      return "Cette valeur n'est pas autorisée.";
     case "not_multiple_of":
       return "Cette valeur n'a pas le pas attendu.";
     case "unrecognized_keys":
@@ -55,13 +55,13 @@ function describeTooSmall(issue: ZodIssue): string {
   if (origin === "string") {
     return Number(minimum) <= 1
       ? "Ce champ est obligatoire."
-      : `Ce champ doit contenir au moins ${String(minimum)} caracteres.`;
+      : `Ce champ doit contenir au moins ${String(minimum)} caractères.`;
   }
 
   if (origin === "array") {
     return Number(minimum) <= 1
-      ? "Ajoutez au moins un element."
-      : `Ajoutez au moins ${String(minimum)} elements.`;
+      ? "Ajoutez au moins un élément."
+      : `Ajoutez au moins ${String(minimum)} éléments.`;
   }
 
   if (origin === "date") {
@@ -72,8 +72,8 @@ function describeTooSmall(issue: ZodIssue): string {
   // inclusive one. Saying "positive or zero" for the first would be wrong.
   if (Number(minimum) === 0) {
     return inclusive
-      ? "Cette valeur doit etre positive ou nulle."
-      : "Cette valeur doit etre superieure a zero.";
+      ? "Cette valeur doit être positive ou nulle."
+      : "Cette valeur doit être supérieure à zéro.";
   }
 
   return "Cette valeur est trop petite.";
@@ -86,11 +86,11 @@ function describeTooBig(issue: ZodIssue): string {
   };
 
   if (origin === "string") {
-    return `Ce champ ne peut pas depasser ${String(maximum)} caracteres.`;
+    return `Ce champ ne peut pas dépasser ${String(maximum)} caractères.`;
   }
 
   if (origin === "array") {
-    return `Ajoutez au plus ${String(maximum)} elements.`;
+    return `Ajoutez au plus ${String(maximum)} éléments.`;
   }
 
   if (origin === "date") {

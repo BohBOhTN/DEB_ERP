@@ -1,0 +1,11 @@
+.muted {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.cardTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}

@@ -1,0 +1,4 @@
+/* NumberInput composes TextInput; alignment and numerals come from it. */
+.root {
+  display: contents;
+}

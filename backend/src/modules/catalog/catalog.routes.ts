@@ -4,41 +4,62 @@ import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import { requirePermission } from "../access/permission.middleware.js";
-import { ok } from "../../shared/apiResponse.js";
+import { okFor } from "../../shared/apiResponse.js";
+import {
+  pageFields,
+  searchFields,
+  sortField,
+  withSearch,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { CatalogService } from "./catalog.service.js";
 
-const listQuerySchema = z.object({
-  search: z.string().trim().optional(),
+export const listQuerySchema = z.object({
+  sort: sortField(["name", "createdAt"]),
+  ...searchFields,
   isActive: z
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
-const createUnitSchema = z.object({
+export const productListQuerySchema = listQuerySchema.extend({
+  sort: sortField([
+    "name",
+    "createdAt",
+    "salePriceTnd",
+    "approximateCostTnd",
+    "isActive",
+  ]),
+  categoryId: z.string().trim().min(1).optional(),
+  isStockable: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+});
+
+export const createUnitSchema = z.object({
   code: z.string().trim().min(1),
   name: z.string().trim().min(1),
   symbol: z.string().trim().min(1),
   precision: z.number().int().min(0).max(6).default(3),
 });
 
-const updateUnitSchema = z.object({
+export const updateUnitSchema = z.object({
   name: z.string().trim().min(1).optional(),
   symbol: z.string().trim().min(1).optional(),
   precision: z.number().int().min(0).max(6).optional(),
   isActive: z.boolean().optional(),
 });
 
-const createCategorySchema = z.object({
+export const createCategorySchema = z.object({
   name: z.string().trim().min(1),
   description: z.string().optional(),
 });
 
-const updateCategorySchema = z.object({
+export const updateCategorySchema = z.object({
   name: z.string().trim().min(1).optional(),
   description: z.string().optional(),
   isActive: z.boolean().optional(),
@@ -49,7 +70,7 @@ const decimalString = z
   .trim()
   .regex(/^\d+(\.\d{1,6})?$/);
 
-const createRawMaterialSchema = z.object({
+export const createRawMaterialSchema = z.object({
   code: z.string().optional(),
   name: z.string().trim().min(1),
   category: z.string().optional(),
@@ -65,7 +86,7 @@ const createRawMaterialSchema = z.object({
     .default([]),
 });
 
-const updateRawMaterialSchema = z.object({
+export const updateRawMaterialSchema = z.object({
   version: z.number().int().positive(),
   code: z.string().optional(),
   name: z.string().trim().min(1).optional(),
@@ -74,7 +95,7 @@ const updateRawMaterialSchema = z.object({
   notes: z.string().optional(),
 });
 
-const replaceRawMaterialConversionsSchema = z.object({
+export const replaceRawMaterialConversionsSchema = z.object({
   version: z.number().int().positive(),
   conversions: z.array(
     z.object({
@@ -84,12 +105,23 @@ const replaceRawMaterialConversionsSchema = z.object({
   ),
 });
 
-const activationSchema = z.object({
+export const activationSchema = z.object({
   version: z.number().int().positive(),
   isActive: z.boolean(),
 });
 
-const createProductSchema = z.object({
+/// Issue 008: the approximate cost is optional and an empty string clears
+/// it; `margin.view` is needed to read it back.
+const approximateCostSchema = z
+  .string()
+  .trim()
+  .regex(/^\d+(\.\d{1,3})?$/)
+  .or(z.literal(""))
+  .nullable()
+  .optional()
+  .transform((value) => (value === "" ? null : value));
+
+export const createProductSchema = z.object({
   code: z.string().optional(),
   barcode: z.string().optional(),
   name: z.string().trim().min(1),
@@ -99,11 +131,12 @@ const createProductSchema = z.object({
     .string()
     .trim()
     .regex(/^\d+(\.\d{1,3})?$/),
+  approximateCostTnd: approximateCostSchema,
   isStockable: z.boolean(),
   notes: z.string().optional(),
 });
 
-const updateProductSchema = z.object({
+export const updateProductSchema = z.object({
   version: z.number().int().positive(),
   code: z.string().optional(),
   barcode: z.string().optional(),
@@ -115,9 +148,29 @@ const updateProductSchema = z.object({
     .trim()
     .regex(/^\d+(\.\d{1,3})?$/)
     .optional(),
+  approximateCostTnd: approximateCostSchema,
   isStockable: z.boolean().optional(),
   notes: z.string().optional(),
 });
+
+/// The cost and the margin are the owner's figures: a caller without
+/// `margin.view` (a cashier with `products.view`) reads the product without
+/// them (issue 008).
+function withoutCostUnlessAllowed<T extends { approximateCostTnd?: unknown }>(
+  response: Response,
+  product: T,
+): T {
+  const user = response.locals.currentUser as
+    { effectivePermissions: string[] } | undefined;
+
+  if (user?.effectivePermissions.includes("margin.view")) {
+    return product;
+  }
+
+  const rest = { ...product };
+  delete rest.approximateCostTnd;
+  return rest;
+}
 
 export function catalogRouter(params: {
   authService: AuthService;
@@ -137,9 +190,9 @@ export function catalogRouter(params: {
     requirePermission("units.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const result = await params.catalogService.listUnits(query);
-        response.json(ok({ units: result }, getCorrelationId(response)));
+        response.json(okFor(response, { units: result }));
       } catch (error) {
         next(error);
       }
@@ -156,7 +209,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok({ unit }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { unit }));
       } catch (error) {
         next(error);
       }
@@ -174,7 +227,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ unit }, getCorrelationId(response)));
+        response.json(okFor(response, { unit }));
       } catch (error) {
         next(error);
       }
@@ -186,9 +239,9 @@ export function catalogRouter(params: {
     requirePermission("categories.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const result = await params.catalogService.listCategories(query);
-        response.json(ok({ categories: result }, getCorrelationId(response)));
+        response.json(okFor(response, { categories: result }));
       } catch (error) {
         next(error);
       }
@@ -205,7 +258,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok({ category }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { category }));
       } catch (error) {
         next(error);
       }
@@ -223,7 +276,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ category }, getCorrelationId(response)));
+        response.json(okFor(response, { category }));
       } catch (error) {
         next(error);
       }
@@ -235,9 +288,9 @@ export function catalogRouter(params: {
     requirePermission("raw_materials.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const result = await params.catalogService.listRawMaterials(query);
-        response.json(ok({ rawMaterials: result }, getCorrelationId(response)));
+        response.json(okFor(response, { rawMaterials: result }));
       } catch (error) {
         next(error);
       }
@@ -254,9 +307,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response
-          .status(201)
-          .json(ok({ rawMaterial }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { rawMaterial }));
       } catch (error) {
         next(error);
       }
@@ -274,7 +325,7 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ rawMaterial }, getCorrelationId(response)));
+        response.json(okFor(response, { rawMaterial }));
       } catch (error) {
         next(error);
       }
@@ -293,7 +344,7 @@ export function catalogRouter(params: {
             body,
             actorFromResponse(response),
           );
-        response.json(ok({ rawMaterial }, getCorrelationId(response)));
+        response.json(okFor(response, { rawMaterial }));
       } catch (error) {
         next(error);
       }
@@ -312,7 +363,7 @@ export function catalogRouter(params: {
             body,
             actorFromResponse(response),
           );
-        response.json(ok({ rawMaterial }, getCorrelationId(response)));
+        response.json(okFor(response, { rawMaterial }));
       } catch (error) {
         next(error);
       }
@@ -324,9 +375,18 @@ export function catalogRouter(params: {
     requirePermission("products.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(productListQuerySchema.parse(request.query));
         const result = await params.catalogService.listProducts(query);
-        response.json(ok({ products: result }, getCorrelationId(response)));
+        response.json(
+          okFor(response, {
+            products: {
+              ...result,
+              items: result.items.map((item) =>
+                withoutCostUnlessAllowed(response, item),
+              ),
+            },
+          }),
+        );
       } catch (error) {
         next(error);
       }
@@ -343,7 +403,11 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok({ product }, getCorrelationId(response)));
+        response.status(201).json(
+          okFor(response, {
+            product: withoutCostUnlessAllowed(response, product),
+          }),
+        );
       } catch (error) {
         next(error);
       }
@@ -361,7 +425,11 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ product }, getCorrelationId(response)));
+        response.json(
+          okFor(response, {
+            product: withoutCostUnlessAllowed(response, product),
+          }),
+        );
       } catch (error) {
         next(error);
       }
@@ -379,7 +447,45 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ product }, getCorrelationId(response)));
+        response.json(
+          okFor(response, {
+            product: withoutCostUnlessAllowed(response, product),
+          }),
+        );
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/products/:productId",
+    requirePermission("products.view"),
+    async (request, response, next) => {
+      try {
+        const product = await params.catalogService.getProduct(
+          parseRouteParam(request.params.productId),
+        );
+        response.json(
+          okFor(response, {
+            product: withoutCostUnlessAllowed(response, product),
+          }),
+        );
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/raw-materials/:rawMaterialId",
+    requirePermission("raw_materials.view"),
+    async (request, response, next) => {
+      try {
+        const rawMaterial = await params.catalogService.getRawMaterial(
+          parseRouteParam(request.params.rawMaterialId),
+        );
+        response.json(okFor(response, { rawMaterial }));
       } catch (error) {
         next(error);
       }
@@ -403,7 +509,7 @@ function parseRouteParam(value: string | string[] | undefined): string {
     throw new AppError({
       statusCode: 400,
       code: "VALIDATION_ERROR",
-      message: "Les donnees saisies sont invalides.",
+      message: "Les données saisies sont invalides.",
     });
   }
 

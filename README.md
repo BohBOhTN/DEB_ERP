@@ -39,16 +39,28 @@ Never commit real `.env` files, credentials, database passwords, tokens, or back
 
 ### Backend Environment
 
-| Variable               | Purpose                                                 |
-| ---------------------- | ------------------------------------------------------- |
-| `NODE_ENV`             | Runtime environment, for example `development`          |
-| `PORT`                 | API port                                                |
-| `DATABASE_URL`         | PostgreSQL connection string                            |
-| `SESSION_COOKIE_NAME`  | HTTP-only session cookie name                           |
-| `SESSION_TTL_MINUTES`  | Session lifetime in minutes                             |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated browser origins allowed to call the API |
-| `RATE_LIMIT_MAX`       | Placeholder for Sprint 1 rate-limit maximum             |
-| `RATE_LIMIT_WINDOW_MS` | Placeholder for Sprint 1 rate-limit window              |
+| Variable                      | Purpose                                                                      |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `NODE_ENV`                    | Runtime environment, for example `development`                               |
+| `PORT`                        | API port                                                                     |
+| `DATABASE_URL`                | PostgreSQL connection string                                                 |
+| `SESSION_COOKIE_NAME`         | HTTP-only session cookie name                                                |
+| `SESSION_TTL_MINUTES`         | Session lifetime in minutes                                                  |
+| `CORS_ALLOWED_ORIGINS`        | Comma-separated browser origins allowed to call the API                      |
+| `RATE_LIMIT_MAX`              | Login attempts allowed per client address per window                         |
+| `RATE_LIMIT_WINDOW_MS`        | Login rate-limit window in milliseconds                                      |
+| `GLOBAL_RATE_LIMIT_MAX`       | Requests allowed on any route per client address per window                  |
+| `GLOBAL_RATE_LIMIT_WINDOW_MS` | Global rate-limit window in milliseconds                                     |
+| `TRUST_PROXY`                 | Reverse-proxy hops to trust for the client address (`1` behind nginx)        |
+| `LOG_LEVEL`                   | pino level: `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`     |
+| `LOG_PRETTY`                  | `true` for human-readable terminal logs; production emits JSON               |
+| `GIT_SHA`                     | Commit identifier reported by the health endpoints                           |
+| `IDEMPOTENCY_TTL_DAYS`        | Days an idempotency record is kept before cleanup                            |
+| `SLOW_QUERY_MS`               | Queries at or above this duration are logged as slow                         |
+| `PERMISSION_CACHE_TTL_MS`     | In-memory lifetime of a user's effective permissions (invalidated on change) |
+| `SESSION_TOUCH_INTERVAL_MS`   | Minimum interval between two writes of a session's last-used timestamp       |
+| `REQUEST_TIMEOUT_MS`          | Socket timeout for a single request                                          |
+| `SHUTDOWN_TIMEOUT_MS`         | Grace period for in-flight requests on SIGTERM                               |
 
 ### Frontend Environment
 
@@ -92,13 +104,66 @@ npm run build
 
 ## Health Check
 
-The API exposes:
+The API exposes two probes, under both the legacy and the versioned prefix:
 
 ```text
-GET /api/health
+GET /api/v1/health/live    # process is running; touches no dependency
+GET /api/v1/health/ready   # database reachable; reports the latest migration
+GET /api/health            # alias of /ready kept for the V1 frontend
 ```
 
-The response uses the project response envelope and includes a correlation ID.
+Responses use the project envelope, include a correlation ID, and carry the
+package version and `GIT_SHA` of the running build.
+
+## API contract
+
+Every route is served under `/api/v1` and, for the V1 frontend, under the
+legacy `/api` prefix, which answers with `Deprecation: true`. Responses are
+an envelope `{ data, meta }`; errors are
+`{ error: { code, message, fieldErrors?, correlationId } }`. On `/api/v1` a
+collection is `data: { items, page, pageSize, total, pageCount }` and every
+list accepts `page`, `pageSize`, `q`, `sort=field:asc|desc` (whitelisted
+per list) and `from`/`to` as business days in `Africa/Tunis`.
+
+The contract is generated from the route schemas and committed:
+
+```bash
+npm run openapi:generate --workspace backend   # writes backend/openapi.json
+npm run openapi:check --workspace backend      # fails when the file is stale (CI)
+npm run api:types --workspace frontend         # writes frontend/src/lib/api/types.gen.ts
+```
+
+Outside production the running server also serves it at
+`GET /api/v1/openapi.json`. A route without a record in
+`backend/src/openapi/operations.ts` fails the unit tests.
+
+## Logging and errors
+
+Every request writes one structured log line (pino) with the correlation ID,
+actor, route template, status and duration; every 5xx is logged with its stack
+under the same correlation ID the client received in the error body and in the
+`X-Correlation-Id` header. Clients may send their own `X-Correlation-Id`
+(8 to 64 printable characters); anything else is replaced.
+
+Idempotent commands return `Idempotency-Replayed: true` when the response was
+served from the idempotency store rather than executed again.
+
+## Balances and statements
+
+Balances are summed by the database. The balance lists accept `search`,
+`sort=name|balance` and `minBalance`; with `sort=balance` or `minBalance`
+only parties with ledger activity are listed, largest balance first.
+Statements accept `from`, `to`, `limit` (default 50, max 200) and `cursor`;
+`meta.nextCursor` continues the ledger, and `meta.openingBalanceTnd` and
+`meta.closingBalanceTnd` state the balance at the range boundaries.
+
+## Schema drift guard
+
+Some invariants exist only in hand-written migration SQL (partial unique
+indexes, document-number sequences, the `pg_trgm` extension). They are listed
+in `backend/prisma/protected-objects.json`, and CI runs
+`npm run db:check-drift --workspace backend` after applying migrations so any
+other difference between the database and `schema.prisma` fails the build.
 
 ## Authentication
 
@@ -162,6 +227,14 @@ npm run prisma:validate
 npm run prisma:migrate:dev --workspace backend -- --name <migration_name>
 npm run prisma:migrate:deploy --workspace backend
 ```
+
+## Deployment
+
+The release ships to the VPS from GitHub Actions: two container images
+(`backend/Dockerfile`, `frontend/Dockerfile`), the compose stack and the
+remote script under `deploy/`, and a `deploy` job in `.github/workflows/ci.yml`
+behind the `production` environment's approval. Setup, secrets, the first
+admin and day-to-day operations are in `deploy/README.md`.
 
 ## Branches
 

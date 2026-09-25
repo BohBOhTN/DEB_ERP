@@ -1,0 +1,22 @@
+{
+  "$comment": "Database objects that exist only in hand-written migration SQL because Prisma's schema language cannot express them. `prisma migrate diff` against the schema proposes dropping them; the CI drift guard (scripts/check-schema-drift.mjs) allows exactly these statements and fails on anything else. Add an entry here whenever a migration creates such an object.",
+  "partialUniqueIndexes": [
+    "product_categories_active_normalized_name_key",
+    "products_active_normalized_name_key",
+    "products_code_key",
+    "products_barcode_key",
+    "raw_materials_active_normalized_name_key",
+    "raw_materials_code_key",
+    "stock_locations_one_main_key"
+  ],
+  "sequences": [
+    "customer_order_reference_seq",
+    "distributor_sale_reference_seq",
+    "distributor_dispatch_reference_seq",
+    "distributor_settlement_reference_seq",
+    "expense_reference_seq",
+    "sale_reference_seq",
+    "purchase_reference_seq"
+  ],
+  "extensions": ["pg_trgm"]
+}

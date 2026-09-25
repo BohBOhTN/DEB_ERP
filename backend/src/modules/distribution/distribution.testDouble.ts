@@ -16,6 +16,7 @@ export interface DistributionStore {
     name: string;
     baseUnitId: string;
     salePriceTnd: string;
+    approximateCostTnd?: string | null;
     isActive: boolean;
     isStockable: boolean;
     baseUnit: { id: string; name: string };
@@ -61,8 +62,16 @@ export class DistributionPrismaDouble {
   /// Read path used by listCustody, which queries the client directly rather
   /// than inside a posting transaction.
   public readonly distributorDispatchLine = {
+    // Mirrors the bounded custody query: open dispatches, plus any line that
+    // still carries a discrepancy.
     findMany: async (args?: {
-      where?: { dispatch?: { distributorId?: string } };
+      where?: {
+        dispatch?: { distributorId?: string };
+        OR?: Array<{
+          dispatch?: { status?: string };
+          unaccountedQuantity?: { gt: number };
+        }>;
+      };
     }) =>
       this.store.distributorDispatchLines
         .map((line) => {
@@ -87,9 +96,17 @@ export class DistributionPrismaDouble {
         })
         .filter((line) => {
           const distributorId = args?.where?.dispatch?.distributorId;
-          return (
-            !distributorId || line.dispatch.distributorId === distributorId
-          );
+          const matchesDistributor =
+            !distributorId || line.dispatch.distributorId === distributorId;
+          const matchesAny =
+            !args?.where?.OR ||
+            args.where.OR.some((clause) =>
+              clause.dispatch?.status !== undefined
+                ? (line.dispatch as Row).status === clause.dispatch.status
+                : Number((line as Row).unaccountedQuantity ?? 0) >
+                  (clause.unaccountedQuantity?.gt ?? 0),
+            );
+          return matchesDistributor && matchesAny;
         }),
   };
 
@@ -263,6 +280,33 @@ export function makeDistributionTransactionClient(store: DistributionStore) {
 
         return hydrateSale(sale);
       },
+      findMany: async (args: {
+        where: {
+          id: { in: string[] };
+          distributorId?: string;
+          status?: string;
+        };
+      }) =>
+        store.distributorSales.filter(
+          (sale) =>
+            args.where.id.in.includes(sale.id as string) &&
+            (args.where.distributorId === undefined ||
+              sale.distributorId === args.where.distributorId) &&
+            (args.where.status === undefined ||
+              sale.status === args.where.status),
+        ),
+      update: async (args: { where: { id: string }; data: Row }) => {
+        const sale = store.distributorSales.find(
+          (item) => item.id === args.where.id,
+        );
+
+        if (!sale) {
+          throw new Error("missing distributor sale");
+        }
+
+        applyUpdate(sale, args.data);
+        return sale;
+      },
     },
     distributorDispatch: {
       create: async (args: {
@@ -368,6 +412,27 @@ export function makeDistributionTransactionClient(store: DistributionStore) {
 
         return hydrateSettlement(settlement);
       },
+      findMany: async (args: {
+        where: { id: { in: string[] }; distributorId?: string };
+      }) =>
+        store.distributorSettlements.filter(
+          (settlement) =>
+            args.where.id.in.includes(settlement.id as string) &&
+            (args.where.distributorId === undefined ||
+              settlement.distributorId === args.where.distributorId),
+        ),
+      update: async (args: { where: { id: string }; data: Row }) => {
+        const settlement = store.distributorSettlements.find(
+          (item) => item.id === args.where.id,
+        );
+
+        if (!settlement) {
+          throw new Error("missing distributor settlement");
+        }
+
+        applyUpdate(settlement, args.data);
+        return settlement;
+      },
     },
     distributorPayment: {
       create: async (args: {
@@ -388,6 +453,32 @@ export function makeDistributionTransactionClient(store: DistributionStore) {
 
         return payment;
       },
+      findUnique: async (args: { where: { id: string } }) => {
+        const payment = store.distributorPayments.find(
+          (item) => item.id === args.where.id,
+        );
+
+        return payment
+          ? {
+              ...payment,
+              ledgerEntries: store.distributorLedgerEntries.filter(
+                (entry) => entry.paymentId === payment.id,
+              ),
+            }
+          : null;
+      },
+      update: async (args: { where: { id: string }; data: Row }) => {
+        const payment = store.distributorPayments.find(
+          (item) => item.id === args.where.id,
+        );
+
+        if (!payment) {
+          throw new Error("missing distributor payment");
+        }
+
+        applyUpdate(payment, args.data);
+        return payment;
+      },
     },
     distributorLedgerEntry: {
       findMany: async (args?: { where?: { distributorId?: string } }) =>
@@ -401,6 +492,55 @@ export function makeDistributionTransactionClient(store: DistributionStore) {
           id: `distributor-ledger-${store.distributorLedgerEntries.length + 1}`,
           ...args.data,
         });
+      },
+      createMany: async (args: {
+        data: Array<Row & { amountTnd: string }>;
+      }) => {
+        for (const item of args.data) {
+          store.distributorLedgerEntries.push({
+            id: `distributor-ledger-${store.distributorLedgerEntries.length + 1}`,
+            ...item,
+          });
+        }
+        return { count: args.data.length };
+      },
+      // The service sums in SQL; the double mirrors a plain sum and a sum per
+      // sale or settlement id.
+      aggregate: async (args: { where: { distributorId: string } }) => ({
+        _sum: {
+          amountTnd: store.distributorLedgerEntries
+            .filter((entry) => entry.distributorId === args.where.distributorId)
+            .reduce((sum, entry) => sum + Number(entry.amountTnd), 0)
+            .toFixed(3),
+        },
+      }),
+      groupBy: async (args: {
+        by: string[];
+        where: {
+          distributorId: string;
+          saleId?: { in: string[] } | { not: null };
+          settlementId?: { in: string[] } | { not: null };
+        };
+      }) => {
+        const keyName = args.by[0] as "saleId" | "settlementId";
+        const scope = args.where[keyName];
+        const allowed = scope && "in" in scope ? scope.in : undefined;
+        const groups = new Map<string, number>();
+        for (const entry of store.distributorLedgerEntries) {
+          const key = entry[keyName] as string | null | undefined;
+          if (
+            entry.distributorId !== args.where.distributorId ||
+            !key ||
+            (allowed && !allowed.includes(key))
+          ) {
+            continue;
+          }
+          groups.set(key, (groups.get(key) ?? 0) + Number(entry.amountTnd));
+        }
+        return [...groups.entries()].map(([key, total]) => ({
+          [keyName]: key,
+          _sum: { amountTnd: total.toFixed(3) },
+        }));
       },
     },
     inventoryMovement: {

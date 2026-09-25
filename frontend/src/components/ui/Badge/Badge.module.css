@@ -1,0 +1,51 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: var(--weight-title);
+  white-space: nowrap;
+}
+
+.icon {
+  display: inline-flex;
+}
+
+.icon > svg {
+  width: 14px;
+  height: 14px;
+}
+
+.neutral {
+  background: var(--bg-surface-muted);
+  color: var(--text-secondary);
+}
+
+.success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+/* Gold on its soft tint is an accent, not body text (05 section 2.1). */
+.accent {
+  background: var(--accent-soft);
+  color: var(--warning);
+}

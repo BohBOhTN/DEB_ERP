@@ -1,4 +1,5 @@
 import {
+  CustomerOrderStatus,
   CustomerLedgerBalanceKind,
   CustomerLedgerEntryType,
   PosSessionStatus,
@@ -6,9 +7,23 @@ import {
   SaleStatus,
   type PrismaClient,
 } from "@prisma/client";
-import { createHash } from "node:crypto";
 import { AppError } from "../../shared/appError.js";
-import { normalizeName } from "../catalog/catalog.service.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
+import {
+  postingTransactionOptions,
+  runIdempotentCommand,
+} from "../../shared/idempotency.js";
+import { planPaymentAllocations } from "../../shared/paymentAllocation.js";
+import { documentPaymentProjection } from "../../shared/paymentState.js";
+import {
+  balanceOf,
+  balancesByKey,
+  money,
+  pageWithCursor,
+  statementDefaults,
+  sumOrZero,
+} from "../../shared/ledger.js";
+import { normalizeName } from "../../shared/text.js";
 
 export interface CustomerActor {
   actorUserId: string;
@@ -16,13 +31,36 @@ export interface CustomerActor {
 }
 
 export interface CustomerListParams {
+  sort?: SortSpec<"name" | "createdAt">;
   search?: string;
   isActive?: boolean;
   page: number;
   pageSize: number;
 }
 
+export interface CustomerBalanceListParams {
+  search?: string;
+  /// Active customers by default on the screen; inactive ones on request.
+  isActive?: boolean;
+  /// `name` is the directory order; `balance` puts the biggest debtors first
+  /// and only lists customers that have ledger activity.
+  sort?: "name" | "balance";
+  /// Only customers owing at least this amount (decimal string).
+  minBalance?: string;
+  page: number;
+  pageSize: number;
+}
+
+export interface CustomerStatementParams {
+  /// Ledger entry id to continue from (exclusive).
+  cursor?: string;
+  limit?: number;
+  from?: Date;
+  to?: Date;
+}
+
 export interface CustomerPaymentListParams {
+  sort?: SortSpec<"paidAt" | "amountTnd">;
   customerId?: string;
   page: number;
   pageSize: number;
@@ -70,7 +108,18 @@ export class CustomersService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.customer.findMany({
         where,
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.CustomerOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -182,61 +231,161 @@ export class CustomersService {
     return customer;
   }
 
-  public async listCustomerBalances(params: {
-    page: number;
-    pageSize: number;
-  }) {
-    const customers = await this.prisma.customer.findMany({
-      orderBy: [{ isActive: "desc" }, { name: "asc" }],
-      skip: (params.page - 1) * params.pageSize,
-      take: params.pageSize,
-    });
+  /// Balances are summed by the database. The page is chosen either from the
+  /// customer directory (name order) or from the ledger aggregate (balance
+  /// order), and only the page's customers are then enriched.
+  public async listCustomerBalances(params: CustomerBalanceListParams) {
+    const searchWhere: Prisma.CustomerWhereInput | undefined =
+      params.isActive === undefined
+        ? customerSearchWhere(params.search)
+        : { ...customerSearchWhere(params.search), isActive: params.isActive };
+    const minBalance =
+      params.minBalance === undefined
+        ? undefined
+        : new Prisma.Decimal(params.minBalance);
+    const byBalance = params.sort === "balance" || minBalance !== undefined;
+
+    let customers: Awaited<ReturnType<typeof this.prisma.customer.findMany>>;
+    let total: number;
+
+    if (byBalance) {
+      // One group per customer with receivable activity, largest debtor
+      // first. Customers with no ledger entry owe nothing and are omitted.
+      const groups = await this.prisma.customerLedgerEntry.groupBy({
+        by: ["customerId"],
+        where: {
+          balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+          ...(searchWhere ? { customer: searchWhere } : {}),
+        },
+        _sum: { amountTnd: true },
+        ...(minBalance !== undefined
+          ? { having: { amountTnd: { _sum: { gte: minBalance } } } }
+          : {}),
+        orderBy: { _sum: { amountTnd: "desc" } },
+      });
+      total = groups.length;
+      const pageIds = groups
+        .slice(
+          (params.page - 1) * params.pageSize,
+          params.page * params.pageSize,
+        )
+        .map((group) => group.customerId);
+      const rows = await this.prisma.customer.findMany({
+        where: { id: { in: pageIds } },
+      });
+      // findMany does not preserve the requested order.
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      customers = pageIds
+        .map((id) => byId.get(id))
+        .filter((row): row is NonNullable<typeof row> => row !== undefined);
+    } else {
+      const where = searchWhere ?? {};
+      [customers, total] = await this.prisma.$transaction([
+        this.prisma.customer.findMany({
+          where,
+          orderBy: [{ isActive: "desc" }, { name: "asc" }],
+          skip: (params.page - 1) * params.pageSize,
+          take: params.pageSize,
+        }),
+        this.prisma.customer.count({ where }),
+      ]);
+    }
+
     const customerIds = customers.map((customer) => customer.id);
-    const [total, ledgerEntries, sales] = await this.prisma.$transaction([
-      this.prisma.customer.count(),
-      this.prisma.customerLedgerEntry.findMany({
-        where: {
-          customerId: {
-            in: customerIds,
-          },
-        },
+    // groupBy is typed per call, so these run as parallel reads rather than a
+    // batch transaction; balances are append-only sums, so a snapshot is not
+    // required.
+    const [kindTotals, saleTotals] = await Promise.all([
+      this.prisma.customerLedgerEntry.groupBy({
+        by: ["customerId", "balanceKind"],
+        where: { customerId: { in: customerIds } },
+        _sum: { amountTnd: true },
       }),
-      this.prisma.sale.findMany({
+      this.prisma.customerLedgerEntry.groupBy({
+        by: ["saleId", "customerId"],
         where: {
-          customerId: {
-            in: customerIds,
-          },
-          status: SaleStatus.POSTED,
+          customerId: { in: customerIds },
+          balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+          saleId: { not: null },
         },
+        _sum: { amountTnd: true },
       }),
     ]);
+    const openSaleTotals = saleTotals.filter((row) =>
+      sumOrZero(row._sum.amountTnd).greaterThan(0),
+    );
+    const [openSales, openOrders] = await Promise.all([
+      this.prisma.sale.findMany({
+        where: {
+          id: { in: openSaleTotals.map((row) => row.saleId as string) },
+          status: SaleStatus.POSTED,
+        },
+        select: {
+          id: true,
+          customerId: true,
+          soldAt: true,
+          paymentState: true,
+        },
+        orderBy: [{ soldAt: "desc" }, { id: "desc" }],
+      }),
+      // Orders still awaiting fulfilment, counted by the database per customer.
+      this.prisma.customerOrder.groupBy({
+        by: ["customerId"],
+        where: {
+          customerId: { in: customers.map((customer) => customer.id) },
+          status: {
+            in: [
+              CustomerOrderStatus.DRAFT,
+              CustomerOrderStatus.CONFIRMED,
+              CustomerOrderStatus.PREPARING,
+              CustomerOrderStatus.READY,
+            ],
+          },
+        },
+        _count: { _all: true },
+      }),
+    ]);
+    const openOrderCount = new Map(
+      openOrders.map((row) => [row.customerId, row._count._all]),
+    );
+    const saleBalance = balancesByKey(
+      openSaleTotals,
+      (row) => row.saleId,
+      (row) => row._sum.amountTnd,
+    );
+    const kindBalance = new Map(
+      kindTotals.map((row) => [
+        `${row.customerId}:${row.balanceKind}`,
+        sumOrZero(row._sum.amountTnd),
+      ]),
+    );
 
     return paginated(
       customers.map((customer) => {
-        const customerEntries = ledgerEntries.filter(
-          (entry) => entry.customerId === customer.id,
-        );
-        const balance = sumEntryAmounts(receivableEntries(customerEntries));
-        const advanceBalance = sumEntryAmounts(advanceEntries(customerEntries));
-        const openSales = sales
+        const customerOpenSales = openSales
           .filter((sale) => sale.customerId === customer.id)
-          .map((sale) => {
-            const saleBalance = saleBalanceFromEntries(sale.id, ledgerEntries);
-            return {
-              saleId: sale.id,
-              soldAt: sale.soldAt,
-              balanceTnd: saleBalance.toFixed(3),
-              paymentState: sale.paymentState,
-            };
-          })
-          .filter((sale) => new Prisma.Decimal(sale.balanceTnd).gt(0));
+          .map((sale) => ({
+            saleId: sale.id,
+            soldAt: sale.soldAt,
+            balanceTnd: balanceOf(saleBalance, sale.id).toFixed(3),
+            paymentState: sale.paymentState,
+          }));
 
         return {
           customer,
-          balanceTnd: balance.toFixed(3),
-          advanceBalanceTnd: advanceBalance.toFixed(3),
-          openSaleCount: openSales.length,
-          openSales,
+          balanceTnd: money(
+            kindBalance.get(
+              `${customer.id}:${CustomerLedgerBalanceKind.RECEIVABLE}`,
+            ),
+          ),
+          advanceBalanceTnd: money(
+            kindBalance.get(
+              `${customer.id}:${CustomerLedgerBalanceKind.ADVANCE}`,
+            ),
+          ),
+          openSaleCount: customerOpenSales.length,
+          openOrderCount: openOrderCount.get(customer.id) ?? 0,
+          openSales: customerOpenSales,
         };
       }),
       total,
@@ -244,66 +393,121 @@ export class CustomersService {
     );
   }
 
-  public async getCustomerStatement(customerId: string) {
+  /// NFR-007: a statement states its range and how its figures are derived.
+  /// Ledger entries page by cursor; the sale, order and payment sections show
+  /// the most recent `limit` documents and flag when more exist.
+  public async getCustomerStatement(
+    customerId: string,
+    params: CustomerStatementParams = {},
+  ) {
     const customer = await this.findCustomerOrThrow(customerId);
-    const [ledgerEntries, payments, sales, orders] =
+    const limit = Math.min(
+      params.limit ?? statementDefaults.limit,
+      statementDefaults.maxLimit,
+    );
+    const range = {
+      ...(params.from ? { gte: params.from } : {}),
+      ...(params.to ? { lte: params.to } : {}),
+    };
+    const inRange = params.from || params.to ? { occurredAt: range } : {};
+
+    const kindTotals = await this.prisma.customerLedgerEntry.groupBy({
+      by: ["balanceKind"],
+      where: {
+        customerId,
+        ...(params.to ? { occurredAt: { lte: params.to } } : {}),
+      },
+      _sum: { amountTnd: true },
+    });
+    const [openingTotal, ledgerPage, payments, sales, orders] =
       await this.prisma.$transaction([
-        this.prisma.customerLedgerEntry.findMany({
+        this.prisma.customerLedgerEntry.aggregate({
           where: {
             customerId,
+            balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+            ...(params.from ? { occurredAt: { lt: params.from } } : {}),
           },
-          include: {
-            sale: true,
-            payment: true,
-            order: true,
-          },
-          orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
+          _sum: { amountTnd: true },
+        }),
+        this.prisma.customerLedgerEntry.findMany({
+          where: { customerId, ...inRange },
+          include: { sale: true, payment: true, order: true },
+          orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+          take: limit + 1,
+          ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
         }),
         this.prisma.customerPayment.findMany({
-          where: {
-            customerId,
-          },
-          include: {
-            allocations: true,
-          },
+          where: { customerId },
+          include: { allocations: true },
           orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+          take: limit + 1,
         }),
         this.prisma.sale.findMany({
-          where: {
-            customerId,
-            status: SaleStatus.POSTED,
-          },
-          include: {
-            lines: true,
-            payments: true,
-          },
+          where: { customerId, status: SaleStatus.POSTED },
+          include: { lines: true, payments: true },
           orderBy: [{ soldAt: "desc" }, { createdAt: "desc" }],
+          take: limit + 1,
         }),
         this.prisma.customerOrder.findMany({
-          where: {
-            customerId,
-          },
-          include: {
-            lines: true,
-            advances: true,
-          },
+          where: { customerId },
+          include: { lines: true, advances: true },
           orderBy: [{ requestedFulfillmentAt: "desc" }, { createdAt: "desc" }],
+          take: limit + 1,
         }),
       ]);
-    const balance = sumEntryAmounts(receivableEntries(ledgerEntries));
-    const advanceBalance = sumEntryAmounts(advanceEntries(ledgerEntries));
+
+    const ledger = pageWithCursor(ledgerPage, limit);
+    const salesPage = sales.slice(0, limit);
+    const saleTotals = await this.prisma.customerLedgerEntry.groupBy({
+      by: ["saleId"],
+      where: {
+        customerId,
+        balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+        saleId: { in: salesPage.map((sale) => sale.id) },
+      },
+      _sum: { amountTnd: true },
+    });
+    const saleBalance = balancesByKey(
+      saleTotals,
+      (row) => row.saleId,
+      (row) => row._sum.amountTnd,
+    );
+    const kindBalance = new Map(
+      kindTotals.map((row) => [row.balanceKind, sumOrZero(row._sum.amountTnd)]),
+    );
+    const openingBalance = params.from
+      ? sumOrZero(openingTotal._sum.amountTnd)
+      : new Prisma.Decimal(0);
+    const closingBalance = sumOrZero(
+      kindBalance.get(CustomerLedgerBalanceKind.RECEIVABLE),
+    );
 
     return {
       customer,
-      balanceTnd: balance.toFixed(3),
-      advanceBalanceTnd: advanceBalance.toFixed(3),
-      sales: sales.map((sale) => ({
+      balanceTnd: closingBalance.toFixed(3),
+      advanceBalanceTnd: money(
+        kindBalance.get(CustomerLedgerBalanceKind.ADVANCE),
+      ),
+      sales: salesPage.map((sale) => ({
         ...sale,
-        balanceTnd: saleBalanceFromEntries(sale.id, ledgerEntries).toFixed(3),
+        balanceTnd: balanceOf(saleBalance, sale.id).toFixed(3),
       })),
-      orders,
-      ledgerEntries,
-      payments,
+      orders: orders.slice(0, limit),
+      ledgerEntries: ledger.items,
+      payments: payments.slice(0, limit),
+      meta: {
+        limit,
+        from: params.from ?? null,
+        to: params.to ?? null,
+        openingBalanceTnd: openingBalance.toFixed(3),
+        closingBalanceTnd: closingBalance.toFixed(3),
+        nextCursor: ledger.nextCursor,
+        hasMoreSales: sales.length > limit,
+        hasMoreOrders: orders.length > limit,
+        hasMorePayments: payments.length > limit,
+        basis:
+          "Solde = somme des écritures du grand livre client (créances) jusqu'à la date de fin ; les avances sont suivies séparément.",
+      },
     };
   }
 
@@ -322,7 +526,18 @@ export class CustomersService {
             },
           },
         },
-        orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+        orderBy: orderByFor<
+          "paidAt" | "amountTnd",
+          Prisma.CustomerPaymentOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            paidAt: (direction) => [{ paidAt: direction }],
+            amountTnd: (direction) => [{ amountTnd: direction }],
+          },
+          [{ paidAt: "desc" }, { createdAt: "desc" }],
+          { id: "desc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -343,12 +558,18 @@ export class CustomersService {
       /// True when the cashier took the money at the till, so it belongs to the
       /// open POS session's expected cash. Back-office payments leave it unset.
       collectedAtPos?: boolean;
+      /// Sales the client names explicitly. Whatever the amount leaves after
+      /// them is placed on the customer's other open sales, oldest first, so a
+      /// règlement always settles documents (CUS-009, CUS-011).
       allocations?: CustomerPaymentAllocationInput[];
     },
     actor: CustomerActor,
   ) {
     const amountTnd = parsePositiveMoney(params.amountTnd);
-    const allocations = params.allocations ?? [];
+    const requested = (params.allocations ?? []).map((allocation) => ({
+      key: allocation.saleId,
+      amountTnd: parsePositiveMoney(allocation.amountTnd),
+    }));
 
     return this.runIdempotentCommand(
       `customer_payment.create.${params.customerId}`,
@@ -358,33 +579,30 @@ export class CustomersService {
         amountTnd: amountTnd.toFixed(3),
       },
       async (tx) => {
-        const customer = await tx.customer.findUnique({
-          where: {
-            id: params.customerId,
-          },
-        });
+        const customer = await lockCustomer(tx, params.customerId);
 
-        if (!customer) {
+        if (!customer.isActive) {
           throw new AppError({
-            statusCode: 404,
-            code: "CUSTOMER_NOT_FOUND",
-            message: "Client introuvable.",
+            statusCode: 400,
+            code: "CUSTOMER_INACTIVE",
+            message: "Ce client est désactivé.",
           });
         }
 
-        const ledgerEntries = await tx.customerLedgerEntry.findMany({
+        const receivable = await tx.customerLedgerEntry.aggregate({
           where: {
             customerId: params.customerId,
             balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
           },
+          _sum: { amountTnd: true },
         });
-        const currentBalance = sumEntryAmounts(ledgerEntries);
+        const currentBalance = sumOrZero(receivable._sum.amountTnd);
 
         if (!currentBalance.greaterThan(0)) {
           throw new AppError({
             statusCode: 400,
             code: "CUSTOMER_BALANCE_NOT_DUE",
-            message: "Ce client n'a pas de solde a payer.",
+            message: "Ce client n'a pas de solde à payer.",
           });
         }
 
@@ -392,19 +610,21 @@ export class CustomersService {
           throw new AppError({
             statusCode: 400,
             code: "CUSTOMER_OVERPAYMENT_REJECTED",
-            message: "Le paiement ne peut pas depasser le solde client.",
+            message: "Le paiement ne peut pas dépasser le solde client.",
           });
         }
 
-        const allocationRows = await this.validateCustomerPaymentAllocations(
-          {
-            customerId: params.customerId,
-            amountTnd,
-            allocations,
-            ledgerEntries,
-          },
+        const openSales = await this.openSalesOf(
           tx,
+          params.customerId,
+          requested.map((allocation) => allocation.key),
         );
+        const plan = planPaymentAllocations({
+          amountTnd,
+          requested,
+          openDocuments: openSales,
+          errors: customerAllocationErrors,
+        });
         const sessionId = params.collectedAtPos
           ? (await requireOpenPosSession(tx)).id
           : null;
@@ -421,19 +641,19 @@ export class CustomersService {
           },
         });
 
-        if (allocationRows.length > 0) {
+        if (plan.allocations.length > 0) {
           await tx.customerPaymentAllocation.createMany({
-            data: allocationRows.map((allocation) => ({
+            data: plan.allocations.map((allocation) => ({
               paymentId: payment.id,
-              saleId: allocation.saleId,
+              saleId: allocation.key,
               amountTnd: allocation.amountTnd.toFixed(3),
             })),
           });
 
           await tx.customerLedgerEntry.createMany({
-            data: allocationRows.map((allocation) => ({
+            data: plan.allocations.map((allocation) => ({
               customerId: params.customerId,
-              saleId: allocation.saleId,
+              saleId: allocation.key,
               paymentId: payment.id,
               entryType: CustomerLedgerEntryType.PAYMENT,
               amountTnd: allocation.amountTnd.negated().toFixed(3),
@@ -442,19 +662,32 @@ export class CustomersService {
               correlationId: actor.correlationId,
             })),
           });
-        } else {
+        }
+
+        if (plan.unallocatedTnd.greaterThan(0)) {
           await tx.customerLedgerEntry.create({
             data: {
               customerId: params.customerId,
               paymentId: payment.id,
               entryType: CustomerLedgerEntryType.PAYMENT,
-              amountTnd: amountTnd.negated().toFixed(3),
+              amountTnd: plan.unallocatedTnd.negated().toFixed(3),
               occurredAt: params.paidAt,
               actorUserId: actor.actorUserId,
               correlationId: actor.correlationId,
             },
           });
         }
+
+        await this.refreshSaleProjections(
+          tx,
+          params.customerId,
+          plan.allocations.map((allocation) => allocation.key),
+        );
+
+        const allocations = plan.allocations.map((allocation) => ({
+          saleId: allocation.key,
+          amountTnd: allocation.amountTnd.toFixed(3),
+        }));
 
         await this.auditWithClient(tx, {
           actor,
@@ -463,97 +696,408 @@ export class CustomersService {
           targetId: payment.id,
           after: {
             payment,
-            allocations: allocationRows,
+            allocations,
           },
         });
 
-        return {
-          payment,
-          allocations: allocationRows.map((allocation) => ({
-            saleId: allocation.saleId,
-            amountTnd: allocation.amountTnd.toFixed(3),
-          })),
-        };
+        return { payment, allocations };
       },
     );
   }
 
-  private async validateCustomerPaymentAllocations(
-    params: {
-      customerId: string;
-      amountTnd: Prisma.Decimal;
-      allocations: CustomerPaymentAllocationInput[];
-      ledgerEntries: LedgerEntrySlice[];
-    },
-    client: Prisma.TransactionClient,
+  /// Undoes a règlement recorded by mistake. The payment row stays, marked
+  /// reversed; PAYMENT_REVERSAL entries give the money back to the sales it
+  /// had settled, and a till règlement leaves the drawer of the session
+  /// that is open now.
+  public async reverseCustomerPayment(
+    paymentId: string,
+    params: { idempotencyKey: string; reason: string },
+    actor: CustomerActor,
   ) {
-    if (params.allocations.length === 0) {
+    const reason = requireReason(params.reason);
+
+    return this.runIdempotentCommand(
+      `customer_payment.reverse.${paymentId}`,
+      params.idempotencyKey,
+      { paymentId, reason },
+      async (tx) => {
+        const payment = await tx.customerPayment.findUnique({
+          where: { id: paymentId },
+          include: { ledgerEntries: true },
+        });
+
+        if (!payment) {
+          throw new AppError({
+            statusCode: 404,
+            code: "CUSTOMER_PAYMENT_NOT_FOUND",
+            message: "Règlement introuvable.",
+          });
+        }
+
+        if (payment.reversedAt) {
+          throw new AppError({
+            statusCode: 409,
+            code: "PAYMENT_ALREADY_REVERSED",
+            message: "Ce règlement a déjà été annulé.",
+          });
+        }
+
+        await lockCustomer(tx, payment.customerId);
+        const reversedAt = new Date();
+        const reversedInSessionId = payment.sessionId
+          ? (await requireOpenPosSession(tx)).id
+          : null;
+        const paymentEntries = payment.ledgerEntries.filter(
+          (entry) => entry.entryType === CustomerLedgerEntryType.PAYMENT,
+        );
+
+        await tx.customerLedgerEntry.createMany({
+          data: paymentEntries.map((entry) => ({
+            customerId: payment.customerId,
+            saleId: entry.saleId,
+            paymentId: payment.id,
+            balanceKind: entry.balanceKind,
+            entryType: CustomerLedgerEntryType.PAYMENT_REVERSAL,
+            amountTnd: new Prisma.Decimal(entry.amountTnd).negated().toFixed(3),
+            occurredAt: reversedAt,
+            actorUserId: actor.actorUserId,
+            correlationId: actor.correlationId,
+          })),
+        });
+
+        const reversed = await tx.customerPayment.update({
+          where: { id: payment.id },
+          data: {
+            reversedAt,
+            reversedByUserId: actor.actorUserId,
+            reversalReason: reason,
+            reversedInSessionId,
+          },
+        });
+
+        await this.refreshSaleProjections(
+          tx,
+          payment.customerId,
+          paymentEntries
+            .map((entry) => entry.saleId)
+            .filter((id): id is string => Boolean(id)),
+        );
+
+        await this.auditWithClient(tx, {
+          actor,
+          action: "customer_payment.reverse",
+          entity: "customer_payment",
+          targetId: payment.id,
+          before: payment,
+          after: reversed,
+        });
+
+        return { payment: reversed };
+      },
+    );
+  }
+
+  /// CUS-004: deactivation keeps every document and blocks new credit
+  /// operations (the till, the orders and the règlements refuse an inactive
+  /// customer). A customer who still owes or holds an advance cannot be
+  /// deactivated (issue #46).
+  public async setCustomerActive(
+    customerId: string,
+    params: { isActive: boolean; reason?: string },
+    actor: CustomerActor,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.customer.findUnique({
+        where: { id: customerId },
+      });
+
+      if (!existing) {
+        throw new AppError({
+          statusCode: 404,
+          code: "CUSTOMER_NOT_FOUND",
+          message: "Client introuvable.",
+        });
+      }
+
+      if (existing.isActive === params.isActive) {
+        throw new AppError({
+          statusCode: 409,
+          code: params.isActive
+            ? "CUSTOMER_ALREADY_ACTIVE"
+            : "CUSTOMER_ALREADY_INACTIVE",
+          message: params.isActive
+            ? "Ce client est déjà actif."
+            : "Ce client est déjà désactivé.",
+        });
+      }
+
+      if (!params.isActive) {
+        const totals = await tx.customerLedgerEntry.groupBy({
+          by: ["balanceKind"],
+          where: { customerId },
+          _sum: { amountTnd: true },
+        });
+
+        if (totals.some((row) => !sumOrZero(row._sum.amountTnd).isZero())) {
+          throw new AppError({
+            statusCode: 409,
+            code: "CUSTOMER_HAS_BALANCE",
+            message:
+              "Ce client a encore un solde ou une avance : réglez-les avant de le désactiver.",
+          });
+        }
+      }
+
+      const customer = await tx.customer.update({
+        where: { id: customerId },
+        data: {
+          isActive: params.isActive,
+          version: { increment: 1 },
+          updatedByUserId: actor.actorUserId,
+        },
+      });
+
+      await this.auditWithClient(tx, {
+        actor,
+        action: params.isActive ? "customer.reactivate" : "customer.deactivate",
+        entity: "customer",
+        targetId: customerId,
+        before: existing,
+        after: { ...customer, reason: emptyToNull(params.reason) },
+      });
+
+      return customer;
+    }, postingTransactionOptions);
+  }
+
+  /// The figures of the customer page (issue #46), summed by the database:
+  /// orders except the cancelled ones, posted sales with what was paid on
+  /// them (the projection kept by #47), what is still due and the advance
+  /// held, and the last sale and règlement.
+  public async getCustomerSummary(customerId: string) {
+    await this.findCustomerOrThrow(customerId);
+    const open = [
+      CustomerOrderStatus.DRAFT,
+      CustomerOrderStatus.CONFIRMED,
+      CustomerOrderStatus.PREPARING,
+      CustomerOrderStatus.READY,
+    ];
+    const [
+      orders,
+      openOrders,
+      sales,
+      cancelledSales,
+      kinds,
+      lastSale,
+      lastPayment,
+    ] = await Promise.all([
+      this.prisma.customerOrder.count({
+        where: { customerId, status: { not: CustomerOrderStatus.CANCELLED } },
+      }),
+      this.prisma.customerOrder.count({
+        where: { customerId, status: { in: open } },
+      }),
+      this.prisma.sale.aggregate({
+        where: { customerId, status: SaleStatus.POSTED },
+        _count: { _all: true },
+        _sum: { totalTnd: true, paidAmountTnd: true },
+      }),
+      this.prisma.sale.count({
+        where: { customerId, status: SaleStatus.CANCELLED },
+      }),
+      this.prisma.customerLedgerEntry.groupBy({
+        by: ["balanceKind"],
+        where: { customerId },
+        _sum: { amountTnd: true },
+      }),
+      this.prisma.sale.findFirst({
+        where: { customerId, status: SaleStatus.POSTED },
+        orderBy: [{ soldAt: "desc" }],
+        select: { soldAt: true },
+      }),
+      this.prisma.customerPayment.findFirst({
+        where: { customerId, reversedAt: null },
+        orderBy: [{ paidAt: "desc" }],
+        select: { paidAt: true },
+      }),
+    ]);
+    const kind = new Map(
+      kinds.map((row) => [row.balanceKind, sumOrZero(row._sum.amountTnd)]),
+    );
+
+    return {
+      ordersCount: orders,
+      openOrdersCount: openOrders,
+      salesCount: sales._count._all,
+      cancelledSalesCount: cancelledSales,
+      salesTotalTnd: money(sales._sum.totalTnd),
+      paidTnd: money(sales._sum.paidAmountTnd),
+      dueTnd: money(kind.get(CustomerLedgerBalanceKind.RECEIVABLE)),
+      advanceTnd: money(kind.get(CustomerLedgerBalanceKind.ADVANCE)),
+      lastSaleAt: lastSale?.soldAt ?? null,
+      lastPaymentAt: lastPayment?.paidAt ?? null,
+    };
+  }
+
+  /// The customer's sales, every state, newest first, with the balance the
+  /// ledger still carries for each; paged, unlike the statement's fifty.
+  public async listCustomerSales(
+    customerId: string,
+    params: { page: number; pageSize: number },
+  ) {
+    await this.findCustomerOrThrow(customerId);
+    const where = { customerId };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.sale.findMany({
+        where,
+        orderBy: [{ soldAt: "desc" }, { id: "desc" }],
+        skip: (params.page - 1) * params.pageSize,
+        take: params.pageSize,
+      }),
+      this.prisma.sale.count({ where }),
+    ]);
+    const totals = items.length
+      ? await this.prisma.customerLedgerEntry.groupBy({
+          by: ["saleId"],
+          where: {
+            customerId,
+            balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+            saleId: { in: items.map((sale) => sale.id) },
+          },
+          _sum: { amountTnd: true },
+        })
+      : [];
+    const balances = balancesByKey(
+      totals,
+      (row) => row.saleId,
+      (row) => row._sum.amountTnd,
+    );
+
+    return paginated(
+      items.map((sale) => ({
+        ...sale,
+        balanceTnd: balanceOf(balances, sale.id).toFixed(3),
+      })),
+      total,
+      params,
+    );
+  }
+
+  /// Detail for the customer page: the row plus both balances.
+  public async getCustomer(customerId: string) {
+    const customer = await this.findCustomerOrThrow(customerId);
+    const totals = await this.prisma.customerLedgerEntry.groupBy({
+      by: ["balanceKind"],
+      where: { customerId },
+      _sum: { amountTnd: true },
+    });
+    const kind = new Map(
+      totals.map((row) => [row.balanceKind, sumOrZero(row._sum.amountTnd)]),
+    );
+
+    return {
+      ...customer,
+      balanceTnd: money(kind.get(CustomerLedgerBalanceKind.RECEIVABLE)),
+      advanceBalanceTnd: money(kind.get(CustomerLedgerBalanceKind.ADVANCE)),
+    };
+  }
+
+  /// The customer's posted sales that still owe something, oldest first:
+  /// the automatic allocation order. Sales the client named are included
+  /// even when settled, so a wrong target is reported as exceeding that
+  /// sale's balance. Only receivable entries move a sale balance; an applied
+  /// order advance is recorded against the same sale but belongs to the
+  /// advance balance.
+  private async openSalesOf(
+    client: Prisma.TransactionClient,
+    customerId: string,
+    namedSaleIds: string[],
+  ) {
+    const totals = await client.customerLedgerEntry.groupBy({
+      by: ["saleId"],
+      where: {
+        customerId,
+        balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+        saleId: { not: null },
+      },
+      _sum: { amountTnd: true },
+    });
+    const balances = balancesByKey(
+      totals,
+      (row) => row.saleId,
+      (row) => row._sum.amountTnd,
+    );
+    const openIds = new Set([
+      ...[...balances.entries()]
+        .filter(([, balance]) => balance.greaterThan(0))
+        .map(([saleId]) => saleId),
+      ...namedSaleIds,
+    ]);
+
+    if (openIds.size === 0) {
       return [];
-    }
-
-    const allocations = params.allocations.map((allocation) => ({
-      saleId: allocation.saleId,
-      amountTnd: parsePositiveMoney(allocation.amountTnd),
-    }));
-    const duplicateSaleId = findDuplicate(
-      allocations.map((allocation) => allocation.saleId),
-    );
-
-    if (duplicateSaleId) {
-      throw new AppError({
-        statusCode: 400,
-        code: "DUPLICATE_PAYMENT_ALLOCATION",
-        message: "Une vente ne peut etre allouee qu'une seule fois.",
-      });
-    }
-
-    const allocationTotal = sumDecimals(
-      allocations.map((allocation) => allocation.amountTnd),
-      3,
-    );
-
-    if (!allocationTotal.equals(params.amountTnd)) {
-      throw new AppError({
-        statusCode: 400,
-        code: "PAYMENT_ALLOCATION_TOTAL_MISMATCH",
-        message: "Les allocations doivent correspondre au montant paye.",
-      });
     }
 
     const sales = await client.sale.findMany({
       where: {
-        id: {
-          in: allocations.map((allocation) => allocation.saleId),
-        },
-        customerId: params.customerId,
+        id: { in: [...openIds] },
+        customerId,
         status: SaleStatus.POSTED,
       },
+      select: { id: true, soldAt: true },
+      orderBy: [{ soldAt: "asc" }, { id: "asc" }],
     });
 
-    if (sales.length !== allocations.length) {
-      throw new AppError({
-        statusCode: 400,
-        code: "POSTED_SALE_ALLOCATION_REQUIRED",
-        message: "Chaque allocation doit viser une vente confirmee du client.",
+    return sales.map((sale) => ({
+      key: sale.id,
+      balanceTnd: balanceOf(balances, sale.id),
+    }));
+  }
+
+  /// GOV-006: the stored paid amount, remaining due and state of a sale are
+  /// projections of its receivable ledger, rewritten in the same transaction
+  /// as the entries that moved it.
+  private async refreshSaleProjections(
+    client: Prisma.TransactionClient,
+    customerId: string,
+    saleIds: string[],
+  ) {
+    const unique = [...new Set(saleIds)];
+
+    if (unique.length === 0) {
+      return;
+    }
+
+    const [sales, totals] = await Promise.all([
+      client.sale.findMany({
+        where: { id: { in: unique } },
+        select: { id: true, totalTnd: true },
+      }),
+      client.customerLedgerEntry.groupBy({
+        by: ["saleId"],
+        where: {
+          customerId,
+          balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+          saleId: { in: unique },
+        },
+        _sum: { amountTnd: true },
+      }),
+    ]);
+    const balances = balancesByKey(
+      totals,
+      (row) => row.saleId,
+      (row) => row._sum.amountTnd,
+    );
+
+    for (const sale of sales) {
+      await client.sale.update({
+        where: { id: sale.id },
+        data: documentPaymentProjection(
+          sale.totalTnd,
+          balanceOf(balances, sale.id),
+        ),
       });
     }
-
-    for (const allocation of allocations) {
-      const saleBalance = saleBalanceFromEntries(
-        allocation.saleId,
-        params.ledgerEntries,
-      );
-
-      if (allocation.amountTnd.greaterThan(saleBalance)) {
-        throw new AppError({
-          statusCode: 400,
-          code: "PAYMENT_ALLOCATION_EXCEEDS_SALE_BALANCE",
-          message: "Une allocation depasse le solde de la vente.",
-        });
-      }
-    }
-
-    return allocations;
   }
 
   private async findCustomerOrThrow(customerId: string) {
@@ -590,7 +1134,7 @@ export class CustomersService {
       throw new AppError({
         statusCode: 409,
         code: "CUSTOMER_NAME_EXISTS",
-        message: "Un client actif avec ce nom existe deja.",
+        message: "Un client actif avec ce nom existe déjà.",
       });
     }
   }
@@ -630,81 +1174,73 @@ export class CustomersService {
     });
   }
 
-  private async runIdempotentCommand<TResponse>(
+  private runIdempotentCommand<TResponse>(
     scope: string,
     key: string,
     payload: unknown,
-    action: (tx: Prisma.TransactionClient) => Promise<TResponse>,
+    execute: (tx: Prisma.TransactionClient) => Promise<TResponse>,
   ): Promise<TResponse> {
-    if (!key.trim()) {
-      throw new AppError({
-        statusCode: 400,
-        code: "IDEMPOTENCY_KEY_REQUIRED",
-        message: "Une cle d'idempotence est requise.",
-      });
-    }
-
-    const requestHash = hashPayload(payload);
-    const existing = await this.prisma.idempotencyRecord.findUnique({
-      where: {
-        scope_key: {
-          scope,
-          key,
-        },
-      },
-    });
-
-    if (existing) {
-      if (existing.requestHash !== requestHash) {
-        throw new AppError({
-          statusCode: 409,
-          code: "IDEMPOTENCY_CONFLICT",
-          message: "Cette cle a deja ete utilisee pour une autre demande.",
-        });
-      }
-
-      if (existing.response) {
-        return existing.response as TResponse;
-      }
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.idempotencyRecord.create({
-        data: {
-          scope,
-          key,
-          requestHash,
-        },
-      });
-
-      const response = await action(tx);
-      await tx.idempotencyRecord.update({
-        where: {
-          scope_key: {
-            scope,
-            key,
-          },
-        },
-        data: {
-          response: response as object,
-        },
-      });
-
-      return response;
+    return runIdempotentCommand({
+      prisma: this.prisma,
+      scope,
+      key,
+      payload,
+      execute,
     });
   }
 }
 
-/// Only receivable entries move a sale balance. An applied order advance is
-/// recorded against the same sale but belongs to the advance balance, so it
-/// must not reduce what the customer still owes on that sale twice.
-function saleBalanceFromEntries(saleId: string, entries: LedgerEntrySlice[]) {
-  return sumDecimals(
-    receivableEntries(entries)
-      .filter((entry) => entry.saleId === saleId)
-      .map((entry) => new Prisma.Decimal(entry.amountTnd as string)),
-    3,
-  );
+const customerAllocationErrors = {
+  duplicate: {
+    code: "DUPLICATE_PAYMENT_ALLOCATION",
+    message: "Une vente ne peut être allouée qu'une seule fois.",
+  },
+  unknownDocument: {
+    code: "POSTED_SALE_ALLOCATION_REQUIRED",
+    message: "Chaque allocation doit viser une vente confirmée du client.",
+  },
+  exceedsBalance: {
+    code: "PAYMENT_ALLOCATION_EXCEEDS_SALE_BALANCE",
+    message: "Une allocation dépasse le solde de la vente.",
+  },
+};
+
+/// Serializes the payments of one customer: two règlements arriving together
+/// both read the balance, and without the lock both could pass the
+/// overpayment check (OD-009).
+async function lockCustomer(
+  client: Prisma.TransactionClient,
+  customerId: string,
+) {
+  await client.$queryRaw`SELECT "id" FROM "customers" WHERE "id" = ${customerId} FOR UPDATE`;
+
+  const customer = await client.customer.findUnique({
+    where: { id: customerId },
+  });
+
+  if (!customer) {
+    throw new AppError({
+      statusCode: 404,
+      code: "CUSTOMER_NOT_FOUND",
+      message: "Client introuvable.",
+    });
+  }
+
+  return customer;
+}
+
+function requireReason(value: string): string {
+  const reason = value.trim();
+
+  if (reason.length < 3) {
+    throw new AppError({
+      statusCode: 400,
+      code: "REASON_REQUIRED",
+      message: "Une raison est requise.",
+    });
+  }
+
+  return reason;
 }
 
 /// Only one POS session may be open at a time, so the open one is the till that
@@ -721,36 +1257,11 @@ async function requireOpenPosSession(client: Prisma.TransactionClient) {
       statusCode: 409,
       code: "POS_SESSION_NOT_OPEN",
       message:
-        "Ouvrez une session de caisse pour encaisser un paiement a la caisse.",
+        "Ouvrez une session de caisse pour encaisser un paiement à la caisse.",
     });
   }
 
   return session;
-}
-
-function receivableEntries<TEntry extends LedgerEntrySlice>(entries: TEntry[]) {
-  return entries.filter(
-    (entry) => entry.balanceKind === CustomerLedgerBalanceKind.RECEIVABLE,
-  );
-}
-
-function advanceEntries<TEntry extends LedgerEntrySlice>(entries: TEntry[]) {
-  return entries.filter(
-    (entry) => entry.balanceKind === CustomerLedgerBalanceKind.ADVANCE,
-  );
-}
-
-function sumEntryAmounts(entries: LedgerEntrySlice[]) {
-  return sumDecimals(
-    entries.map((entry) => new Prisma.Decimal(entry.amountTnd as string)),
-    3,
-  );
-}
-
-interface LedgerEntrySlice {
-  saleId?: string | null;
-  balanceKind: CustomerLedgerBalanceKind;
-  amountTnd: unknown;
 }
 
 function parsePositiveMoney(value: string): Prisma.Decimal {
@@ -760,17 +1271,11 @@ function parsePositiveMoney(value: string): Prisma.Decimal {
     throw new AppError({
       statusCode: 400,
       code: "POSITIVE_AMOUNT_REQUIRED",
-      message: "Le montant doit etre superieur a zero.",
+      message: "Le montant doit être supérieur à zéro.",
     });
   }
 
   return decimal.toDecimalPlaces(3, Prisma.Decimal.ROUND_HALF_UP);
-}
-
-function sumDecimals(values: Prisma.Decimal[], scale: number): Prisma.Decimal {
-  return values
-    .reduce((total, value) => total.plus(value), new Prisma.Decimal(0))
-    .toDecimalPlaces(scale, Prisma.Decimal.ROUND_HALF_UP);
 }
 
 function emptyToNull(value: string | undefined): string | null {
@@ -783,50 +1288,13 @@ function assertVersionUpdated(count: number) {
     throw new AppError({
       statusCode: 409,
       code: "VERSION_CONFLICT",
-      message: "Cette fiche a ete modifiee. Rechargez puis reessayez.",
+      message: "Cette fiche a été modifiée. Rechargez puis réessayez.",
     });
   }
 }
 
 function toJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-}
-
-function hashPayload(payload: unknown): string {
-  return createHash("sha256").update(stableStringify(payload)).digest("hex");
-}
-
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
-  }
-
-  if (value instanceof Date) {
-    return JSON.stringify(value.toISOString());
-  }
-
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
-      .join(",")}}`;
-  }
-
-  return JSON.stringify(value);
-}
-
-function findDuplicate(values: string[]): string | undefined {
-  const seen = new Set<string>();
-
-  for (const value of values) {
-    if (seen.has(value)) {
-      return value;
-    }
-
-    seen.add(value);
-  }
-
-  return undefined;
 }
 
 function paginated<TItem>(
@@ -840,5 +1308,21 @@ function paginated<TItem>(
     pageSize: params.pageSize,
     total,
     pageCount: Math.ceil(total / params.pageSize),
+  };
+}
+
+function customerSearchWhere(
+  search: string | undefined,
+): Prisma.CustomerWhereInput | undefined {
+  const trimmed = search?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return {
+    OR: [
+      { normalizedName: { contains: normalizeName(trimmed) } },
+      { phone: { contains: trimmed, mode: "insensitive" } },
+    ],
   };
 }

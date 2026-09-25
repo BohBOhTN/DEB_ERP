@@ -1,5 +1,12 @@
 import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
+import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
+import { normalizeName } from "../../shared/text.js";
+
+// Re-exported so existing importers and tests keep working.
+export { normalizeName };
+import { postingTransactionOptions } from "../../shared/idempotency.js";
 
 export interface CatalogActor {
   actorUserId: string;
@@ -7,10 +14,21 @@ export interface CatalogActor {
 }
 
 export interface ListParams {
+  sort?: SortSpec<"name" | "createdAt">;
   search?: string;
   isActive?: boolean;
   page: number;
   pageSize: number;
+}
+
+/// The product list also filters by category and stockability and sorts by
+/// price and status (07 section 4.1).
+export interface ProductListParams extends Omit<ListParams, "sort"> {
+  sort?: SortSpec<
+    "name" | "createdAt" | "salePriceTnd" | "approximateCostTnd" | "isActive"
+  >;
+  categoryId?: string;
+  isStockable?: boolean;
 }
 
 const defaultUnits = [
@@ -70,7 +88,18 @@ export class CatalogService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.unit.findMany({
         where,
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.UnitOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -182,7 +211,18 @@ export class CatalogService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.productCategory.findMany({
         where,
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.ProductCategoryOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -328,7 +368,18 @@ export class CatalogService {
             },
           },
         },
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          "name" | "createdAt",
+          Prisma.RawMaterialOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -565,7 +616,7 @@ export class CatalogService {
           },
         },
       });
-    });
+    }, postingTransactionOptions);
 
     await this.audit({
       actor,
@@ -579,12 +630,16 @@ export class CatalogService {
     return result;
   }
 
-  public async listProducts(params: ListParams) {
+  public async listProducts(params: ProductListParams) {
     const normalizedSearch = params.search
       ? normalizeName(params.search)
       : undefined;
     const where = {
       ...(params.isActive === undefined ? {} : { isActive: params.isActive }),
+      ...(params.categoryId ? { categoryId: params.categoryId } : {}),
+      ...(params.isStockable === undefined
+        ? {}
+        : { isStockable: params.isStockable }),
       ...(normalizedSearch
         ? {
             OR: [
@@ -618,7 +673,27 @@ export class CatalogService {
           category: true,
           baseUnit: true,
         },
-        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        orderBy: orderByFor<
+          | "name"
+          | "createdAt"
+          | "salePriceTnd"
+          | "approximateCostTnd"
+          | "isActive",
+          Prisma.ProductOrderByWithRelationInput
+        >(
+          params.sort,
+          {
+            name: (direction) => [{ isActive: "desc" }, { name: direction }],
+            createdAt: (direction) => [{ createdAt: direction }],
+            salePriceTnd: (direction) => [{ salePriceTnd: direction }],
+            approximateCostTnd: (direction) => [
+              { approximateCostTnd: { sort: direction, nulls: "last" } },
+            ],
+            isActive: (direction) => [{ isActive: direction }, { name: "asc" }],
+          },
+          [{ isActive: "desc" }, { name: "asc" }],
+          { id: "asc" },
+        ),
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
@@ -636,6 +711,7 @@ export class CatalogService {
       categoryId: string;
       baseUnitId: string;
       salePriceTnd: string;
+      approximateCostTnd?: string | null;
       isStockable: boolean;
       notes?: string;
     },
@@ -655,6 +731,7 @@ export class CatalogService {
         categoryId: params.categoryId,
         baseUnitId: params.baseUnitId,
         salePriceTnd: params.salePriceTnd,
+        approximateCostTnd: params.approximateCostTnd ?? null,
         isStockable: params.isStockable,
         notes: emptyToNull(params.notes),
         createdByUserId: actor.actorUserId,
@@ -687,6 +764,7 @@ export class CatalogService {
       categoryId?: string;
       baseUnitId?: string;
       salePriceTnd?: string;
+      approximateCostTnd?: string | null;
       isStockable?: boolean;
       notes?: string;
     },
@@ -729,6 +807,9 @@ export class CatalogService {
           : {}),
         ...(params.salePriceTnd !== undefined
           ? { salePriceTnd: params.salePriceTnd }
+          : {}),
+        ...(params.approximateCostTnd !== undefined
+          ? { approximateCostTnd: params.approximateCostTnd }
           : {}),
         ...(params.isStockable !== undefined
           ? { isStockable: params.isStockable }
@@ -801,6 +882,43 @@ export class CatalogService {
     return product;
   }
 
+  public async getProduct(productId: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: { category: true, baseUnit: true },
+    });
+
+    if (!product) {
+      throw new AppError({
+        statusCode: 404,
+        code: "PRODUCT_NOT_FOUND",
+        message: "Produit introuvable.",
+      });
+    }
+
+    return product;
+  }
+
+  public async getRawMaterial(rawMaterialId: string) {
+    const rawMaterial = await this.prisma.rawMaterial.findUnique({
+      where: { id: rawMaterialId },
+      include: {
+        baseUnit: true,
+        conversions: { include: { unit: true }, orderBy: { createdAt: "asc" } },
+      },
+    });
+
+    if (!rawMaterial) {
+      throw new AppError({
+        statusCode: 404,
+        code: "RAW_MATERIAL_NOT_FOUND",
+        message: "Matière première introuvable.",
+      });
+    }
+
+    return rawMaterial;
+  }
+
   private async findUnitOrThrow(unitId: string) {
     const unit = await this.prisma.unit.findUnique({
       where: {
@@ -812,7 +930,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 404,
         code: "UNIT_NOT_FOUND",
-        message: "Unite introuvable.",
+        message: "Unité introuvable.",
       });
     }
 
@@ -830,7 +948,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 404,
         code: "CATEGORY_NOT_FOUND",
-        message: "Categorie introuvable.",
+        message: "Catégorie introuvable.",
       });
     }
 
@@ -853,7 +971,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 409,
         code: "ACTIVE_CATEGORY_NAME_NOT_UNIQUE",
-        message: "Une categorie active porte deja ce nom.",
+        message: "Une catégorie active porte déjà ce nom.",
       });
     }
   }
@@ -870,7 +988,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 400,
         code: "ACTIVE_UNIT_REQUIRED",
-        message: "Une unite active est requise.",
+        message: "Une unité active est requise.",
       });
     }
   }
@@ -907,7 +1025,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 400,
         code: "ACTIVE_CATEGORY_REQUIRED",
-        message: "Une categorie active est requise.",
+        message: "Une catégorie active est requise.",
       });
     }
   }
@@ -928,7 +1046,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 409,
         code: "ACTIVE_RAW_MATERIAL_NAME_NOT_UNIQUE",
-        message: "Une matiere premiere active porte deja ce nom.",
+        message: "Une matière première active porte déjà ce nom.",
       });
     }
   }
@@ -949,7 +1067,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 409,
         code: "ACTIVE_PRODUCT_NAME_NOT_UNIQUE",
-        message: "Un produit actif porte deja ce nom.",
+        message: "Un produit actif porte déjà ce nom.",
       });
     }
   }
@@ -973,7 +1091,7 @@ export class CatalogService {
       throw new AppError({
         statusCode: 404,
         code: "RAW_MATERIAL_NOT_FOUND",
-        message: "Matiere premiere introuvable.",
+        message: "Matière première introuvable.",
       });
     }
 
@@ -1024,15 +1142,6 @@ export class CatalogService {
   }
 }
 
-export function normalizeName(value: string): string {
-  return value
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-}
-
 function normalizeCode(value: string): string {
   return value.trim().replace(/\s+/g, "_").toLowerCase();
 }
@@ -1051,12 +1160,16 @@ function assertVersionUpdated(count: number): void {
     throw new AppError({
       statusCode: 409,
       code: "VERSION_CONFLICT",
-      message: "Cette fiche a ete modifiee. Rechargez puis reessayez.",
+      message: "Cette fiche a été modifiée. Rechargez puis réessayez.",
     });
   }
 }
 
-function paginated<TItem>(items: TItem[], total: number, params: ListParams) {
+function paginated<TItem>(
+  items: TItem[],
+  total: number,
+  params: { page: number; pageSize: number },
+) {
   return {
     items,
     page: params.page,

@@ -1,0 +1,60 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--card-padding);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.due {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.due strong {
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+}
+
+.fields {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.remaining {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-weight: var(--weight-title);
+}
+
+.remaining strong {
+  font-size: var(--text-xl);
+}
+
+.over {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.change {
+  background: var(--success-soft);
+  color: var(--success);
+}

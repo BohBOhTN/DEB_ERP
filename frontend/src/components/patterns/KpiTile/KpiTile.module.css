@@ -1,0 +1,147 @@
+.root {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--card-padding);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.link:hover {
+  border-color: var(--border-strong);
+}
+
+.link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.featured {
+  background: var(--bg-inverse);
+  border-color: transparent;
+  border-radius: var(--radius-xl);
+  color: var(--text-inverse);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.label {
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: var(--weight-label);
+  color: var(--text-secondary);
+}
+
+.featured .label {
+  color: var(--text-inverse);
+  opacity: 0.85;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.icon > svg {
+  width: 20px;
+  height: 20px;
+}
+
+.featured .icon {
+  background: var(--accent);
+  color: var(--text-inverse);
+}
+
+.valueRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/* A figure never breaks inside the number: it scales with the tile width
+   (2-up on phones, 4-up on wide screens) between the xl and 3xl sizes. */
+.value {
+  font-size: clamp(var(--text-xl), 13cqi, var(--text-3xl));
+  line-height: 1.15;
+  font-weight: var(--weight-kpi);
+  letter-spacing: var(--tracking-title);
+  white-space: nowrap;
+}
+
+.unit {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-title);
+  color: var(--text-secondary);
+}
+
+.featured .unit {
+  color: var(--text-inverse);
+  opacity: 0.85;
+}
+
+.badge {
+  margin-left: auto;
+}
+
+.bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+
+.delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: var(--weight-title);
+  color: var(--text-secondary);
+}
+
+.delta > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.good {
+  color: var(--success);
+}
+
+.bad {
+  color: var(--danger);
+}
+
+.featured .good,
+.featured .bad,
+.featured .delta {
+  color: var(--text-inverse);
+}
+
+.note {
+  color: var(--text-secondary);
+}
+
+.featured .note {
+  color: var(--text-inverse);
+  opacity: 0.85;
+}

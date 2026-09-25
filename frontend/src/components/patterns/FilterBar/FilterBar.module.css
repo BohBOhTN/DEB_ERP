@@ -1,0 +1,45 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.searchRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.search {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.desktopFilters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+.filters > * {
+  min-width: 160px;
+}
+
+@media (max-width: 599px) {
+  .filters {
+    flex-direction: column;
+  }
+
+  .filters > * {
+    width: 100%;
+  }
+}

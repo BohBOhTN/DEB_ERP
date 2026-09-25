@@ -1,0 +1,36 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  font-weight: var(--weight-title);
+  color: var(--text-inverse);
+  letter-spacing: 0.02em;
+}
+
+.sm {
+  width: 28px;
+  height: 28px;
+  font-size: var(--text-xs);
+}
+
+.md {
+  width: 36px;
+  height: 36px;
+  font-size: var(--text-sm);
+}
+
+.lg {
+  width: 48px;
+  height: 48px;
+  font-size: var(--text-base);
+}
+
+.navy {
+  background: var(--primary);
+}
+
+.gold {
+  background: var(--accent);
+}

@@ -195,6 +195,7 @@ interface UpdateArgs<TData> {
 }
 
 interface FakeTransactionClient {
+  $queryRawUnsafe: (...args: unknown[]) => Promise<Array<{ nextval: bigint }>>;
   purchase: {
     findUnique: (args: FindUniqueArgs) => Promise<HydratedPurchase | null>;
     update: (
@@ -277,7 +278,9 @@ class TransactionalPrismaDouble {
 }
 
 function makeTransactionClient(store: Store): FakeTransactionClient {
+  let sequence = 0;
   return {
+    $queryRawUnsafe: async () => [{ nextval: BigInt(++sequence) }],
     purchase: {
       findUnique: async (args) => hydratePurchase(store, args.where.id ?? ""),
       update: async (args) => {

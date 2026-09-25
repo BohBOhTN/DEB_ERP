@@ -6,45 +6,64 @@ import { requirePermission } from "../access/permission.middleware.js";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
-import { ok } from "../../shared/apiResponse.js";
+import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
+import {
+  dateRangeFields,
+  pageFields,
+  searchFields,
+  sortField,
+  withSearch,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { ProcurementService } from "./procurement.service.js";
 
-const listQuerySchema = z.object({
-  search: z.string().trim().optional(),
+export const listQuerySchema = z.object({
+  sort: sortField(["name", "createdAt"]),
+  ...searchFields,
   isActive: z
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
-const purchaseListQuerySchema = z.object({
+export const purchaseListQuerySchema = z.object({
+  sort: sortField(["purchaseDate", "totalTnd", "dueDate"]),
   supplierId: z.string().trim().min(1).optional(),
   status: z.nativeEnum(PurchaseStatus).optional(),
   paymentTerms: z.nativeEnum(PurchasePaymentTerms).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  rawMaterialId: z.string().trim().min(1).optional(),
+  ...dateRangeFields,
   dueState: z.enum(["OVERDUE", "UPCOMING"]).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
-const supplierBalanceQuerySchema = z.object({
+export const supplierBalanceQuerySchema = z.object({
   dueBefore: z.coerce.date().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...searchFields,
+  sort: z.enum(["name", "balance"]).optional(),
+  minBalance: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d{1,3})?$/)
+    .optional(),
+  ...pageFields,
 });
 
-const supplierPaymentListQuerySchema = z.object({
+export const statementQuerySchema = z.object({
+  cursor: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  ...dateRangeFields,
+});
+
+export const supplierPaymentListQuerySchema = z.object({
+  sort: sortField(["paidAt", "amountTnd"]),
   supplierId: z.string().trim().min(1).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  ...pageFields,
 });
 
-const createSupplierSchema = z.object({
+export const createSupplierSchema = z.object({
   name: z.string().trim().min(1),
   phone: z.string().optional(),
   address: z.string().optional(),
@@ -52,7 +71,7 @@ const createSupplierSchema = z.object({
   notes: z.string().optional(),
 });
 
-const updateSupplierSchema = z.object({
+export const updateSupplierSchema = z.object({
   version: z.number().int().positive(),
   name: z.string().trim().min(1).optional(),
   phone: z.string().optional(),
@@ -72,7 +91,7 @@ const moneyTnd = z
   .trim()
   .regex(/^\d+(\.\d{1,3})?$/);
 
-const createPurchaseSchema = z.object({
+export const createPurchaseSchema = z.object({
   supplierId: z.string().trim().min(1),
   purchaseDate: z.coerce.date(),
   supplierReference: z.string().optional(),
@@ -92,11 +111,15 @@ const createPurchaseSchema = z.object({
     .min(1),
 });
 
-const cancelPurchaseSchema = z.object({
+export const cancelPurchaseSchema = z.object({
   reason: z.string().trim().min(3),
 });
 
-const createSupplierPaymentSchema = z.object({
+export const reversePaymentSchema = z.object({
+  reason: z.string().trim().min(3),
+});
+
+export const createSupplierPaymentSchema = z.object({
   supplierId: z.string().trim().min(1),
   paidAt: z.coerce.date(),
   amountTnd: moneyTnd,
@@ -130,9 +153,9 @@ export function procurementRouter(params: {
     requirePermission("suppliers.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const result = await params.procurementService.listSuppliers(query);
-        response.json(ok({ suppliers: result }, getCorrelationId(response)));
+        response.json(okFor(response, { suppliers: result }));
       } catch (error) {
         next(error);
       }
@@ -149,7 +172,7 @@ export function procurementRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok({ supplier }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { supplier }));
       } catch (error) {
         next(error);
       }
@@ -167,7 +190,7 @@ export function procurementRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(ok({ supplier }, getCorrelationId(response)));
+        response.json(okFor(response, { supplier }));
       } catch (error) {
         next(error);
       }
@@ -181,7 +204,7 @@ export function procurementRouter(params: {
       try {
         const query = purchaseListQuerySchema.parse(request.query);
         const result = await params.procurementService.listPurchases(query);
-        response.json(ok({ purchases: result }, getCorrelationId(response)));
+        response.json(okFor(response, { purchases: result }));
       } catch (error) {
         next(error);
       }
@@ -198,7 +221,25 @@ export function procurementRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(ok({ purchase }, getCorrelationId(response)));
+        response.status(201).json(okFor(response, { purchase }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.patch(
+    "/purchases/:purchaseId",
+    requirePermission("purchases.create"),
+    async (request, response, next) => {
+      try {
+        const body = createPurchaseSchema.parse(request.body);
+        const purchase = await params.procurementService.updateDraftPurchase(
+          parseRouteParam(request.params.purchaseId),
+          body,
+          actorFromResponse(response),
+        );
+        response.json(okFor(response, { purchase }));
       } catch (error) {
         next(error);
       }
@@ -217,7 +258,7 @@ export function procurementRouter(params: {
           },
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        sendCommandResult(response, 201, result);
       } catch (error) {
         next(error);
       }
@@ -238,7 +279,7 @@ export function procurementRouter(params: {
           },
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        sendCommandResult(response, 201, result);
       } catch (error) {
         next(error);
       }
@@ -250,12 +291,12 @@ export function procurementRouter(params: {
     requirePermission("supplier_balances.view"),
     async (request, response, next) => {
       try {
-        const query = supplierBalanceQuerySchema.parse(request.query);
+        const query = withSearch(
+          supplierBalanceQuerySchema.parse(request.query),
+        );
         const result =
           await params.procurementService.listSupplierBalances(query);
-        response.json(
-          ok({ supplierBalances: result }, getCorrelationId(response)),
-        );
+        response.json(okFor(response, { supplierBalances: result }));
       } catch (error) {
         next(error);
       }
@@ -269,8 +310,9 @@ export function procurementRouter(params: {
       try {
         const statement = await params.procurementService.getSupplierStatement(
           parseRouteParam(request.params.supplierId),
+          statementQuerySchema.parse(request.query),
         );
-        response.json(ok({ statement }, getCorrelationId(response)));
+        response.json(okFor(response, { statement }));
       } catch (error) {
         next(error);
       }
@@ -285,9 +327,7 @@ export function procurementRouter(params: {
         const query = supplierPaymentListQuerySchema.parse(request.query);
         const result =
           await params.procurementService.listSupplierPayments(query);
-        response.json(
-          ok({ supplierPayments: result }, getCorrelationId(response)),
-        );
+        response.json(okFor(response, { supplierPayments: result }));
       } catch (error) {
         next(error);
       }
@@ -307,7 +347,58 @@ export function procurementRouter(params: {
           },
           actorFromResponse(response),
         );
-        response.status(201).json(ok(result, getCorrelationId(response)));
+        sendCommandResult(response, 201, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/supplier-payments/:paymentId/reverse",
+    requirePermission("supplier_payments.create"),
+    async (request, response, next) => {
+      try {
+        const body = reversePaymentSchema.parse(request.body);
+        const result = await params.procurementService.reverseSupplierPayment(
+          parseRouteParam(request.params.paymentId),
+          {
+            idempotencyKey: readIdempotencyKey(request.headers),
+            reason: body.reason,
+          },
+          actorFromResponse(response),
+        );
+        sendCommandResult(response, 201, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/suppliers/:supplierId",
+    requirePermission("suppliers.view"),
+    async (request, response, next) => {
+      try {
+        const supplier = await params.procurementService.getSupplier(
+          parseRouteParam(request.params.supplierId),
+        );
+        response.json(okFor(response, { supplier }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/purchases/:purchaseId",
+    requirePermission("purchases.view"),
+    async (request, response, next) => {
+      try {
+        const purchase = await params.procurementService.getPurchase(
+          parseRouteParam(request.params.purchaseId),
+        );
+        response.json(okFor(response, { purchase }));
       } catch (error) {
         next(error);
       }
@@ -331,7 +422,7 @@ function parseRouteParam(value: string | string[] | undefined): string {
     throw new AppError({
       statusCode: 400,
       code: "VALIDATION_ERROR",
-      message: "Les donnees saisies sont invalides.",
+      message: "Les données saisies sont invalides.",
     });
   }
 
@@ -349,7 +440,7 @@ function readIdempotencyKey(headers: IncomingHttpHeaders): string {
     throw new AppError({
       statusCode: 400,
       code: "IDEMPOTENCY_KEY_REQUIRED",
-      message: "Une cle d'idempotence est requise.",
+      message: "Une clé d'idempotence est requise.",
     });
   }
 
