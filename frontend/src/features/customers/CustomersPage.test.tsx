@@ -4,7 +4,11 @@ import { RouterProvider } from "react-router-dom";
 import { beforeAll, describe, expect, it } from "vitest";
 import { AppProviders, createQueryClient } from "../../app/providers";
 import { createTestRouter } from "../../app/router";
-import { makeCustomer, makeSale } from "../../test/factories/customers";
+import {
+  makeCustomer,
+  makeOrder,
+  makeSale,
+} from "../../test/factories/customers";
 import { makeUser } from "../../test/factories/user";
 import { authHandlers } from "../../test/msw/handlers/auth";
 import {
@@ -19,6 +23,7 @@ const clerk = makeUser({
     "customers.view",
     "customers.create",
     "customers.update",
+    "customers.deactivate",
     "customer_balances.view",
     "customer_payments.view",
     "customer_payments.create",
@@ -74,6 +79,10 @@ describe("Customers", () => {
       within(dialog).getByLabelText(/Téléphone/),
       "98 765 432",
     );
+    await userEvent.type(
+      within(dialog).getByLabelText(/Adresse/),
+      "12 rue de Carthage, Tunis",
+    );
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Enregistrer" }),
     );
@@ -84,6 +93,7 @@ describe("Customers", () => {
     expect(store.customers.at(-1)).toMatchObject({
       name: "Nadia Ben Salah",
       phone: "98 765 432",
+      address: "12 rue de Carthage, Tunis",
     });
     expect(
       await within(screen.getByRole("table", { name: "Clients" })).findByText(
@@ -271,5 +281,135 @@ describe("Customers", () => {
       ),
     ).toBeInTheDocument();
     expect(store.payments).toHaveLength(0);
+  });
+  // Issue #46: the page figures count orders without the cancelled ones,
+  // the Ventes tab lists the customer's sales with their state, and a
+  // customer who still owes money cannot be deactivated.
+  it("shows the figures without cancelled orders and refuses to deactivate a debtor", async () => {
+    const customer = makeCustomer({ id: "customer-1", name: "Amel Trabelsi" });
+    const store = makeCustomersOrdersStore({
+      customers: [customer],
+      orders: [
+        makeOrder({
+          id: "order-1",
+          reference: "CMD-000001",
+          customer,
+          customerId: customer.id,
+        }),
+        makeOrder({
+          id: "order-2",
+          reference: "CMD-000002",
+          customer,
+          customerId: customer.id,
+          status: "CANCELLED",
+          cancelledAt: "2026-09-23T10:00:00.000Z",
+        }),
+      ],
+    });
+    server.use(...customersOrdersHandlers(store));
+    renderAt("/clients/customer-1");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Amel Trabelsi" }),
+    ).toBeInTheDocument();
+    const tile = (label: string) =>
+      screen
+        .getAllByText(label, { selector: "span" })
+        .map((node) => node.parentElement?.parentElement)
+        .find((node) => node?.querySelector(".tabular-nums"));
+    await waitFor(() =>
+      expect(tile("Commandes")).toHaveTextContent(
+        "1dont 1 ouverte · sans les annulées",
+      ),
+    );
+    expect(tile("Ventes")).toHaveTextContent("130,000 TND");
+    expect(tile("Payé")).toHaveTextContent("0,000 TNDaucun règlement");
+    expect(tile("Dû")).toHaveTextContent("30,000 TND");
+
+    const sales = await screen.findByRole("table", {
+      name: "Ventes du client",
+    });
+    const row = within(sales).getByText("VT-000001").closest("tr");
+    expect(row).toHaveTextContent("30,000 TND");
+    expect(row).toHaveTextContent("Impayée");
+
+    await userEvent.click(screen.getByRole("button", { name: "Désactiver" }));
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "Désactiver Amel Trabelsi ?",
+    });
+    await userEvent.click(
+      within(confirm).getByRole("button", { name: "Désactiver" }),
+    );
+
+    expect(await screen.findByText("Solde en cours")).toBeInTheDocument();
+    expect(store.customers[0]?.isActive).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "Désactiver" }),
+    ).toBeInTheDocument();
+  });
+
+  // Issue #46: a settled customer is deactivated from the list, leaves
+  // the default "Actifs" view and shows as Inactif under the filter.
+  it("deactivates a settled customer from the list and finds it under Inactifs", async () => {
+    const store = makeCustomersOrdersStore();
+    server.use(...customersOrdersHandlers(store));
+    renderAt("/clients");
+
+    const table = await screen.findByRole("table", { name: "Clients" });
+    const row = within(table).getByText("Boulangerie Voisine").closest("tr");
+    expect(row).not.toBeNull();
+    await userEvent.click(
+      within(row as HTMLElement).getByRole("button", { name: "Actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Désactiver" }),
+    );
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "Désactiver Boulangerie Voisine ?",
+    });
+    expect(confirm).toHaveTextContent(
+      "Le client ne sera plus proposé pour une vente à crédit",
+    );
+    await userEvent.click(
+      within(confirm).getByRole("button", { name: "Désactiver" }),
+    );
+
+    expect(await screen.findByText("Client désactivé")).toBeInTheDocument();
+    expect(store.customers[1]).toMatchObject({
+      name: "Boulangerie Voisine",
+      isActive: false,
+    });
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("table", { name: "Clients" })).queryByText(
+          "Boulangerie Voisine",
+        ),
+      ).not.toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Statut" }));
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Inactifs" }),
+    );
+    const inactive = await within(
+      screen.getByRole("table", { name: "Clients" }),
+    ).findByText("Boulangerie Voisine");
+    expect(inactive.closest("tr")).toHaveTextContent("Inactif");
+    expect(
+      within(screen.getByRole("table", { name: "Clients" })).queryByText(
+        "Amel Trabelsi",
+      ),
+    ).not.toBeInTheDocument();
+    await userEvent.click(
+      within(inactive.closest("tr") as HTMLElement).getByRole("button", {
+        name: "Actions",
+      }),
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: "Réactiver" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: "Encaisser un règlement" }),
+    ).not.toBeInTheDocument();
   });
 });

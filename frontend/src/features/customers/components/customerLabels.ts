@@ -27,6 +27,19 @@ export function salePaymentStateLabel(state: SalePaymentState): string {
       : "Impayée";
 }
 
+/// The pill of a sale: its payment state, or "Annulée" once cancelled.
+export function salePill(sale: {
+  status: "POSTED" | "CANCELLED";
+  paymentState: SalePaymentState;
+}): { status: DocumentStatus; label: string } {
+  return sale.status === "CANCELLED"
+    ? { status: "CANCELLED", label: "Annulée" }
+    : {
+        ...salePaymentPill(sale.paymentState),
+        label: salePaymentStateLabel(sale.paymentState),
+      };
+}
+
 /// Keyed by the ledger entry types the backend writes.
 export const customerLedgerLabels: Record<string, string> = {
   SALE_RECEIVABLE: "Vente à crédit",

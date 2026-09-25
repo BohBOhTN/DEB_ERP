@@ -248,6 +248,50 @@ export async function handleCustomersOrders(
     );
   }
 
+  const figuresMatch = /^\/customers\/([^/]+)\/(summary|sales)$/.exec(path);
+  if (figuresMatch) {
+    const customerId = figuresMatch[1] as string;
+    const sales = state.sales.filter((sale) => sale.customerId === customerId);
+    if (figuresMatch[2] === "sales")
+      return (
+        route.fulfill(
+          page(
+            sales.map((sale) => ({
+              ...sale,
+              balanceTnd: sale.remainingDueTnd,
+            })),
+          ),
+        ),
+        true
+      );
+    return (
+      route.fulfill(
+        envelope({
+          summary: {
+            ordersCount: state.orders.filter(
+              (order) =>
+                order.customerId === customerId && order.status !== "CANCELLED",
+            ).length,
+            openOrdersCount: 0,
+            salesCount: sales.length,
+            cancelledSalesCount: 0,
+            salesTotalTnd: money(
+              sales.reduce((sum, sale) => sum + Number(sale.totalTnd), 0),
+            ),
+            paidTnd: money(
+              sales.reduce((sum, sale) => sum + Number(sale.paidAmountTnd), 0),
+            ),
+            dueTnd: money(receivable(state, customerId)),
+            advanceTnd: money(advance(state, customerId)),
+            lastSaleAt: sales[0]?.soldAt ?? null,
+            lastPaymentAt: null,
+          },
+        }),
+      ),
+      true
+    );
+  }
+
   const customerMatch = /^\/customers\/([^/]+)(\/statement)?$/.exec(path);
   if (customerMatch) {
     const customer = state.customers.find((row) => row.id === customerMatch[1]);

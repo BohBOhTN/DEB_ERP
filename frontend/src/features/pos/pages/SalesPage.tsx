@@ -20,10 +20,7 @@ import {
 import { useUrlState } from "../../../lib/hooks/useUrlState.js";
 import { useSessionPermissions } from "../../../app/sessionContext.js";
 import type { SalePaymentState } from "../../customers/customers.api.js";
-import {
-  salePaymentPill,
-  salePaymentStateLabel,
-} from "../../customers/components/customerLabels.js";
+import { salePill } from "../../customers/components/customerLabels.js";
 import type { Sale } from "../pos.api.js";
 import { useSales, useSalesSummary } from "../pos.queries.js";
 import { PosCustomerCombobox } from "../components/PosCustomerCombobox.js";
@@ -44,16 +41,6 @@ const defaults = {
   page: 1,
   pageSize: 25,
 };
-
-/// The pill of a sale: its payment state, or "Annulée" once cancelled.
-export function salePill(sale: Pick<Sale, "status" | "paymentState">) {
-  return sale.status === "CANCELLED"
-    ? { status: "CANCELLED" as const, label: "Annulée" }
-    : {
-        ...salePaymentPill(sale.paymentState),
-        label: salePaymentStateLabel(sale.paymentState),
-      };
-}
 
 /// `/caisse/ventes` (UI-15, issue #44): today's sales by default with their
 /// figures above, the shared period filter, a search, the paid state, and

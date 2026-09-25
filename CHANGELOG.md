@@ -31,6 +31,12 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
 
 ### Fixed
 
+- Issue #46, Clients: a customer is deactivated and reactivated under the
+  new `customers.deactivate` permission, never deleted, and only once
+  settled; the customer page shows orders without the cancelled ones,
+  sales, paid and due, and pages the customer's sales with their state;
+  the list has an activity filter and row actions; the form captures the
+  address and the tax identifier; tabs follow the viewer's permissions.
 - Issue #44, Ventes: a KPI row, the period filter, a search and a status
   filter on the sales list; a sale can be cancelled under the new
   `pos.cancel_sale` permission with its stock, receivable and cash

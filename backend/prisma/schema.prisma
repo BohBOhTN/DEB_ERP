@@ -621,6 +621,7 @@ model Sale {
   @@index([postedByUserId])
   @@index([sessionId, postedAt])
   @@index([status, soldAt])
+  @@index([customerId, status, soldAt])
   @@map("sales")
 }
 
@@ -742,6 +743,7 @@ model CustomerLedgerEntry {
   @@index([balanceKind])
   @@index([occurredAt])
   @@index([customerId, balanceKind])
+  @@index([customerId, occurredAt])
   @@map("customer_ledger_entries")
 }
 
