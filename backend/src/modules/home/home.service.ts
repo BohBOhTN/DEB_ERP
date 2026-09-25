@@ -1,17 +1,20 @@
 import {
   CustomerLedgerBalanceKind,
+  CustomerOrderAdvanceMovement,
   CustomerOrderStatus,
   DistributorDispatchStatus,
   PosSessionStatus,
   Prisma,
   PurchasePaymentTerms,
   PurchaseStatus,
+  SalePaymentMovement,
   SaleStatus,
   ExpenseStatus,
   type PrismaClient,
 } from "@prisma/client";
 import { sumOrZero } from "../../shared/ledger.js";
 import {
+  businessDateOf,
   endOfBusinessDay,
   startOfBusinessDay,
 } from "../../shared/listQuery.js";
@@ -34,13 +37,13 @@ export class HomeService {
   public constructor(private readonly prisma: PrismaClient) {}
 
   public async getSummary(params: HomeSummaryParams) {
-    const day = params.date ?? todayInTunis();
+    const now = new Date();
+    const day = params.date ?? businessDateOf(now);
     const dayStart = startOfBusinessDay(day);
     const dayEnd = endOfBusinessDay(day);
     const previousStart = new Date(dayStart.getTime() - dayMs);
     const previousEnd = new Date(dayStart.getTime() - 1);
     const can = (key: string) => params.permissions.has(key);
-    const now = new Date();
 
     const [
       sales,
@@ -66,7 +69,9 @@ export class HomeService {
       can("supplier_balances.view") ? this.payablesBlock(now) : null,
       can("orders.view") ? this.ordersBlock(dayStart, dayEnd, now) : null,
       can("inventory.view") ? this.stockBlock() : null,
-      can("expenses.view") ? this.expensesBlock(now) : null,
+      can("expenses.view")
+        ? this.expensesBlock(dayStart, dayEnd, previousStart, previousEnd)
+        : null,
       can("distribution.custody.view") ? this.custodyBlock() : null,
       can("audit.view") ? this.recentBlock() : null,
     ]);
@@ -86,30 +91,87 @@ export class HomeService {
     };
   }
 
+  /// Sales of the day and of the day before. `cashTnd` is the drawer's
+  /// cash of the day, the V1 formula (source of truth section 11.1): sale
+  /// receipts less refunds, order advances received less refunded, and the
+  /// règlements taken at a till less those reversed at a till, each dated
+  /// by the moment the money moved.
   private async salesBlock(
     dayStart: Date,
     dayEnd: Date,
     previousStart: Date,
     previousEnd: Date,
   ) {
+    const between = (from: Date, to: Date) => ({ gte: from, lte: to });
     const aggregate = (from: Date, to: Date) =>
       this.prisma.sale.aggregate({
-        where: { status: SaleStatus.POSTED, soldAt: { gte: from, lte: to } },
+        where: { status: SaleStatus.POSTED, soldAt: between(from, to) },
         _count: { _all: true },
-        _sum: { totalTnd: true, paidAmountTnd: true, remainingDueTnd: true },
+        _sum: { totalTnd: true, remainingDueTnd: true },
       });
-    const [today, previous] = await Promise.all([
+    const cash = async (from: Date, to: Date) => {
+      const [salePayments, advances, tillPayments, tillReversals] =
+        await Promise.all([
+          this.prisma.salePayment.groupBy({
+            by: ["movement"],
+            where: { paidAt: between(from, to) },
+            _sum: { amountTnd: true },
+          }),
+          this.prisma.customerOrderAdvance.groupBy({
+            by: ["movement"],
+            where: { paidAt: between(from, to) },
+            _sum: { amountTnd: true },
+          }),
+          this.prisma.customerPayment.aggregate({
+            where: { sessionId: { not: null }, paidAt: between(from, to) },
+            _sum: { amountTnd: true },
+          }),
+          this.prisma.customerPayment.aggregate({
+            where: {
+              reversedInSessionId: { not: null },
+              reversedAt: between(from, to),
+            },
+            _sum: { amountTnd: true },
+          }),
+        ]);
+      const of = <T extends string>(
+        rows: Array<{
+          movement: T;
+          _sum: { amountTnd: Prisma.Decimal | null };
+        }>,
+        movement: T,
+      ) =>
+        sumOrZero(
+          rows.find((row) => row.movement === movement)?._sum.amountTnd,
+        );
+
+      return of(salePayments, SalePaymentMovement.RECEIPT)
+        .minus(of(salePayments, SalePaymentMovement.REFUND))
+        .plus(of(advances, CustomerOrderAdvanceMovement.RECEIPT))
+        .minus(of(advances, CustomerOrderAdvanceMovement.REFUND))
+        .plus(sumOrZero(tillPayments._sum.amountTnd))
+        .minus(sumOrZero(tillReversals._sum.amountTnd));
+    };
+    const [today, previous, todayCash, previousCash] = await Promise.all([
       aggregate(dayStart, dayEnd),
       aggregate(previousStart, previousEnd),
+      cash(dayStart, dayEnd),
+      cash(previousStart, previousEnd),
     ]);
-    const block = (row: Awaited<ReturnType<typeof aggregate>>) => ({
+    const block = (
+      row: Awaited<ReturnType<typeof aggregate>>,
+      cashTnd: Prisma.Decimal,
+    ) => ({
       count: row._count._all,
       totalTnd: sumOrZero(row._sum.totalTnd).toFixed(3),
-      cashTnd: sumOrZero(row._sum.paidAmountTnd).toFixed(3),
+      cashTnd: cashTnd.toFixed(3),
       creditTnd: sumOrZero(row._sum.remainingDueTnd).toFixed(3),
     });
 
-    return { today: block(today), previousDay: block(previous) };
+    return {
+      today: block(today, todayCash),
+      previousDay: block(previous, previousCash),
+    };
   }
 
   private async openSessionBlock() {
@@ -294,22 +356,33 @@ export class HomeService {
     };
   }
 
-  private async expensesBlock(now: Date) {
-    const monthStart = startOfBusinessDay(
-      `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`,
-    );
-    const total = await this.prisma.expense.aggregate({
-      where: {
-        status: ExpenseStatus.POSTED,
-        expenseDate: { gte: monthStart, lte: now },
-      },
-      _sum: { amountTnd: true },
-      _count: { _all: true },
-    });
+  /// Posted expenses dated inside the selected business day (issue #42),
+  /// on the same Tunis boundaries as the sales, with the day before for
+  /// the tile's comparison.
+  private async expensesBlock(
+    dayStart: Date,
+    dayEnd: Date,
+    previousStart: Date,
+    previousEnd: Date,
+  ) {
+    const aggregate = (from: Date, to: Date) =>
+      this.prisma.expense.aggregate({
+        where: {
+          status: ExpenseStatus.POSTED,
+          expenseDate: { gte: from, lte: to },
+        },
+        _sum: { amountTnd: true },
+        _count: { _all: true },
+      });
+    const [today, previous] = await Promise.all([
+      aggregate(dayStart, dayEnd),
+      aggregate(previousStart, previousEnd),
+    ]);
 
     return {
-      monthTnd: sumOrZero(total._sum.amountTnd).toFixed(3),
-      monthCount: total._count._all,
+      dayTnd: sumOrZero(today._sum.amountTnd).toFixed(3),
+      dayCount: today._count._all,
+      previousDayTnd: sumOrZero(previous._sum.amountTnd).toFixed(3),
     };
   }
 
@@ -340,13 +413,4 @@ export class HomeService {
       actor: event.actor,
     }));
   }
-}
-
-function todayInTunis(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Africa/Tunis",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
 }
