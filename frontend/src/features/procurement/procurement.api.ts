@@ -94,6 +94,9 @@ export interface SupplierPayment {
   notes: string | null;
   supplier: Supplier;
   allocations: SupplierPaymentAllocation[];
+  /// Set when the payment was reversed; its ledger effect is compensated.
+  reversedAt: string | null;
+  reversalReason: string | null;
 }
 
 export interface SupplierBalanceRow {
@@ -333,14 +336,38 @@ export interface SupplierPaymentInput {
 /// The command answers without the supplier object the list rows carry.
 export type SupplierPaymentCreated = Omit<SupplierPayment, "supplier">;
 
+/// The server completes the allocations (the amount left unallocated goes
+/// to the oldest open purchases), so the answer's allocations are what the
+/// payment settled.
 export async function createSupplierPayment(
   input: SupplierPaymentInput,
   idempotencyKey: string,
 ): Promise<SupplierPaymentCreated> {
+  const result = await apiClient.post<{
+    payment: Omit<SupplierPaymentCreated, "allocations">;
+    allocations: Array<{ purchaseId: string; amountTnd: string }>;
+  }>("/procurement/supplier-payments", input, { idempotencyKey });
+
+  return {
+    ...result.payment,
+    allocations: result.allocations.map((allocation) => ({
+      id: `${result.payment.id}:${allocation.purchaseId}`,
+      paymentId: result.payment.id,
+      purchaseId: allocation.purchaseId,
+      amountTnd: allocation.amountTnd,
+    })),
+  };
+}
+
+export async function reverseSupplierPayment(
+  paymentId: string,
+  reason: string,
+  idempotencyKey: string,
+): Promise<SupplierPaymentCreated> {
   return (
     await apiClient.post<{ payment: SupplierPaymentCreated }>(
-      "/procurement/supplier-payments",
-      input,
+      `/procurement/supplier-payments/${paymentId}/reverse`,
+      { reason },
       { idempotencyKey },
     )
   ).payment;

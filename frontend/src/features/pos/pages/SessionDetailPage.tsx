@@ -120,6 +120,11 @@ export function SessionDetailPage() {
                 numeric: true,
               },
               {
+                label: "Règlements clients annulés",
+                value: formatMoney(totals.customerPaymentReversalsTnd),
+                numeric: true,
+              },
+              {
                 label: "Espèces attendues",
                 value: formatMoney(expected),
                 numeric: true,

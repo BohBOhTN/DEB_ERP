@@ -1,4 +1,4 @@
-import { Banknote, Pencil, Plus } from "lucide-react";
+import { Banknote, MoreHorizontal, Pencil, Plus, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
@@ -8,6 +8,10 @@ import {
 import { KeyValueList } from "../../../components/patterns/KeyValueList/KeyValueList.js";
 import { PageHeader } from "../../../components/patterns/PageHeader/PageHeader.js";
 import { PermissionGate } from "../../../components/patterns/PermissionGate/PermissionGate.js";
+import { ReversePaymentDialog } from "../../../components/patterns/ReversePaymentDialog/ReversePaymentDialog.js";
+import { DropdownMenu } from "../../../components/ui/DropdownMenu/DropdownMenu.js";
+import { IconButton } from "../../../components/ui/IconButton/IconButton.js";
+import { useToast } from "../../../components/ui/Toast/useToast.js";
 import { Button } from "../../../components/ui/Button/Button.js";
 import { Card, CardHeader } from "../../../components/ui/Card/Card.js";
 import { ErrorState } from "../../../components/ui/ErrorState/ErrorState.js";
@@ -28,6 +32,7 @@ import {
   useCustomer,
   useCustomerPayments,
   useCustomerStatementPages,
+  useReverseCustomerPayment,
 } from "../customers.queries.js";
 import { salePaymentPill } from "../components/customerLabels.js";
 import { CustomerFormDialog } from "../components/CustomerFormDialog.js";
@@ -339,7 +344,11 @@ function CustomerOrdersTab({ customerId }: { customerId: string }) {
 }
 
 function CustomerPaymentsTab({ customerId }: { customerId: string }) {
+  const permissions = useSessionPermissions();
+  const toast = useToast();
   const [page, setPage] = useState(1);
+  const [reversing, setReversing] = useState<CustomerPayment | null>(null);
+  const reverse = useReverseCustomerPayment();
   const query = useCustomerPayments({
     page,
     pageSize: 10,
@@ -370,40 +379,106 @@ function CustomerPaymentsTab({ customerId }: { customerId: string }) {
       header: "Référence",
       accessorFn: (row) => row.reference ?? "—",
     },
+    {
+      id: "state",
+      header: "État",
+      cell: ({ row }) =>
+        row.original.reversedAt ? (
+          <StatusPill status="CANCELLED" label="Annulé" />
+        ) : (
+          <StatusPill status="POSTED" label="Encaissé" />
+        ),
+    },
   ];
 
   return (
-    <DataTable<CustomerPayment>
-      label="Règlements du client"
-      columns={columns}
-      data={query.data?.items ?? []}
-      total={query.data?.total ?? 0}
-      page={page}
-      pageSize={10}
-      onChange={(change) => change.page && setPage(change.page)}
-      loading={query.isPending}
-      error={query.error}
-      onRetry={() => void query.refetch()}
-      empty={{
-        title: "Aucun règlement",
-        description: "Les règlements de ce client apparaîtront ici.",
-      }}
-      getRowId={(row) => row.id}
-      mobileCard={(row) => (
-        <>
-          <span className={styles.cardTop}>
-            <strong className="tabular-nums">
-              {formatMoney(row.amountTnd)}
-            </strong>
-            <span className={styles.muted}>{formatDate(row.paidAt)}</span>
-          </span>
-          <span className={styles.muted}>
-            {row.sessionId ? "Encaissé à la caisse" : "Encaissé au bureau"} ·{" "}
-            {row.allocations.length} affectation
-            {row.allocations.length > 1 ? "s" : ""}
-          </span>
-        </>
-      )}
-    />
+    <>
+      <DataTable<CustomerPayment>
+        label="Règlements du client"
+        columns={columns}
+        data={query.data?.items ?? []}
+        total={query.data?.total ?? 0}
+        page={page}
+        pageSize={10}
+        onChange={(change) => change.page && setPage(change.page)}
+        loading={query.isPending}
+        error={query.error}
+        onRetry={() => void query.refetch()}
+        empty={{
+          title: "Aucun règlement",
+          description: "Les règlements de ce client apparaîtront ici.",
+        }}
+        getRowId={(row) => row.id}
+        mobileCard={(row) => (
+          <>
+            <span className={styles.cardTop}>
+              <strong className="tabular-nums">
+                {formatMoney(row.amountTnd)}
+              </strong>
+              <span className={styles.muted}>{formatDate(row.paidAt)}</span>
+            </span>
+            <span className={styles.muted}>
+              {row.reversedAt
+                ? "Annulé"
+                : row.sessionId
+                  ? "Encaissé à la caisse"
+                  : "Encaissé au bureau"}{" "}
+              · {row.allocations.length} affectation
+              {row.allocations.length > 1 ? "s" : ""}
+            </span>
+          </>
+        )}
+        rowActions={(row) =>
+          row.reversedAt ||
+          !permissions.has("customer_payments.create") ? null : (
+            <DropdownMenu
+              label="Actions de la ligne"
+              trigger={
+                <IconButton
+                  label="Actions"
+                  icon={<MoreHorizontal />}
+                  variant="ghost"
+                  size="sm"
+                />
+              }
+              items={[
+                {
+                  id: "reverse",
+                  label: "Annuler le règlement",
+                  icon: <Undo2 />,
+                  onSelect: () => setReversing(row),
+                },
+              ]}
+            />
+          )
+        }
+      />
+      {reversing ? (
+        <ReversePaymentDialog
+          open
+          kind="reglement"
+          partyName={reversing.customer?.name ?? "ce client"}
+          amountTnd={reversing.amountTnd}
+          paidAt={reversing.paidAt}
+          documents={reversing.allocations
+            .map((allocation) => allocation.sale?.reference)
+            .filter((reference): reference is string => Boolean(reference))}
+          collectedAtTill={Boolean(reversing.sessionId)}
+          onPost={async (idempotencyKey, reason) => {
+            await reverse.mutateAsync({
+              paymentId: reversing.id,
+              reason,
+              idempotencyKey,
+            });
+            toast.success(
+              "Règlement annulé",
+              `${formatMoney(reversing.amountTnd)} remis au solde du client.`,
+            );
+            setReversing(null);
+          }}
+          onClose={() => setReversing(null)}
+        />
+      ) : null}
+    </>
   );
 }

@@ -167,3 +167,20 @@ export function useCreateSupplierPayment() {
     onSuccess: invalidate,
   });
 }
+
+export function useReverseSupplierPayment() {
+  const invalidate = useInvalidateAfter("procurement.payment");
+  return useMutation({
+    mutationFn: (input: {
+      paymentId: string;
+      reason: string;
+      idempotencyKey: string;
+    }) =>
+      api.reverseSupplierPayment(
+        input.paymentId,
+        input.reason,
+        input.idempotencyKey,
+      ),
+    onSuccess: invalidate,
+  });
+}

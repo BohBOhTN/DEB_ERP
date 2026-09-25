@@ -32,6 +32,7 @@ export function expectedCash(
     .plus(totals.advancesReceivedTnd)
     .minus(totals.advancesRefundedTnd)
     .plus(totals.customerPaymentsTnd)
+    .minus(totals.customerPaymentReversalsTnd)
     .toDecimalPlaces(3);
 }
 
@@ -89,6 +90,11 @@ export function CloseSessionDialog({
                 {
                   label: "Règlements clients à la caisse",
                   value: formatMoney(detail.data.totals.customerPaymentsTnd),
+                  numeric: true,
+                },
+                {
+                  label: "Règlements clients annulés",
+                  value: `−${formatMoney(detail.data.totals.customerPaymentReversalsTnd)}`,
                   numeric: true,
                 },
                 {

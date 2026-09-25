@@ -368,6 +368,9 @@ model Purchase {
   dueDate            DateTime?                   @map("due_date")
   totalTnd           Decimal                     @default(0) @map("total_tnd") @db.Decimal(14, 3)
   paidAmountTnd      Decimal                     @default(0) @map("paid_amount_tnd") @db.Decimal(14, 3)
+  /// Projection of the supplier ledger for this purchase (GOV-006): kept in
+  /// step with every payment, allocation and reversal that names it.
+  remainingDueTnd    Decimal                     @default(0) @map("remaining_due_tnd") @db.Decimal(14, 3)
   notes              String?
   postedAt           DateTime?                   @map("posted_at")
   postedByUserId     String?                     @map("posted_by_user_id")
@@ -427,25 +430,31 @@ enum PaymentMethod {
 }
 
 model SupplierPayment {
-  id            String                      @id @default(cuid())
-  supplierId    String                      @map("supplier_id")
-  purchaseId    String?                     @map("purchase_id")
-  amountTnd     Decimal                     @map("amount_tnd") @db.Decimal(14, 3)
-  method        PaymentMethod               @default(CASH)
-  paidAt        DateTime                    @map("paid_at")
-  reference     String?
-  notes         String?
-  actorUserId   String                      @map("actor_user_id")
-  correlationId String?                     @map("correlation_id")
-  createdAt     DateTime                    @default(now()) @map("created_at")
-  supplier      Supplier                    @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  purchase      Purchase?                   @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
-  ledgerEntries SupplierLedgerEntry[]
-  allocations   SupplierPaymentAllocation[]
+  id               String                      @id @default(cuid())
+  supplierId       String                      @map("supplier_id")
+  purchaseId       String?                     @map("purchase_id")
+  amountTnd        Decimal                     @map("amount_tnd") @db.Decimal(14, 3)
+  method           PaymentMethod               @default(CASH)
+  paidAt           DateTime                    @map("paid_at")
+  reference        String?
+  notes            String?
+  actorUserId      String                      @map("actor_user_id")
+  correlationId    String?                     @map("correlation_id")
+  /// A reversed payment stays visible; its ledger effect is compensated by
+  /// PAYMENT_REVERSAL entries written when it was reversed.
+  reversedAt       DateTime?                   @map("reversed_at")
+  reversedByUserId String?                     @map("reversed_by_user_id")
+  reversalReason   String?                     @map("reversal_reason")
+  createdAt        DateTime                    @default(now()) @map("created_at")
+  supplier         Supplier                    @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchase         Purchase?                   @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  ledgerEntries    SupplierLedgerEntry[]
+  allocations      SupplierPaymentAllocation[]
 
   @@index([supplierId])
   @@index([purchaseId])
   @@index([paidAt])
+  @@index([supplierId, paidAt])
   @@map("supplier_payments")
 }
 
@@ -545,26 +554,27 @@ model Customer {
 }
 
 model PosSession {
-  id                String                 @id @default(cuid())
-  terminalId        String                 @map("terminal_id")
-  status            PosSessionStatus       @default(OPEN)
-  openedAt          DateTime               @map("opened_at")
-  openedByUserId    String                 @map("opened_by_user_id")
-  openingCashTnd    Decimal                @map("opening_cash_tnd") @db.Decimal(14, 3)
-  closedAt          DateTime?              @map("closed_at")
-  closedByUserId    String?                @map("closed_by_user_id")
-  countedCashTnd    Decimal?               @map("counted_cash_tnd") @db.Decimal(14, 3)
-  expectedCashTnd   Decimal?               @map("expected_cash_tnd") @db.Decimal(14, 3)
-  cashDifferenceTnd Decimal?               @map("cash_difference_tnd") @db.Decimal(14, 3)
-  notes             String?
-  correlationId     String?                @map("correlation_id")
-  createdAt         DateTime               @default(now()) @map("created_at")
-  updatedAt         DateTime               @updatedAt @map("updated_at")
-  terminal          PosTerminal            @relation(fields: [terminalId], references: [id], onDelete: Restrict)
-  sales             Sale[]
-  payments          SalePayment[]
-  orderAdvances     CustomerOrderAdvance[]
-  customerPayments  CustomerPayment[]
+  id                       String                 @id @default(cuid())
+  terminalId               String                 @map("terminal_id")
+  status                   PosSessionStatus       @default(OPEN)
+  openedAt                 DateTime               @map("opened_at")
+  openedByUserId           String                 @map("opened_by_user_id")
+  openingCashTnd           Decimal                @map("opening_cash_tnd") @db.Decimal(14, 3)
+  closedAt                 DateTime?              @map("closed_at")
+  closedByUserId           String?                @map("closed_by_user_id")
+  countedCashTnd           Decimal?               @map("counted_cash_tnd") @db.Decimal(14, 3)
+  expectedCashTnd          Decimal?               @map("expected_cash_tnd") @db.Decimal(14, 3)
+  cashDifferenceTnd        Decimal?               @map("cash_difference_tnd") @db.Decimal(14, 3)
+  notes                    String?
+  correlationId            String?                @map("correlation_id")
+  createdAt                DateTime               @default(now()) @map("created_at")
+  updatedAt                DateTime               @updatedAt @map("updated_at")
+  terminal                 PosTerminal            @relation(fields: [terminalId], references: [id], onDelete: Restrict)
+  sales                    Sale[]
+  payments                 SalePayment[]
+  orderAdvances            CustomerOrderAdvance[]
+  customerPayments         CustomerPayment[]      @relation("CustomerPaymentSession")
+  reversedCustomerPayments CustomerPayment[]      @relation("CustomerPaymentReversalSession")
 
   @@index([terminalId])
   @@index([status])
@@ -648,28 +658,38 @@ model SalePayment {
 }
 
 model CustomerPayment {
-  id            String                      @id @default(cuid())
-  customerId    String                      @map("customer_id")
+  id                  String                      @id @default(cuid())
+  customerId          String                      @map("customer_id")
   /// Set only when the money was taken at the till, so the POS close can
   /// reconcile the drawer against what actually passed through it. A
   /// back-office payment leaves this null and never touches the session.
-  sessionId     String?                     @map("session_id")
-  amountTnd     Decimal                     @map("amount_tnd") @db.Decimal(14, 3)
-  method        PaymentMethod               @default(CASH)
-  paidAt        DateTime                    @map("paid_at")
-  reference     String?
-  notes         String?
-  actorUserId   String                      @map("actor_user_id")
-  correlationId String?                     @map("correlation_id")
-  createdAt     DateTime                    @default(now()) @map("created_at")
-  customer      Customer                    @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  session       PosSession?                 @relation(fields: [sessionId], references: [id], onDelete: Restrict)
-  ledgerEntries CustomerLedgerEntry[]
-  allocations   CustomerPaymentAllocation[]
+  sessionId           String?                     @map("session_id")
+  amountTnd           Decimal                     @map("amount_tnd") @db.Decimal(14, 3)
+  method              PaymentMethod               @default(CASH)
+  paidAt              DateTime                    @map("paid_at")
+  reference           String?
+  notes               String?
+  actorUserId         String                      @map("actor_user_id")
+  correlationId       String?                     @map("correlation_id")
+  /// A reversed payment stays visible; its ledger effect is compensated by
+  /// PAYMENT_REVERSAL entries. A règlement taken at the till and reversed
+  /// later leaves the drawer of the session it was reversed in.
+  reversedAt          DateTime?                   @map("reversed_at")
+  reversedByUserId    String?                     @map("reversed_by_user_id")
+  reversalReason      String?                     @map("reversal_reason")
+  reversedInSessionId String?                     @map("reversed_in_session_id")
+  createdAt           DateTime                    @default(now()) @map("created_at")
+  customer            Customer                    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  session             PosSession?                 @relation("CustomerPaymentSession", fields: [sessionId], references: [id], onDelete: Restrict)
+  reversedInSession   PosSession?                 @relation("CustomerPaymentReversalSession", fields: [reversedInSessionId], references: [id], onDelete: Restrict)
+  ledgerEntries       CustomerLedgerEntry[]
+  allocations         CustomerPaymentAllocation[]
 
   @@index([customerId])
   @@index([sessionId])
   @@index([paidAt])
+  @@index([customerId, paidAt])
+  @@index([reversedInSessionId])
   @@map("customer_payments")
 }
 
@@ -1042,22 +1062,28 @@ model DistributorSettlementLine {
 }
 
 model DistributorPayment {
-  id            String                         @id @default(cuid())
-  distributorId String                         @map("distributor_id")
-  amountTnd     Decimal                        @map("amount_tnd") @db.Decimal(14, 3)
-  method        PaymentMethod                  @default(CASH)
-  paidAt        DateTime                       @map("paid_at")
-  reference     String?
-  notes         String?
-  actorUserId   String                         @map("actor_user_id")
-  correlationId String?                        @map("correlation_id")
-  createdAt     DateTime                       @default(now()) @map("created_at")
-  distributor   Distributor                    @relation(fields: [distributorId], references: [id], onDelete: Restrict)
-  allocations   DistributorPaymentAllocation[]
-  ledgerEntries DistributorLedgerEntry[]
+  id               String                         @id @default(cuid())
+  distributorId    String                         @map("distributor_id")
+  amountTnd        Decimal                        @map("amount_tnd") @db.Decimal(14, 3)
+  method           PaymentMethod                  @default(CASH)
+  paidAt           DateTime                       @map("paid_at")
+  reference        String?
+  notes            String?
+  actorUserId      String                         @map("actor_user_id")
+  correlationId    String?                        @map("correlation_id")
+  /// A reversed payment stays visible; its ledger effect is compensated by
+  /// PAYMENT_REVERSAL entries written when it was reversed.
+  reversedAt       DateTime?                      @map("reversed_at")
+  reversedByUserId String?                        @map("reversed_by_user_id")
+  reversalReason   String?                        @map("reversal_reason")
+  createdAt        DateTime                       @default(now()) @map("created_at")
+  distributor      Distributor                    @relation(fields: [distributorId], references: [id], onDelete: Restrict)
+  allocations      DistributorPaymentAllocation[]
+  ledgerEntries    DistributorLedgerEntry[]
 
   @@index([distributorId])
   @@index([paidAt])
+  @@index([distributorId, paidAt])
   @@map("distributor_payments")
 }
 

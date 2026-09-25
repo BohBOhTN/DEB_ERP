@@ -10,6 +10,8 @@ import {
 import { AppError } from "../../shared/appError.js";
 import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
+import { planPaymentAllocations } from "../../shared/paymentAllocation.js";
+import { documentPaymentProjection } from "../../shared/paymentState.js";
 import { nextPurchaseReference } from "../../shared/references.js";
 import {
   balanceOf,
@@ -297,14 +299,13 @@ export class ProcurementService {
             },
           }
         : {}),
-      // Only a posted purchase that is not fully paid can be due. A draft
-      // owes nothing yet and a cancelled one never will.
+      // Only a posted purchase that still owes something can be due. A draft
+      // owes nothing yet, a cancelled one never will, and one paid off later
+      // (its remaining due is a projection of the ledger) is not due either.
       ...(params.dueState
         ? {
             status: PurchaseStatus.POSTED,
-            paymentTerms: {
-              in: [PurchasePaymentTerms.PARTIAL, PurchasePaymentTerms.UNPAID],
-            },
+            remainingDueTnd: { gt: 0 },
             dueDate:
               params.dueState === "OVERDUE" ? { lt: asOf } : { gte: asOf },
           }
@@ -405,6 +406,7 @@ export class ProcurementService {
         dueDate: params.dueDate ?? null,
         totalTnd: total.toFixed(3),
         paidAmountTnd: paidAmount.toFixed(3),
+        remainingDueTnd: total.minus(paidAmount).toFixed(3),
         notes: emptyToNull(params.notes),
         createdByUserId: actor.actorUserId,
         updatedByUserId: actor.actorUserId,
@@ -494,6 +496,7 @@ export class ProcurementService {
           dueDate: params.dueDate ?? null,
           totalTnd: total.toFixed(3),
           paidAmountTnd: paidAmount.toFixed(3),
+          remainingDueTnd: total.minus(paidAmount).toFixed(3),
           notes: emptyToNull(params.notes),
           updatedByUserId: actor.actorUserId,
           lines: {
@@ -706,6 +709,7 @@ export class ProcurementService {
           },
           data: {
             status: PurchaseStatus.CANCELLED,
+            remainingDueTnd: "0.000",
             cancelledAt,
             cancelledByUserId: actor.actorUserId,
             cancellationReason: reason,
@@ -750,20 +754,30 @@ export class ProcurementService {
           },
         });
 
-        if (new Prisma.Decimal(purchase.paidAmountTnd).greaterThan(0)) {
-          const paymentId = purchase.payments[0]?.id;
+        // Every payment applied to the purchase comes back, the one taken at
+        // posting and any later règlement allocated to it, each against its
+        // own payment so the supplier statement still adds up.
+        const appliedPayments = await tx.supplierLedgerEntry.findMany({
+          where: {
+            purchaseId: purchase.id,
+            entryType: SupplierLedgerEntryType.PAYMENT,
+          },
+        });
 
-          await tx.supplierLedgerEntry.create({
-            data: {
+        if (appliedPayments.length > 0) {
+          await tx.supplierLedgerEntry.createMany({
+            data: appliedPayments.map((entry) => ({
               supplierId: purchase.supplierId,
               purchaseId: purchase.id,
-              ...(paymentId ? { paymentId } : {}),
+              paymentId: entry.paymentId,
               entryType: SupplierLedgerEntryType.PAYMENT_REVERSAL,
-              amountTnd: new Prisma.Decimal(purchase.paidAmountTnd).toFixed(3),
+              amountTnd: new Prisma.Decimal(entry.amountTnd)
+                .negated()
+                .toFixed(3),
               occurredAt: cancelledAt,
               actorUserId: actor.actorUserId,
               correlationId: actor.correlationId,
-            },
+            })),
           });
         }
 
@@ -1055,12 +1069,18 @@ export class ProcurementService {
       amountTnd: string;
       reference?: string;
       notes?: string;
+      /// Purchases the client names explicitly. Whatever the amount leaves
+      /// after them is placed on the supplier's other open purchases, oldest
+      /// first, so a payment always settles documents (SUP-016).
       allocations?: SupplierPaymentAllocationInput[];
     },
     actor: ProcurementActor,
   ) {
     const amountTnd = parsePositiveMoney(params.amountTnd);
-    const allocations = params.allocations ?? [];
+    const requested = (params.allocations ?? []).map((allocation) => ({
+      key: allocation.purchaseId,
+      amountTnd: parsePositiveMoney(allocation.amountTnd),
+    }));
 
     return this.runIdempotentCommand(
       `supplier_payment.create.${params.supplierId}`,
@@ -1070,17 +1090,13 @@ export class ProcurementService {
         amountTnd: amountTnd.toFixed(3),
       },
       async (tx) => {
-        const supplier = await tx.supplier.findUnique({
-          where: {
-            id: params.supplierId,
-          },
-        });
+        const supplier = await lockSupplier(tx, params.supplierId);
 
-        if (!supplier) {
+        if (!supplier.isActive) {
           throw new AppError({
-            statusCode: 404,
-            code: "SUPPLIER_NOT_FOUND",
-            message: "Fournisseur introuvable.",
+            statusCode: 400,
+            code: "SUPPLIER_INACTIVE",
+            message: "Ce fournisseur est désactivé.",
           });
         }
 
@@ -1094,7 +1110,7 @@ export class ProcurementService {
           throw new AppError({
             statusCode: 400,
             code: "SUPPLIER_BALANCE_NOT_DUE",
-            message: "Ce fournisseur n'a pas de solde a payer.",
+            message: "Ce fournisseur n'a pas de solde à payer.",
           });
         }
 
@@ -1106,20 +1122,23 @@ export class ProcurementService {
           });
         }
 
-        const allocationRows = await this.validateSupplierPaymentAllocations(
-          {
-            supplierId: params.supplierId,
-            amountTnd,
-            allocations,
-          },
+        const openPurchases = await this.openPurchasesOf(
           tx,
+          params.supplierId,
+          requested.map((allocation) => allocation.key),
         );
+        const plan = planPaymentAllocations({
+          amountTnd,
+          requested,
+          openDocuments: openPurchases,
+          errors: supplierAllocationErrors,
+        });
         const payment = await tx.supplierPayment.create({
           data: {
             supplierId: params.supplierId,
             purchaseId:
-              allocationRows.length === 1
-                ? allocationRows[0]?.purchaseId
+              plan.allocations.length === 1
+                ? (plan.allocations[0]?.key ?? null)
                 : null,
             amountTnd: amountTnd.toFixed(3),
             paidAt: params.paidAt,
@@ -1130,19 +1149,19 @@ export class ProcurementService {
           },
         });
 
-        if (allocationRows.length > 0) {
+        if (plan.allocations.length > 0) {
           await tx.supplierPaymentAllocation.createMany({
-            data: allocationRows.map((allocation) => ({
+            data: plan.allocations.map((allocation) => ({
               paymentId: payment.id,
-              purchaseId: allocation.purchaseId,
+              purchaseId: allocation.key,
               amountTnd: allocation.amountTnd.toFixed(3),
             })),
           });
 
           await tx.supplierLedgerEntry.createMany({
-            data: allocationRows.map((allocation) => ({
+            data: plan.allocations.map((allocation) => ({
               supplierId: params.supplierId,
-              purchaseId: allocation.purchaseId,
+              purchaseId: allocation.key,
               paymentId: payment.id,
               entryType: SupplierLedgerEntryType.PAYMENT,
               amountTnd: allocation.amountTnd.negated().toFixed(3),
@@ -1151,19 +1170,32 @@ export class ProcurementService {
               correlationId: actor.correlationId,
             })),
           });
-        } else {
+        }
+
+        if (plan.unallocatedTnd.greaterThan(0)) {
           await tx.supplierLedgerEntry.create({
             data: {
               supplierId: params.supplierId,
               paymentId: payment.id,
               entryType: SupplierLedgerEntryType.PAYMENT,
-              amountTnd: amountTnd.negated().toFixed(3),
+              amountTnd: plan.unallocatedTnd.negated().toFixed(3),
               occurredAt: params.paidAt,
               actorUserId: actor.actorUserId,
               correlationId: actor.correlationId,
             },
           });
         }
+
+        await this.refreshPurchaseProjections(
+          tx,
+          params.supplierId,
+          plan.allocations.map((allocation) => allocation.key),
+        );
+
+        const allocations = plan.allocations.map((allocation) => ({
+          purchaseId: allocation.key,
+          amountTnd: allocation.amountTnd.toFixed(3),
+        }));
 
         await this.auditWithClient(tx, {
           actor,
@@ -1172,17 +1204,97 @@ export class ProcurementService {
           targetId: payment.id,
           after: {
             payment,
-            allocations: allocationRows,
+            allocations,
           },
         });
 
-        return {
-          payment,
-          allocations: allocationRows.map((allocation) => ({
-            purchaseId: allocation.purchaseId,
-            amountTnd: allocation.amountTnd.toFixed(3),
+        return { payment, allocations };
+      },
+    );
+  }
+
+  /// Undoes a supplier payment recorded by mistake. The payment row stays,
+  /// marked reversed; PAYMENT_REVERSAL entries put the amount back on the
+  /// purchases it had settled.
+  public async reverseSupplierPayment(
+    paymentId: string,
+    params: { idempotencyKey: string; reason: string },
+    actor: ProcurementActor,
+  ) {
+    const reason = requireReason(params.reason);
+
+    return this.runIdempotentCommand(
+      `supplier_payment.reverse.${paymentId}`,
+      params.idempotencyKey,
+      { paymentId, reason },
+      async (tx) => {
+        const payment = await tx.supplierPayment.findUnique({
+          where: { id: paymentId },
+          include: { ledgerEntries: true },
+        });
+
+        if (!payment) {
+          throw new AppError({
+            statusCode: 404,
+            code: "SUPPLIER_PAYMENT_NOT_FOUND",
+            message: "Paiement introuvable.",
+          });
+        }
+
+        if (payment.reversedAt) {
+          throw new AppError({
+            statusCode: 409,
+            code: "PAYMENT_ALREADY_REVERSED",
+            message: "Ce paiement a déjà été annulé.",
+          });
+        }
+
+        await lockSupplier(tx, payment.supplierId);
+        const reversedAt = new Date();
+        const paymentEntries = payment.ledgerEntries.filter(
+          (entry) => entry.entryType === SupplierLedgerEntryType.PAYMENT,
+        );
+
+        await tx.supplierLedgerEntry.createMany({
+          data: paymentEntries.map((entry) => ({
+            supplierId: payment.supplierId,
+            purchaseId: entry.purchaseId,
+            paymentId: payment.id,
+            entryType: SupplierLedgerEntryType.PAYMENT_REVERSAL,
+            amountTnd: new Prisma.Decimal(entry.amountTnd).negated().toFixed(3),
+            occurredAt: reversedAt,
+            actorUserId: actor.actorUserId,
+            correlationId: actor.correlationId,
           })),
-        };
+        });
+
+        const reversed = await tx.supplierPayment.update({
+          where: { id: payment.id },
+          data: {
+            reversedAt,
+            reversedByUserId: actor.actorUserId,
+            reversalReason: reason,
+          },
+        });
+
+        await this.refreshPurchaseProjections(
+          tx,
+          payment.supplierId,
+          paymentEntries
+            .map((entry) => entry.purchaseId)
+            .filter((id): id is string => Boolean(id)),
+        );
+
+        await this.auditWithClient(tx, {
+          actor,
+          action: "supplier_payment.reverse",
+          entity: "supplier_payment",
+          targetId: payment.id,
+          before: payment,
+          after: reversed,
+        });
+
+        return { payment: reversed };
       },
     );
   }
@@ -1545,97 +1657,96 @@ export class ProcurementService {
     return location;
   }
 
-  private async validateSupplierPaymentAllocations(
-    params: {
-      supplierId: string;
-      amountTnd: Prisma.Decimal;
-      allocations: SupplierPaymentAllocationInput[];
-    },
+  /// The supplier's posted purchases that still owe something, oldest
+  /// first: the automatic allocation order. Purchases the client named are
+  /// included even when settled, so a wrong target is reported as exceeding
+  /// that purchase's balance.
+  private async openPurchasesOf(
     client: Prisma.TransactionClient,
+    supplierId: string,
+    namedPurchaseIds: string[],
   ) {
-    if (params.allocations.length === 0) {
+    const totals = await client.supplierLedgerEntry.groupBy({
+      by: ["purchaseId"],
+      where: { supplierId, purchaseId: { not: null } },
+      _sum: { amountTnd: true },
+    });
+    const balances = balancesByKey(
+      totals,
+      (row) => row.purchaseId,
+      (row) => row._sum.amountTnd,
+    );
+    const openIds = new Set([
+      ...[...balances.entries()]
+        .filter(([, balance]) => balance.greaterThan(0))
+        .map(([purchaseId]) => purchaseId),
+      ...namedPurchaseIds,
+    ]);
+
+    if (openIds.size === 0) {
       return [];
-    }
-
-    const allocations = params.allocations.map((allocation) => ({
-      purchaseId: allocation.purchaseId,
-      amountTnd: parsePositiveMoney(allocation.amountTnd),
-    }));
-    const duplicatePurchaseId = findDuplicate(
-      allocations.map((allocation) => allocation.purchaseId),
-    );
-
-    if (duplicatePurchaseId) {
-      throw new AppError({
-        statusCode: 400,
-        code: "DUPLICATE_PAYMENT_ALLOCATION",
-        message: "Une facture ne peut être allouée qu'une seule fois.",
-      });
-    }
-
-    const allocationTotal = sumDecimals(
-      allocations.map((allocation) => allocation.amountTnd),
-      3,
-    );
-
-    if (!allocationTotal.equals(params.amountTnd)) {
-      throw new AppError({
-        statusCode: 400,
-        code: "PAYMENT_ALLOCATION_TOTAL_MISMATCH",
-        message: "Les allocations doivent correspondre au montant payé.",
-      });
     }
 
     const purchases = await client.purchase.findMany({
       where: {
-        id: {
-          in: allocations.map((allocation) => allocation.purchaseId),
-        },
-        supplierId: params.supplierId,
+        id: { in: [...openIds] },
+        supplierId,
         status: PurchaseStatus.POSTED,
       },
+      select: { id: true, purchaseDate: true },
+      orderBy: [{ purchaseDate: "asc" }, { id: "asc" }],
     });
 
-    if (purchases.length !== allocations.length) {
-      throw new AppError({
-        statusCode: 400,
-        code: "POSTED_PURCHASE_ALLOCATION_REQUIRED",
-        message:
-          "Chaque allocation doit viser un achat confirmé du fournisseur.",
-      });
+    return purchases.map((purchase) => ({
+      key: purchase.id,
+      balanceTnd: balanceOf(balances, purchase.id),
+    }));
+  }
+
+  /// GOV-006: a purchase's stored paid amount and remaining due are
+  /// projections of its ledger, rewritten in the same transaction as the
+  /// entries that moved it.
+  private async refreshPurchaseProjections(
+    client: Prisma.TransactionClient,
+    supplierId: string,
+    purchaseIds: string[],
+  ) {
+    const unique = [...new Set(purchaseIds)];
+
+    if (unique.length === 0) {
+      return;
     }
 
-    const purchaseTotals = await client.supplierLedgerEntry.groupBy({
-      by: ["purchaseId"],
-      where: {
-        supplierId: params.supplierId,
-        purchaseId: {
-          in: allocations.map((allocation) => allocation.purchaseId),
-        },
-      },
-      _sum: { amountTnd: true },
-    });
-    const purchaseBalance = balancesByKey(
-      purchaseTotals,
+    const [purchases, totals] = await Promise.all([
+      client.purchase.findMany({
+        where: { id: { in: unique } },
+        select: { id: true, totalTnd: true },
+      }),
+      client.supplierLedgerEntry.groupBy({
+        by: ["purchaseId"],
+        where: { supplierId, purchaseId: { in: unique } },
+        _sum: { amountTnd: true },
+      }),
+    ]);
+    const balances = balancesByKey(
+      totals,
       (row) => row.purchaseId,
       (row) => row._sum.amountTnd,
     );
 
-    for (const allocation of allocations) {
-      if (
-        allocation.amountTnd.greaterThan(
-          balanceOf(purchaseBalance, allocation.purchaseId),
-        )
-      ) {
-        throw new AppError({
-          statusCode: 400,
-          code: "PAYMENT_ALLOCATION_EXCEEDS_PURCHASE_BALANCE",
-          message: "Une allocation dépasse le solde de l'achat.",
-        });
-      }
+    for (const purchase of purchases) {
+      const projection = documentPaymentProjection(
+        purchase.totalTnd,
+        balanceOf(balances, purchase.id),
+      );
+      await client.purchase.update({
+        where: { id: purchase.id },
+        data: {
+          paidAmountTnd: projection.paidAmountTnd,
+          remainingDueTnd: projection.remainingDueTnd,
+        },
+      });
     }
-
-    return allocations;
   }
 
   private runIdempotentCommand<TResponse>(
@@ -1764,19 +1875,6 @@ function startOfToday(): Date {
   );
 }
 
-function findDuplicate(values: string[]): string | null {
-  const seen = new Set<string>();
-
-  for (const value of values) {
-    if (seen.has(value)) {
-      return value;
-    }
-    seen.add(value);
-  }
-
-  return null;
-}
-
 function assertVersionUpdated(count: number): void {
   if (count === 0) {
     throw new AppError({
@@ -1785,6 +1883,44 @@ function assertVersionUpdated(count: number): void {
       message: "Les données ont changé. Actualisez puis réessayez.",
     });
   }
+}
+
+const supplierAllocationErrors = {
+  duplicate: {
+    code: "DUPLICATE_PAYMENT_ALLOCATION",
+    message: "Une facture ne peut être allouée qu'une seule fois.",
+  },
+  unknownDocument: {
+    code: "POSTED_PURCHASE_ALLOCATION_REQUIRED",
+    message: "Chaque allocation doit viser un achat confirmé du fournisseur.",
+  },
+  exceedsBalance: {
+    code: "PAYMENT_ALLOCATION_EXCEEDS_PURCHASE_BALANCE",
+    message: "Une allocation dépasse le solde de l'achat.",
+  },
+};
+
+/// Serializes the payments of one supplier so two payments arriving together
+/// cannot both pass the overpayment check (OD-010).
+async function lockSupplier(
+  client: Prisma.TransactionClient,
+  supplierId: string,
+) {
+  await client.$queryRaw`SELECT "id" FROM "suppliers" WHERE "id" = ${supplierId} FOR UPDATE`;
+
+  const supplier = await client.supplier.findUnique({
+    where: { id: supplierId },
+  });
+
+  if (!supplier) {
+    throw new AppError({
+      statusCode: 404,
+      code: "SUPPLIER_NOT_FOUND",
+      message: "Fournisseur introuvable.",
+    });
+  }
+
+  return supplier;
 }
 
 function requireReason(value: string): string {

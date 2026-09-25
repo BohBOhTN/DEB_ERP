@@ -116,7 +116,10 @@ describe("ProcurementService supplier payments", () => {
       id: "purchase-2",
       supplierId: "supplier-1",
       status: PurchaseStatus.POSTED,
+      purchaseDate: new Date("2026-09-21T08:00:00.000Z"),
       totalTnd: "1.000",
+      paidAmountTnd: "0.000",
+      remainingDueTnd: "1.000",
       dueDate: new Date("2026-09-30T08:00:00.000Z"),
       paymentTerms: PurchasePaymentTerms.UNPAID,
     });
@@ -152,13 +155,200 @@ describe("ProcurementService supplier payments", () => {
   });
 });
 
+function openSecondPurchase(prisma: PaymentPrismaDouble) {
+  prisma.store.purchases.push({
+    id: "purchase-2",
+    supplierId: "supplier-1",
+    status: PurchaseStatus.POSTED,
+    purchaseDate: new Date("2026-09-22T08:00:00.000Z"),
+    totalTnd: "40.000",
+    paidAmountTnd: "0.000",
+    remainingDueTnd: "40.000",
+    dueDate: null,
+    paymentTerms: PurchasePaymentTerms.UNPAID,
+  });
+  prisma.store.supplierLedgerEntries.push({
+    id: "ledger-p2",
+    supplierId: "supplier-1",
+    purchaseId: "purchase-2",
+    paymentId: null,
+    entryType: "PURCHASE_PAYABLE",
+    amountTnd: "40.000",
+  });
+}
+
+describe("ProcurementService payments settle purchases", () => {
+  // SUP-016: a later payment covers one or more posted purchases, oldest
+  // first when the user names none, and each purchase's stored state follows.
+  it("settles the oldest open purchases first when no allocation is named", async () => {
+    const prisma = new PaymentPrismaDouble();
+    openSecondPurchase(prisma);
+    const service = new ProcurementService(prisma as unknown as PrismaClient);
+
+    const result = await service.createSupplierPayment(
+      {
+        idempotencyKey: "auto-1",
+        supplierId: "supplier-1",
+        paidAt: new Date("2026-09-23T08:00:00.000Z"),
+        amountTnd: "160.000",
+      },
+      { actorUserId: "user-1" },
+    );
+
+    expect(result.allocations).toEqual([
+      { purchaseId: "purchase-1", amountTnd: "150.000" },
+      { purchaseId: "purchase-2", amountTnd: "10.000" },
+    ]);
+    expect(prisma.store.purchases[0]).toMatchObject({
+      paidAmountTnd: "250.000",
+      remainingDueTnd: "0.000",
+    });
+    expect(prisma.store.purchases[1]).toMatchObject({
+      paidAmountTnd: "10.000",
+      remainingDueTnd: "30.000",
+    });
+    // Two allocations: the payment row names no single purchase.
+    expect(prisma.store.supplierPayments[0]?.purchaseId).toBeNull();
+  });
+
+  it("completes a partial allocation on the other open purchases", async () => {
+    const prisma = new PaymentPrismaDouble();
+    openSecondPurchase(prisma);
+    const service = new ProcurementService(prisma as unknown as PrismaClient);
+
+    const result = await service.createSupplierPayment(
+      {
+        idempotencyKey: "partial-1",
+        supplierId: "supplier-1",
+        paidAt: new Date("2026-09-23T08:00:00.000Z"),
+        amountTnd: "60.000",
+        allocations: [{ purchaseId: "purchase-2", amountTnd: "40.000" }],
+      },
+      { actorUserId: "user-1" },
+    );
+
+    expect(result.allocations).toEqual([
+      { purchaseId: "purchase-1", amountTnd: "20.000" },
+      { purchaseId: "purchase-2", amountTnd: "40.000" },
+    ]);
+  });
+
+  it("refuses a payment to a deactivated supplier", async () => {
+    const prisma = new PaymentPrismaDouble();
+    const supplier = prisma.store.suppliers[0];
+    if (supplier) supplier.isActive = false;
+    const service = new ProcurementService(prisma as unknown as PrismaClient);
+
+    await expect(
+      service.createSupplierPayment(
+        {
+          idempotencyKey: "inactive-1",
+          supplierId: "supplier-1",
+          paidAt: new Date("2026-09-23T08:00:00.000Z"),
+          amountTnd: "10.000",
+        },
+        { actorUserId: "user-1" },
+      ),
+    ).rejects.toMatchObject({ code: "SUPPLIER_INACTIVE" });
+  });
+
+  it("reverses a payment and restores the purchase it had settled", async () => {
+    const prisma = new PaymentPrismaDouble();
+    const service = new ProcurementService(prisma as unknown as PrismaClient);
+    const created = await service.createSupplierPayment(
+      {
+        idempotencyKey: "to-reverse",
+        supplierId: "supplier-1",
+        paidAt: new Date("2026-09-23T08:00:00.000Z"),
+        amountTnd: "50.000",
+      },
+      { actorUserId: "user-1" },
+    );
+    expect(prisma.store.purchases[0]).toMatchObject({
+      remainingDueTnd: "100.000",
+    });
+
+    const reversed = await service.reverseSupplierPayment(
+      created.payment.id,
+      { idempotencyKey: "reverse-1", reason: "Double saisie" },
+      { actorUserId: "user-2" },
+    );
+
+    expect(reversed.payment).toMatchObject({
+      reversedByUserId: "user-2",
+      reversalReason: "Double saisie",
+    });
+    expect(prisma.store.supplierLedgerEntries.at(-1)).toMatchObject({
+      entryType: "PAYMENT_REVERSAL",
+      purchaseId: "purchase-1",
+      paymentId: created.payment.id,
+      amountTnd: "50.000",
+    });
+    expect(prisma.store.purchases[0]).toMatchObject({
+      paidAmountTnd: "100.000",
+      remainingDueTnd: "150.000",
+    });
+    await expect(
+      service.reverseSupplierPayment(
+        created.payment.id,
+        { idempotencyKey: "reverse-2", reason: "Encore" },
+        { actorUserId: "user-2" },
+      ),
+    ).rejects.toMatchObject({ code: "PAYMENT_ALREADY_REVERSED" });
+  });
+
+  // SUP-012: cancelling a purchase paid partly at posting and partly later
+  // gives every payment back, each against its own payment record.
+  it("cancels a purchase by reversing every payment applied to it", async () => {
+    const prisma = new PaymentPrismaDouble();
+    const service = new ProcurementService(prisma as unknown as PrismaClient);
+    await service.createSupplierPayment(
+      {
+        idempotencyKey: "later-1",
+        supplierId: "supplier-1",
+        paidAt: new Date("2026-09-23T08:00:00.000Z"),
+        amountTnd: "50.000",
+      },
+      { actorUserId: "user-1" },
+    );
+
+    await service.cancelPurchase(
+      "purchase-1",
+      { idempotencyKey: "cancel-1", reason: "Livraison refusée" },
+      { actorUserId: "user-1" },
+    );
+
+    const reversals = prisma.store.supplierLedgerEntries.filter(
+      (entry) => entry.entryType === "PAYMENT_REVERSAL",
+    );
+    expect(
+      reversals.map((entry) => [entry.paymentId, entry.amountTnd]),
+    ).toEqual([
+      ["payment-initial", "100.000"],
+      ["payment-1", "50.000"],
+    ]);
+    const balance = prisma.store.supplierLedgerEntries.reduce(
+      (sum, entry) => sum.plus(entry.amountTnd),
+      new Prisma.Decimal(0),
+    );
+    expect(balance.toFixed(3)).toBe("0.000");
+    expect(prisma.store.purchases[0]).toMatchObject({
+      status: PurchaseStatus.CANCELLED,
+      remainingDueTnd: "0.000",
+    });
+  });
+});
+
 interface PaymentStore {
   suppliers: Array<{ id: string; isActive: boolean; name: string }>;
   purchases: Array<{
     id: string;
     supplierId: string;
     status: PurchaseStatus;
+    purchaseDate: Date;
     totalTnd: string;
+    paidAmountTnd: string;
+    remainingDueTnd: string;
     dueDate: Date | null;
     paymentTerms: PurchasePaymentTerms;
   }>;
@@ -176,6 +366,7 @@ interface PaymentStore {
     purchaseId: string | null;
     amountTnd: string;
     reference?: string | null;
+    reversedAt?: Date | null;
   }>;
   supplierPaymentAllocations: Array<{
     paymentId: string;
@@ -226,15 +417,33 @@ class PaymentPrismaDouble {
 
 function makePaymentTransactionClient(store: PaymentStore) {
   return {
+    $queryRaw: async () => [],
+    stockLocation: {
+      findUnique: async () => ({ id: "location-main", code: "main" }),
+    },
+    inventoryMovement: {
+      createMany: async (args: { data: unknown[] }) => {
+        store.inventoryMovements.push(...args.data);
+        return { count: args.data.length };
+      },
+    },
     supplier: {
       findUnique: async (args: { where: { id: string } }) =>
         store.suppliers.find((supplier) => supplier.id === args.where.id) ??
         null,
     },
     supplierLedgerEntry: {
-      findMany: async (args: { where: { supplierId: string } }) =>
+      findMany: async (args: {
+        where: { supplierId?: string; purchaseId?: string; entryType?: string };
+      }) =>
         store.supplierLedgerEntries.filter(
-          (entry) => entry.supplierId === args.where.supplierId,
+          (entry) =>
+            (args.where.supplierId === undefined ||
+              entry.supplierId === args.where.supplierId) &&
+            (args.where.purchaseId === undefined ||
+              entry.purchaseId === args.where.purchaseId) &&
+            (args.where.entryType === undefined ||
+              entry.entryType === args.where.entryType),
         ),
       // The service sums in SQL; the double mirrors a plain sum and a sum per
       // purchase id.
@@ -250,7 +459,10 @@ function makePaymentTransactionClient(store: PaymentStore) {
       }),
       groupBy: async (args: {
         by: string[];
-        where: { supplierId: string; purchaseId?: { in: string[] } };
+        where: {
+          supplierId: string;
+          purchaseId?: { in: string[] } | { not: null };
+        };
       }) => {
         const groups = new Map<string, Prisma.Decimal>();
         for (const entry of store.supplierLedgerEntries) {
@@ -258,7 +470,8 @@ function makePaymentTransactionClient(store: PaymentStore) {
             entry.supplierId !== args.where.supplierId ||
             (args.where.purchaseId !== undefined &&
               (entry.purchaseId === null ||
-                !args.where.purchaseId.in.includes(entry.purchaseId)))
+                ("in" in args.where.purchaseId &&
+                  !args.where.purchaseId.in.includes(entry.purchaseId))))
           ) {
             continue;
           }
@@ -306,6 +519,30 @@ function makePaymentTransactionClient(store: PaymentStore) {
         store.supplierPayments.push(payment);
         return payment;
       },
+      findUnique: async (args: { where: { id: string } }) => {
+        const payment = store.supplierPayments.find(
+          (row) => row.id === args.where.id,
+        );
+        return payment
+          ? {
+              ...payment,
+              ledgerEntries: store.supplierLedgerEntries.filter(
+                (entry) => entry.paymentId === payment.id,
+              ),
+            }
+          : null;
+      },
+      update: async (args: {
+        where: { id: string };
+        data: Partial<PaymentStore["supplierPayments"][number]>;
+      }) => {
+        const payment = store.supplierPayments.find(
+          (row) => row.id === args.where.id,
+        );
+        if (!payment) throw new Error("missing payment");
+        Object.assign(payment, args.data);
+        return payment;
+      },
     },
     supplierPaymentAllocation: {
       createMany: async (args: {
@@ -319,16 +556,50 @@ function makePaymentTransactionClient(store: PaymentStore) {
       findMany: async (args: {
         where: {
           id: { in: string[] };
-          supplierId: string;
-          status: PurchaseStatus;
+          supplierId?: string;
+          status?: PurchaseStatus;
         };
       }) =>
-        store.purchases.filter(
-          (purchase) =>
-            args.where.id.in.includes(purchase.id) &&
-            purchase.supplierId === args.where.supplierId &&
-            purchase.status === args.where.status,
-        ),
+        store.purchases
+          .filter(
+            (purchase) =>
+              args.where.id.in.includes(purchase.id) &&
+              (args.where.supplierId === undefined ||
+                purchase.supplierId === args.where.supplierId) &&
+              (args.where.status === undefined ||
+                purchase.status === args.where.status),
+          )
+          .sort(
+            (left, right) =>
+              left.purchaseDate.getTime() - right.purchaseDate.getTime(),
+          ),
+      findUnique: async (args: { where: { id: string } }) => {
+        const purchase = store.purchases.find(
+          (row) => row.id === args.where.id,
+        );
+        return purchase
+          ? {
+              ...purchase,
+              supplier: store.suppliers[0],
+              lines: [],
+              payments: store.supplierPayments.filter(
+                (payment) => payment.purchaseId === purchase.id,
+              ),
+              ledgerEntries: [],
+            }
+          : null;
+      },
+      update: async (args: {
+        where: { id: string };
+        data: Partial<PaymentStore["purchases"][number]>;
+      }) => {
+        const purchase = store.purchases.find(
+          (row) => row.id === args.where.id,
+        );
+        if (!purchase) throw new Error("missing purchase");
+        Object.assign(purchase, args.data);
+        return { ...purchase, supplier: store.suppliers[0], lines: [] };
+      },
     },
     auditEvent: {
       create: async (args: { data: { action: string; targetId: string } }) => {
@@ -376,7 +647,10 @@ function createPaymentStore(): PaymentStore {
         id: "purchase-1",
         supplierId: "supplier-1",
         status: PurchaseStatus.POSTED,
+        purchaseDate: new Date("2026-09-20T08:00:00.000Z"),
         totalTnd: "250.000",
+        paidAmountTnd: "100.000",
+        remainingDueTnd: "150.000",
         dueDate: new Date("2026-09-30T08:00:00.000Z"),
         paymentTerms: PurchasePaymentTerms.PARTIAL,
       },

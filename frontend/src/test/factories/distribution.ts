@@ -127,6 +127,8 @@ export function makeDistributorPayment(
     notes: null,
     distributor,
     allocations: [],
+    reversedAt: null,
+    reversalReason: null,
     ...overrides,
   };
 }

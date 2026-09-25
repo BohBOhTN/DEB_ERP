@@ -40,6 +40,9 @@ export interface SessionTotals {
   advancesReceivedTnd: string;
   advancesRefundedTnd: string;
   customerPaymentsTnd: string;
+  /// Till règlements reversed during this session: cash handed back from
+  /// this drawer.
+  customerPaymentReversalsTnd: string;
 }
 
 export interface SessionDetail {

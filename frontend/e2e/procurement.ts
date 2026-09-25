@@ -582,7 +582,18 @@ export async function handleProcurement(
     };
     state.payments.unshift(payment);
     return (
-      route.fulfill(envelope({ payment: { ...payment, supplier } }, 201)),
+      route.fulfill(
+        envelope(
+          {
+            payment: { ...payment, supplier },
+            allocations: payment.allocations.map((allocation) => ({
+              purchaseId: allocation.purchaseId,
+              amountTnd: allocation.amountTnd,
+            })),
+          },
+          201,
+        ),
+      ),
       true
     );
   }

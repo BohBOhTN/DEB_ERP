@@ -28,12 +28,16 @@ import {
   type CustomerPaymentFormOutput,
 } from "../customers.schemas.js";
 import { CustomerCombobox } from "./CustomerCombobox.js";
+import { settledSummary } from "../../../components/patterns/AllocationTable/settledSummary.js";
 
 export interface CustomerPaymentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /// Preselected from the customer detail; the picker is then hidden.
   customer?: { id: string; name: string } | null;
+  /// Opened from a sale ("Encaisser le reste"): that sale's remaining due
+  /// fills the amount and its allocation.
+  saleId?: string;
   onSaved?: (payment: CustomerPaymentCreated) => void;
 }
 
@@ -60,6 +64,7 @@ export function CustomerPaymentDialog({
   open,
   onOpenChange,
   customer = null,
+  saleId,
   onSaved,
 }: CustomerPaymentDialogProps) {
   const toast = useToast();
@@ -90,23 +95,33 @@ export function CustomerPaymentDialog({
     }
   }, [open, customer, form]);
 
+  // Open sales oldest first: the order the server settles them in when the
+  // user leaves part of the amount unallocated. A sale named at opening
+  // gets its remaining due as both the amount and its allocation.
   useEffect(() => {
     if (!open || !first) return;
     const current = form.getValues("allocations") ?? [];
     const next = first.sales
       .filter((sale) => Number(sale.balanceTnd) > 0)
+      .sort((left, right) => left.soldAt.localeCompare(right.soldAt))
       .map((sale) => ({
         saleId: sale.id,
         reference: sale.reference,
         soldAt: sale.soldAt,
         balanceTnd: sale.balanceTnd,
         amountTnd:
-          current.find((row) => row.saleId === sale.id)?.amountTnd ?? "",
+          current.find((row) => row.saleId === sale.id)?.amountTnd ??
+          (saleId === sale.id ? sale.balanceTnd : ""),
       }));
     form.setValue("balanceTnd", first.balanceTnd);
+    if (saleId && current.length === 0) {
+      const named = next.find((row) => row.saleId === saleId);
+      if (named && !form.getValues("amountTnd"))
+        form.setValue("amountTnd", named.balanceTnd);
+    }
     if (JSON.stringify(next) !== JSON.stringify(current))
       form.setValue("allocations", next);
-  }, [open, first, form]);
+  }, [open, first, form, saleId]);
 
   const allocationErrors: Record<string, string | undefined> = {};
   const list = errors.allocations as unknown as
@@ -148,7 +163,16 @@ export function CustomerPaymentDialog({
     });
     toast.success(
       "Règlement enregistré",
-      `${values.customer.label} : ${formatMoney(payment.amountTnd)}.`,
+      `${values.customer.label} : ${formatMoney(payment.amountTnd)}${settledSummary(
+        payment.allocations.map((allocation) => ({
+          id: allocation.saleId,
+          amountTnd: allocation.amountTnd,
+        })),
+        values.allocations.map((row) => ({
+          id: row.saleId,
+          label: row.reference,
+        })),
+      )}`,
     );
     onSaved?.(payment);
     onOpenChange(false);
@@ -237,7 +261,7 @@ export function CustomerPaymentDialog({
         <FormField
           label="Affectations"
           labelIsElement={false}
-          hint="Répartissez le montant entre les ventes à crédit ; le reste restera non affecté."
+          hint="Répartissez le montant entre les ventes à crédit ; ce que vous laissez est affecté aux plus anciennes."
         >
           <AllocationTable
             amountTnd={amountTnd}
@@ -259,7 +283,7 @@ export function CustomerPaymentDialog({
               )
             }
             errors={allocationErrors}
-            emptyText="Aucune vente à crédit ouverte : le règlement restera non affecté."
+            emptyText="Aucune vente à crédit ouverte : le règlement réduira le solde du client."
           />
         </FormField>
       ) : null}

@@ -279,6 +279,33 @@ export function makeDistributionTransactionClient(store: DistributionStore) {
 
         return hydrateSale(sale);
       },
+      findMany: async (args: {
+        where: {
+          id: { in: string[] };
+          distributorId?: string;
+          status?: string;
+        };
+      }) =>
+        store.distributorSales.filter(
+          (sale) =>
+            args.where.id.in.includes(sale.id as string) &&
+            (args.where.distributorId === undefined ||
+              sale.distributorId === args.where.distributorId) &&
+            (args.where.status === undefined ||
+              sale.status === args.where.status),
+        ),
+      update: async (args: { where: { id: string }; data: Row }) => {
+        const sale = store.distributorSales.find(
+          (item) => item.id === args.where.id,
+        );
+
+        if (!sale) {
+          throw new Error("missing distributor sale");
+        }
+
+        applyUpdate(sale, args.data);
+        return sale;
+      },
     },
     distributorDispatch: {
       create: async (args: {
@@ -384,6 +411,27 @@ export function makeDistributionTransactionClient(store: DistributionStore) {
 
         return hydrateSettlement(settlement);
       },
+      findMany: async (args: {
+        where: { id: { in: string[] }; distributorId?: string };
+      }) =>
+        store.distributorSettlements.filter(
+          (settlement) =>
+            args.where.id.in.includes(settlement.id as string) &&
+            (args.where.distributorId === undefined ||
+              settlement.distributorId === args.where.distributorId),
+        ),
+      update: async (args: { where: { id: string }; data: Row }) => {
+        const settlement = store.distributorSettlements.find(
+          (item) => item.id === args.where.id,
+        );
+
+        if (!settlement) {
+          throw new Error("missing distributor settlement");
+        }
+
+        applyUpdate(settlement, args.data);
+        return settlement;
+      },
     },
     distributorPayment: {
       create: async (args: {
@@ -402,6 +450,32 @@ export function makeDistributionTransactionClient(store: DistributionStore) {
           });
         });
 
+        return payment;
+      },
+      findUnique: async (args: { where: { id: string } }) => {
+        const payment = store.distributorPayments.find(
+          (item) => item.id === args.where.id,
+        );
+
+        return payment
+          ? {
+              ...payment,
+              ledgerEntries: store.distributorLedgerEntries.filter(
+                (entry) => entry.paymentId === payment.id,
+              ),
+            }
+          : null;
+      },
+      update: async (args: { where: { id: string }; data: Row }) => {
+        const payment = store.distributorPayments.find(
+          (item) => item.id === args.where.id,
+        );
+
+        if (!payment) {
+          throw new Error("missing distributor payment");
+        }
+
+        applyUpdate(payment, args.data);
         return payment;
       },
     },
@@ -443,12 +517,13 @@ export function makeDistributionTransactionClient(store: DistributionStore) {
         by: string[];
         where: {
           distributorId: string;
-          saleId?: { in: string[] };
-          settlementId?: { in: string[] };
+          saleId?: { in: string[] } | { not: null };
+          settlementId?: { in: string[] } | { not: null };
         };
       }) => {
         const keyName = args.by[0] as "saleId" | "settlementId";
-        const allowed = args.where[keyName]?.in;
+        const scope = args.where[keyName];
+        const allowed = scope && "in" in scope ? scope.in : undefined;
         const groups = new Map<string, number>();
         for (const entry of store.distributorLedgerEntries) {
           const key = entry[keyName] as string | null | undefined;

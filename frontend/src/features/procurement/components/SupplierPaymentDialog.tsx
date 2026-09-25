@@ -27,12 +27,16 @@ import {
 } from "../procurement.schemas.js";
 import { AllocationTable } from "../../../components/patterns/AllocationTable/AllocationTable.js";
 import { SupplierCombobox } from "./SupplierCombobox.js";
+import { settledSummary } from "../../../components/patterns/AllocationTable/settledSummary.js";
 
 export interface SupplierPaymentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /// Preselected from the supplier detail; the picker is then hidden.
   supplier?: { id: string; name: string } | null;
+  /// Opened from a purchase ("Payer"): that purchase's remaining due fills
+  /// the amount and its allocation.
+  purchaseId?: string;
   onSaved?: (payment: SupplierPaymentCreated) => void;
 }
 
@@ -56,6 +60,7 @@ export function SupplierPaymentDialog({
   open,
   onOpenChange,
   supplier = null,
+  purchaseId,
   onSaved,
 }: SupplierPaymentDialogProps) {
   const toast = useToast();
@@ -82,7 +87,9 @@ export function SupplierPaymentDialog({
       pageSize: 50,
       supplierId,
       status: "POSTED",
-      sort: { field: "dueDate", direction: "asc" },
+      // Oldest first: the order the server settles them in when the user
+      // leaves part of the amount unallocated.
+      sort: { field: "purchaseDate", direction: "asc" },
     },
     { enabled: open && supplierId !== "" },
   );
@@ -110,12 +117,18 @@ export function SupplierPaymentDialog({
       dueDate: purchase.dueDate,
       balanceTnd: purchase.balanceTnd,
       amountTnd:
-        current.find((row) => row.purchaseId === purchase.id)?.amountTnd ?? "",
+        current.find((row) => row.purchaseId === purchase.id)?.amountTnd ??
+        (purchaseId === purchase.id ? purchase.balanceTnd : ""),
     }));
+    if (purchaseId && current.length === 0) {
+      const named = next.find((row) => row.purchaseId === purchaseId);
+      if (named && !form.getValues("amountTnd"))
+        form.setValue("amountTnd", named.balanceTnd);
+    }
     if (JSON.stringify(next) !== JSON.stringify(current)) {
       form.setValue("allocations", next);
     }
-  }, [open, openPurchases.data]);
+  }, [open, openPurchases.data, purchaseId]);
 
   const allocationErrors: Record<string, string | undefined> = {};
   const allocationErrorList = errors.allocations as unknown as
@@ -158,7 +171,16 @@ export function SupplierPaymentDialog({
     });
     toast.success(
       "Paiement enregistré",
-      `${values.supplier.label} : ${formatMoney(payment.amountTnd)}.`,
+      `${values.supplier.label} : ${formatMoney(payment.amountTnd)}${settledSummary(
+        payment.allocations.map((allocation) => ({
+          id: allocation.purchaseId,
+          amountTnd: allocation.amountTnd,
+        })),
+        values.allocations.map((row) => ({
+          id: row.purchaseId,
+          label: row.reference ?? "Achat",
+        })),
+      )}`,
     );
     onSaved?.(payment);
     onOpenChange(false);
@@ -237,7 +259,7 @@ export function SupplierPaymentDialog({
         <FormField
           label="Affectations"
           labelIsElement={false}
-          hint="Répartissez le montant entre les achats ouverts ; le reste restera non affecté."
+          hint="Répartissez le montant entre les achats ouverts ; ce que vous laissez est affecté aux plus anciens."
         >
           <AllocationTable
             amountTnd={amountTnd}

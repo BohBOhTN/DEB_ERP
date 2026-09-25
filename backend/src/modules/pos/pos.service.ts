@@ -370,6 +370,13 @@ export class PosService {
           where: { sessionId },
           _sum: { amountTnd: true },
         });
+        // A till règlement reversed during this session left the drawer.
+        const customerPaymentReversalTotal = await tx.customerPayment.aggregate(
+          {
+            where: { reversedInSessionId: sessionId },
+            _sum: { amountTnd: true },
+          },
+        );
         const advanceReceipts = sumOrZero(
           advanceTotals.find(
             (row) => row.movement === CustomerOrderAdvanceMovement.RECEIPT,
@@ -385,6 +392,7 @@ export class PosService {
           .plus(advanceReceipts)
           .minus(advanceRefunds)
           .plus(sumOrZero(customerPaymentTotal._sum.amountTnd))
+          .minus(sumOrZero(customerPaymentReversalTotal._sum.amountTnd))
           .toDecimalPlaces(3);
         const cashDifferenceTnd = countedCashTnd.minus(expectedCashTnd);
 
@@ -816,28 +824,36 @@ export class PosService {
       });
     }
 
-    const [sales, salePayments, advances, customerPayments] = await Promise.all(
-      [
-        this.prisma.sale.aggregate({
-          where: { sessionId, status: SaleStatus.POSTED },
-          _count: { _all: true },
-          _sum: { totalTnd: true, remainingDueTnd: true },
-        }),
-        this.prisma.salePayment.aggregate({
-          where: { sessionId },
-          _sum: { amountTnd: true },
-        }),
-        this.prisma.customerOrderAdvance.groupBy({
-          by: ["movement"],
-          where: { sessionId },
-          _sum: { amountTnd: true },
-        }),
-        this.prisma.customerPayment.aggregate({
-          where: { sessionId },
-          _sum: { amountTnd: true },
-        }),
-      ],
-    );
+    const [
+      sales,
+      salePayments,
+      advances,
+      customerPayments,
+      customerPaymentReversals,
+    ] = await Promise.all([
+      this.prisma.sale.aggregate({
+        where: { sessionId, status: SaleStatus.POSTED },
+        _count: { _all: true },
+        _sum: { totalTnd: true, remainingDueTnd: true },
+      }),
+      this.prisma.salePayment.aggregate({
+        where: { sessionId },
+        _sum: { amountTnd: true },
+      }),
+      this.prisma.customerOrderAdvance.groupBy({
+        by: ["movement"],
+        where: { sessionId },
+        _sum: { amountTnd: true },
+      }),
+      this.prisma.customerPayment.aggregate({
+        where: { sessionId },
+        _sum: { amountTnd: true },
+      }),
+      this.prisma.customerPayment.aggregate({
+        where: { reversedInSessionId: sessionId },
+        _sum: { amountTnd: true },
+      }),
+    ]);
     const advanceOf = (movement: CustomerOrderAdvanceMovement) =>
       sumOrZero(
         advances.find((row) => row.movement === movement)?._sum.amountTnd,
@@ -869,6 +885,9 @@ export class PosService {
         customerPaymentsTnd: sumOrZero(customerPayments._sum.amountTnd).toFixed(
           3,
         ),
+        customerPaymentReversalsTnd: sumOrZero(
+          customerPaymentReversals._sum.amountTnd,
+        ).toFixed(3),
       },
     };
   }

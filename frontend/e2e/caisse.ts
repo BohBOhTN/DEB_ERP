@@ -162,6 +162,7 @@ function totalsOf(state: CaisseState, sessionId: string) {
     advancesReceivedTnd: "0.000",
     advancesRefundedTnd: "0.000",
     customerPaymentsTnd: "0.000",
+    customerPaymentReversalsTnd: "0.000",
   };
 }
 

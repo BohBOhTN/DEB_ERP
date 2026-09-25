@@ -291,9 +291,9 @@ describe("Procurement", () => {
       within(dialog).getByRole("textbox", { name: "Affectation AC-000002" }),
       "100",
     );
-    expect(within(dialog).getByText("Reste non alloué")).toBeInTheDocument();
+    expect(within(dialog).getByText("Reste à répartir")).toBeInTheDocument();
     expect(
-      within(dialog).getByText("Reste non alloué").parentElement,
+      within(dialog).getByText("Reste à répartir").parentElement,
     ).toHaveTextContent("0,000 TND");
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Enregistrer le paiement" }),
@@ -309,6 +309,47 @@ describe("Procurement", () => {
     });
     expect(
       await screen.findByText("Rien n'est dû à ce fournisseur."),
+    ).toBeInTheDocument();
+  });
+
+  // A supplier payment recorded by mistake is reversed, never deleted: the
+  // row stays as annulé and the purchase owes its amount again.
+  it("reverses a supplier payment from the payments list with a reason", async () => {
+    const store = makeProcurementStore();
+    server.use(...procurementHandlers(store));
+    renderAt("/paiements-fournisseurs");
+
+    const table = await screen.findByRole("table", {
+      name: "Paiements fournisseurs",
+    });
+    expect(within(table).getByText("Réglé")).toBeInTheDocument();
+    await userEvent.click(
+      within(table).getByRole("button", { name: "Actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Annuler le paiement" }),
+    );
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "Annuler le paiement",
+    });
+    expect(confirm).toHaveTextContent("Le reste dû de AC-000001 est rétabli.");
+    await userEvent.type(
+      within(confirm).getByLabelText(/Motif/),
+      "Double saisie",
+    );
+    await userEvent.click(
+      within(confirm).getByRole("button", { name: "Annuler le paiement" }),
+    );
+
+    expect(await screen.findByText("Paiement annulé")).toBeInTheDocument();
+    expect(store.payments[0]).toMatchObject({
+      reversalReason: "Double saisie",
+    });
+    expect(store.payments[0]?.reversedAt).toBeTruthy();
+    expect(
+      await within(
+        screen.getByRole("table", { name: "Paiements fournisseurs" }),
+      ).findByText("Annulé"),
     ).toBeInTheDocument();
   });
 

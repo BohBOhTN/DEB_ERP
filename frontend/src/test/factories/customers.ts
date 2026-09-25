@@ -57,6 +57,8 @@ export function makeCustomerPayment(
     notes: null,
     customer,
     allocations: [],
+    reversedAt: null,
+    reversalReason: null,
     ...overrides,
   };
 }

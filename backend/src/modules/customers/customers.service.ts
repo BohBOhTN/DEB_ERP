@@ -10,6 +10,8 @@ import {
 import { AppError } from "../../shared/appError.js";
 import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
+import { planPaymentAllocations } from "../../shared/paymentAllocation.js";
+import { documentPaymentProjection } from "../../shared/paymentState.js";
 import {
   balanceOf,
   balancesByKey,
@@ -548,12 +550,18 @@ export class CustomersService {
       /// True when the cashier took the money at the till, so it belongs to the
       /// open POS session's expected cash. Back-office payments leave it unset.
       collectedAtPos?: boolean;
+      /// Sales the client names explicitly. Whatever the amount leaves after
+      /// them is placed on the customer's other open sales, oldest first, so a
+      /// règlement always settles documents (CUS-009, CUS-011).
       allocations?: CustomerPaymentAllocationInput[];
     },
     actor: CustomerActor,
   ) {
     const amountTnd = parsePositiveMoney(params.amountTnd);
-    const allocations = params.allocations ?? [];
+    const requested = (params.allocations ?? []).map((allocation) => ({
+      key: allocation.saleId,
+      amountTnd: parsePositiveMoney(allocation.amountTnd),
+    }));
 
     return this.runIdempotentCommand(
       `customer_payment.create.${params.customerId}`,
@@ -563,17 +571,13 @@ export class CustomersService {
         amountTnd: amountTnd.toFixed(3),
       },
       async (tx) => {
-        const customer = await tx.customer.findUnique({
-          where: {
-            id: params.customerId,
-          },
-        });
+        const customer = await lockCustomer(tx, params.customerId);
 
-        if (!customer) {
+        if (!customer.isActive) {
           throw new AppError({
-            statusCode: 404,
-            code: "CUSTOMER_NOT_FOUND",
-            message: "Client introuvable.",
+            statusCode: 400,
+            code: "CUSTOMER_INACTIVE",
+            message: "Ce client est désactivé.",
           });
         }
 
@@ -590,7 +594,7 @@ export class CustomersService {
           throw new AppError({
             statusCode: 400,
             code: "CUSTOMER_BALANCE_NOT_DUE",
-            message: "Ce client n'a pas de solde a payer.",
+            message: "Ce client n'a pas de solde à payer.",
           });
         }
 
@@ -602,14 +606,17 @@ export class CustomersService {
           });
         }
 
-        const allocationRows = await this.validateCustomerPaymentAllocations(
-          {
-            customerId: params.customerId,
-            amountTnd,
-            allocations,
-          },
+        const openSales = await this.openSalesOf(
           tx,
+          params.customerId,
+          requested.map((allocation) => allocation.key),
         );
+        const plan = planPaymentAllocations({
+          amountTnd,
+          requested,
+          openDocuments: openSales,
+          errors: customerAllocationErrors,
+        });
         const sessionId = params.collectedAtPos
           ? (await requireOpenPosSession(tx)).id
           : null;
@@ -626,19 +633,19 @@ export class CustomersService {
           },
         });
 
-        if (allocationRows.length > 0) {
+        if (plan.allocations.length > 0) {
           await tx.customerPaymentAllocation.createMany({
-            data: allocationRows.map((allocation) => ({
+            data: plan.allocations.map((allocation) => ({
               paymentId: payment.id,
-              saleId: allocation.saleId,
+              saleId: allocation.key,
               amountTnd: allocation.amountTnd.toFixed(3),
             })),
           });
 
           await tx.customerLedgerEntry.createMany({
-            data: allocationRows.map((allocation) => ({
+            data: plan.allocations.map((allocation) => ({
               customerId: params.customerId,
-              saleId: allocation.saleId,
+              saleId: allocation.key,
               paymentId: payment.id,
               entryType: CustomerLedgerEntryType.PAYMENT,
               amountTnd: allocation.amountTnd.negated().toFixed(3),
@@ -647,19 +654,32 @@ export class CustomersService {
               correlationId: actor.correlationId,
             })),
           });
-        } else {
+        }
+
+        if (plan.unallocatedTnd.greaterThan(0)) {
           await tx.customerLedgerEntry.create({
             data: {
               customerId: params.customerId,
               paymentId: payment.id,
               entryType: CustomerLedgerEntryType.PAYMENT,
-              amountTnd: amountTnd.negated().toFixed(3),
+              amountTnd: plan.unallocatedTnd.negated().toFixed(3),
               occurredAt: params.paidAt,
               actorUserId: actor.actorUserId,
               correlationId: actor.correlationId,
             },
           });
         }
+
+        await this.refreshSaleProjections(
+          tx,
+          params.customerId,
+          plan.allocations.map((allocation) => allocation.key),
+        );
+
+        const allocations = plan.allocations.map((allocation) => ({
+          saleId: allocation.key,
+          amountTnd: allocation.amountTnd.toFixed(3),
+        }));
 
         await this.auditWithClient(tx, {
           actor,
@@ -668,17 +688,103 @@ export class CustomersService {
           targetId: payment.id,
           after: {
             payment,
-            allocations: allocationRows,
+            allocations,
           },
         });
 
-        return {
-          payment,
-          allocations: allocationRows.map((allocation) => ({
-            saleId: allocation.saleId,
-            amountTnd: allocation.amountTnd.toFixed(3),
+        return { payment, allocations };
+      },
+    );
+  }
+
+  /// Undoes a règlement recorded by mistake. The payment row stays, marked
+  /// reversed; PAYMENT_REVERSAL entries give the money back to the sales it
+  /// had settled, and a till règlement leaves the drawer of the session
+  /// that is open now.
+  public async reverseCustomerPayment(
+    paymentId: string,
+    params: { idempotencyKey: string; reason: string },
+    actor: CustomerActor,
+  ) {
+    const reason = requireReason(params.reason);
+
+    return this.runIdempotentCommand(
+      `customer_payment.reverse.${paymentId}`,
+      params.idempotencyKey,
+      { paymentId, reason },
+      async (tx) => {
+        const payment = await tx.customerPayment.findUnique({
+          where: { id: paymentId },
+          include: { ledgerEntries: true },
+        });
+
+        if (!payment) {
+          throw new AppError({
+            statusCode: 404,
+            code: "CUSTOMER_PAYMENT_NOT_FOUND",
+            message: "Règlement introuvable.",
+          });
+        }
+
+        if (payment.reversedAt) {
+          throw new AppError({
+            statusCode: 409,
+            code: "PAYMENT_ALREADY_REVERSED",
+            message: "Ce règlement a déjà été annulé.",
+          });
+        }
+
+        await lockCustomer(tx, payment.customerId);
+        const reversedAt = new Date();
+        const reversedInSessionId = payment.sessionId
+          ? (await requireOpenPosSession(tx)).id
+          : null;
+        const paymentEntries = payment.ledgerEntries.filter(
+          (entry) => entry.entryType === CustomerLedgerEntryType.PAYMENT,
+        );
+
+        await tx.customerLedgerEntry.createMany({
+          data: paymentEntries.map((entry) => ({
+            customerId: payment.customerId,
+            saleId: entry.saleId,
+            paymentId: payment.id,
+            balanceKind: entry.balanceKind,
+            entryType: CustomerLedgerEntryType.PAYMENT_REVERSAL,
+            amountTnd: new Prisma.Decimal(entry.amountTnd).negated().toFixed(3),
+            occurredAt: reversedAt,
+            actorUserId: actor.actorUserId,
+            correlationId: actor.correlationId,
           })),
-        };
+        });
+
+        const reversed = await tx.customerPayment.update({
+          where: { id: payment.id },
+          data: {
+            reversedAt,
+            reversedByUserId: actor.actorUserId,
+            reversalReason: reason,
+            reversedInSessionId,
+          },
+        });
+
+        await this.refreshSaleProjections(
+          tx,
+          payment.customerId,
+          paymentEntries
+            .map((entry) => entry.saleId)
+            .filter((id): id is string => Boolean(id)),
+        );
+
+        await this.auditWithClient(tx, {
+          actor,
+          action: "customer_payment.reverse",
+          entity: "customer_payment",
+          targetId: payment.id,
+          before: payment,
+          after: reversed,
+        });
+
+        return { payment: reversed };
       },
     );
   }
@@ -702,98 +808,102 @@ export class CustomersService {
     };
   }
 
-  private async validateCustomerPaymentAllocations(
-    params: {
-      customerId: string;
-      amountTnd: Prisma.Decimal;
-      allocations: CustomerPaymentAllocationInput[];
-    },
+  /// The customer's posted sales that still owe something, oldest first:
+  /// the automatic allocation order. Sales the client named are included
+  /// even when settled, so a wrong target is reported as exceeding that
+  /// sale's balance. Only receivable entries move a sale balance; an applied
+  /// order advance is recorded against the same sale but belongs to the
+  /// advance balance.
+  private async openSalesOf(
     client: Prisma.TransactionClient,
+    customerId: string,
+    namedSaleIds: string[],
   ) {
-    if (params.allocations.length === 0) {
+    const totals = await client.customerLedgerEntry.groupBy({
+      by: ["saleId"],
+      where: {
+        customerId,
+        balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+        saleId: { not: null },
+      },
+      _sum: { amountTnd: true },
+    });
+    const balances = balancesByKey(
+      totals,
+      (row) => row.saleId,
+      (row) => row._sum.amountTnd,
+    );
+    const openIds = new Set([
+      ...[...balances.entries()]
+        .filter(([, balance]) => balance.greaterThan(0))
+        .map(([saleId]) => saleId),
+      ...namedSaleIds,
+    ]);
+
+    if (openIds.size === 0) {
       return [];
-    }
-
-    const allocations = params.allocations.map((allocation) => ({
-      saleId: allocation.saleId,
-      amountTnd: parsePositiveMoney(allocation.amountTnd),
-    }));
-    const duplicateSaleId = findDuplicate(
-      allocations.map((allocation) => allocation.saleId),
-    );
-
-    if (duplicateSaleId) {
-      throw new AppError({
-        statusCode: 400,
-        code: "DUPLICATE_PAYMENT_ALLOCATION",
-        message: "Une vente ne peut être allouée qu'une seule fois.",
-      });
-    }
-
-    const allocationTotal = sumDecimals(
-      allocations.map((allocation) => allocation.amountTnd),
-      3,
-    );
-
-    if (!allocationTotal.equals(params.amountTnd)) {
-      throw new AppError({
-        statusCode: 400,
-        code: "PAYMENT_ALLOCATION_TOTAL_MISMATCH",
-        message: "Les allocations doivent correspondre au montant payé.",
-      });
     }
 
     const sales = await client.sale.findMany({
       where: {
-        id: {
-          in: allocations.map((allocation) => allocation.saleId),
-        },
-        customerId: params.customerId,
+        id: { in: [...openIds] },
+        customerId,
         status: SaleStatus.POSTED,
       },
+      select: { id: true, soldAt: true },
+      orderBy: [{ soldAt: "asc" }, { id: "asc" }],
     });
 
-    if (sales.length !== allocations.length) {
-      throw new AppError({
-        statusCode: 400,
-        code: "POSTED_SALE_ALLOCATION_REQUIRED",
-        message: "Chaque allocation doit viser une vente confirmee du client.",
-      });
+    return sales.map((sale) => ({
+      key: sale.id,
+      balanceTnd: balanceOf(balances, sale.id),
+    }));
+  }
+
+  /// GOV-006: the stored paid amount, remaining due and state of a sale are
+  /// projections of its receivable ledger, rewritten in the same transaction
+  /// as the entries that moved it.
+  private async refreshSaleProjections(
+    client: Prisma.TransactionClient,
+    customerId: string,
+    saleIds: string[],
+  ) {
+    const unique = [...new Set(saleIds)];
+
+    if (unique.length === 0) {
+      return;
     }
 
-    // Only receivable entries move a sale balance. An applied order advance
-    // is recorded against the same sale but belongs to the advance balance,
-    // so it must not reduce what the customer still owes on that sale twice.
-    const saleTotals = await client.customerLedgerEntry.groupBy({
-      by: ["saleId"],
-      where: {
-        customerId: params.customerId,
-        balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
-        saleId: { in: allocations.map((allocation) => allocation.saleId) },
-      },
-      _sum: { amountTnd: true },
-    });
-    const saleBalance = balancesByKey(
-      saleTotals,
+    const [sales, totals] = await Promise.all([
+      client.sale.findMany({
+        where: { id: { in: unique } },
+        select: { id: true, totalTnd: true },
+      }),
+      client.customerLedgerEntry.groupBy({
+        by: ["saleId"],
+        where: {
+          customerId,
+          balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+          saleId: { in: unique },
+        },
+        _sum: { amountTnd: true },
+      }),
+    ]);
+    const balances = balancesByKey(
+      totals,
       (row) => row.saleId,
       (row) => row._sum.amountTnd,
     );
 
-    for (const allocation of allocations) {
-      if (
-        allocation.amountTnd.greaterThan(
-          balanceOf(saleBalance, allocation.saleId),
-        )
-      ) {
-        throw new AppError({
-          statusCode: 400,
-          code: "PAYMENT_ALLOCATION_EXCEEDS_SALE_BALANCE",
-          message: "Une allocation dépasse le solde de la vente.",
-        });
-      }
+    for (const sale of sales) {
+      await client.sale.update({
+        where: { id: sale.id },
+        data: documentPaymentProjection(
+          sale.totalTnd,
+          balanceOf(balances, sale.id),
+        ),
+      });
     }
-
-    return allocations;
   }
 
   private async findCustomerOrThrow(customerId: string) {
@@ -886,6 +996,59 @@ export class CustomersService {
   }
 }
 
+const customerAllocationErrors = {
+  duplicate: {
+    code: "DUPLICATE_PAYMENT_ALLOCATION",
+    message: "Une vente ne peut être allouée qu'une seule fois.",
+  },
+  unknownDocument: {
+    code: "POSTED_SALE_ALLOCATION_REQUIRED",
+    message: "Chaque allocation doit viser une vente confirmée du client.",
+  },
+  exceedsBalance: {
+    code: "PAYMENT_ALLOCATION_EXCEEDS_SALE_BALANCE",
+    message: "Une allocation dépasse le solde de la vente.",
+  },
+};
+
+/// Serializes the payments of one customer: two règlements arriving together
+/// both read the balance, and without the lock both could pass the
+/// overpayment check (OD-009).
+async function lockCustomer(
+  client: Prisma.TransactionClient,
+  customerId: string,
+) {
+  await client.$queryRaw`SELECT "id" FROM "customers" WHERE "id" = ${customerId} FOR UPDATE`;
+
+  const customer = await client.customer.findUnique({
+    where: { id: customerId },
+  });
+
+  if (!customer) {
+    throw new AppError({
+      statusCode: 404,
+      code: "CUSTOMER_NOT_FOUND",
+      message: "Client introuvable.",
+    });
+  }
+
+  return customer;
+}
+
+function requireReason(value: string): string {
+  const reason = value.trim();
+
+  if (reason.length < 3) {
+    throw new AppError({
+      statusCode: 400,
+      code: "REASON_REQUIRED",
+      message: "Une raison est requise.",
+    });
+  }
+
+  return reason;
+}
+
 /// Only one POS session may be open at a time, so the open one is the till that
 /// received the money.
 async function requireOpenPosSession(client: Prisma.TransactionClient) {
@@ -921,12 +1084,6 @@ function parsePositiveMoney(value: string): Prisma.Decimal {
   return decimal.toDecimalPlaces(3, Prisma.Decimal.ROUND_HALF_UP);
 }
 
-function sumDecimals(values: Prisma.Decimal[], scale: number): Prisma.Decimal {
-  return values
-    .reduce((total, value) => total.plus(value), new Prisma.Decimal(0))
-    .toDecimalPlaces(scale, Prisma.Decimal.ROUND_HALF_UP);
-}
-
 function emptyToNull(value: string | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
@@ -944,20 +1101,6 @@ function assertVersionUpdated(count: number) {
 
 function toJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-}
-
-function findDuplicate(values: string[]): string | undefined {
-  const seen = new Set<string>();
-
-  for (const value of values) {
-    if (seen.has(value)) {
-      return value;
-    }
-
-    seen.add(value);
-  }
-
-  return undefined;
 }
 
 function paginated<TItem>(

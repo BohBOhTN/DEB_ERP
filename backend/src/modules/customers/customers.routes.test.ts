@@ -124,6 +124,9 @@ async function createTestApp(permissionKeys: string[]) {
       ledgerEntries: [],
       payments: [],
     }),
+    reverseCustomerPayment: vi.fn().mockResolvedValue({
+      payment: { id: "payment-1", reversedAt: "2026-09-24T10:00:00.000Z" },
+    }),
     listCustomerPayments: vi.fn().mockResolvedValue({
       items: [],
       page: 1,
@@ -318,6 +321,42 @@ describe("customer routes", () => {
       expect.objectContaining({
         actorUserId: "user-1",
       }),
+    );
+  });
+});
+
+describe("customer payment reversal", () => {
+  it("refuses the reversal without customer_payments.create", async () => {
+    const { app, cookie, customersService } = await createTestApp([
+      "customer_payments.view",
+    ]);
+
+    await request(app)
+      .post("/api/v1/customer-payments/payment-1/reverse")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "reverse-1")
+      .send({ reason: "Montant saisi par erreur" })
+      .expect(403);
+
+    expect(customersService.reverseCustomerPayment).not.toHaveBeenCalled();
+  });
+
+  it("reverses a payment with a reason and an idempotency key", async () => {
+    const { app, cookie, customersService } = await createTestApp([
+      "customer_payments.create",
+    ]);
+
+    await request(app)
+      .post("/api/v1/customer-payments/payment-1/reverse")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "reverse-1")
+      .send({ reason: "Montant saisi par erreur" })
+      .expect(201);
+
+    expect(customersService.reverseCustomerPayment).toHaveBeenCalledWith(
+      "payment-1",
+      { idempotencyKey: "reverse-1", reason: "Montant saisi par erreur" },
+      expect.objectContaining({ actorUserId: expect.any(String) }),
     );
   });
 });

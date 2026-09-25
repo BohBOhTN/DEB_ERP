@@ -5,13 +5,17 @@ import {
   InventoryMovementType,
   InventorySourceType,
   Prisma,
-  SalePaymentState,
   SaleStatus,
   type PrismaClient,
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
 import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
+import { planPaymentAllocations } from "../../shared/paymentAllocation.js";
+import {
+  derivePaymentState,
+  documentPaymentProjection,
+} from "../../shared/paymentState.js";
 import {
   balanceOf,
   balancesByKey,
@@ -1051,12 +1055,18 @@ export class DistributionService {
       amountTnd: string;
       reference?: string;
       notes?: string;
+      /// Documents the client names explicitly. Whatever the amount leaves
+      /// after them is placed on the distributor's other open sales and
+      /// settlements, oldest first, so a payment always settles documents.
       allocations?: DistributorAllocationInput[];
     },
     actor: DistributionActor,
   ) {
     const amountTnd = parsePositiveMoney(params.amountTnd);
-    const allocations = params.allocations ?? [];
+    const requested = (params.allocations ?? []).map((allocation) => ({
+      key: documentKeyOf(allocation),
+      amountTnd: parsePositiveMoney(allocation.amountTnd),
+    }));
 
     return this.runIdempotentCommand(
       `distributor_payment.create.${params.distributorId}`,
@@ -1066,17 +1076,13 @@ export class DistributionService {
         amountTnd: amountTnd.toFixed(3),
       },
       async (tx) => {
-        const distributor = await tx.distributor.findUnique({
-          where: {
-            id: params.distributorId,
-          },
-        });
+        const distributor = await lockDistributor(tx, params.distributorId);
 
-        if (!distributor) {
+        if (!distributor.isActive) {
           throw new AppError({
-            statusCode: 404,
-            code: "DISTRIBUTOR_NOT_FOUND",
-            message: "Distributeur introuvable.",
+            statusCode: 400,
+            code: "DISTRIBUTOR_INACTIVE",
+            message: "Ce distributeur est désactivé.",
           });
         }
 
@@ -1090,7 +1096,7 @@ export class DistributionService {
           throw new AppError({
             statusCode: 400,
             code: "DISTRIBUTOR_BALANCE_NOT_DUE",
-            message: "Ce distributeur n'a pas de solde a payer.",
+            message: "Ce distributeur n'a pas de solde à payer.",
           });
         }
 
@@ -1102,11 +1108,21 @@ export class DistributionService {
           });
         }
 
-        const allocationRows = await validateAllocations(tx, {
-          distributorId: params.distributorId,
+        const openDocuments = await openDistributorDocuments(
+          tx,
+          params.distributorId,
+          requested.map((allocation) => allocation.key),
+        );
+        const plan = planPaymentAllocations({
           amountTnd,
-          allocations,
+          requested,
+          openDocuments,
+          errors: distributorAllocationErrors,
         });
+        const allocationRows = plan.allocations.map((allocation) => ({
+          ...parseDocumentKey(allocation.key),
+          amountTnd: allocation.amountTnd,
+        }));
         const payment = await tx.distributorPayment.create({
           data: {
             distributorId: params.distributorId,
@@ -1146,13 +1162,15 @@ export class DistributionService {
               correlationId: actor.correlationId,
             })),
           });
-        } else {
+        }
+
+        if (plan.unallocatedTnd.greaterThan(0)) {
           await tx.distributorLedgerEntry.create({
             data: {
               distributorId: params.distributorId,
               paymentId: payment.id,
               entryType: DistributorLedgerEntryType.PAYMENT,
-              amountTnd: amountTnd.negated().toFixed(3),
+              amountTnd: plan.unallocatedTnd.negated().toFixed(3),
               occurredAt: params.paidAt,
               actorUserId: actor.actorUserId,
               correlationId: actor.correlationId,
@@ -1160,22 +1178,115 @@ export class DistributionService {
           });
         }
 
+        await refreshDistributorDocumentProjections(
+          tx,
+          params.distributorId,
+          allocationRows,
+        );
+
+        const allocations = allocationRows.map((allocation) => ({
+          saleId: allocation.saleId,
+          settlementId: allocation.settlementId,
+          amountTnd: allocation.amountTnd.toFixed(3),
+        }));
+
         await auditWithClient(tx, {
           actor,
           action: "distributor_payment.create",
           entity: "distributor_payment",
           targetId: payment.id,
-          after: { payment, allocations: allocationRows },
+          after: { payment, allocations },
         });
 
-        return {
-          payment,
-          allocations: allocationRows.map((allocation) => ({
-            saleId: allocation.saleId,
-            settlementId: allocation.settlementId,
-            amountTnd: allocation.amountTnd.toFixed(3),
+        return { payment, allocations };
+      },
+    );
+  }
+
+  /// Undoes a distributor payment recorded by mistake. The payment row stays,
+  /// marked reversed; PAYMENT_REVERSAL entries put the amount back on the
+  /// documents it had settled. Custody is never touched (DST-026).
+  public async reverseDistributorPayment(
+    paymentId: string,
+    params: { idempotencyKey: string; reason: string },
+    actor: DistributionActor,
+  ) {
+    const reason = requireReason(params.reason);
+
+    return this.runIdempotentCommand(
+      `distributor_payment.reverse.${paymentId}`,
+      params.idempotencyKey,
+      { paymentId, reason },
+      async (tx) => {
+        const payment = await tx.distributorPayment.findUnique({
+          where: { id: paymentId },
+          include: { ledgerEntries: true },
+        });
+
+        if (!payment) {
+          throw new AppError({
+            statusCode: 404,
+            code: "DISTRIBUTOR_PAYMENT_NOT_FOUND",
+            message: "Paiement introuvable.",
+          });
+        }
+
+        if (payment.reversedAt) {
+          throw new AppError({
+            statusCode: 409,
+            code: "PAYMENT_ALREADY_REVERSED",
+            message: "Ce paiement a déjà été annulé.",
+          });
+        }
+
+        await lockDistributor(tx, payment.distributorId);
+        const reversedAt = new Date();
+        const paymentEntries = payment.ledgerEntries.filter(
+          (entry) => entry.entryType === DistributorLedgerEntryType.PAYMENT,
+        );
+
+        await tx.distributorLedgerEntry.createMany({
+          data: paymentEntries.map((entry) => ({
+            distributorId: payment.distributorId,
+            saleId: entry.saleId,
+            settlementId: entry.settlementId,
+            paymentId: payment.id,
+            entryType: DistributorLedgerEntryType.PAYMENT_REVERSAL,
+            amountTnd: new Prisma.Decimal(entry.amountTnd).negated().toFixed(3),
+            occurredAt: reversedAt,
+            actorUserId: actor.actorUserId,
+            correlationId: actor.correlationId,
           })),
-        };
+        });
+
+        const reversed = await tx.distributorPayment.update({
+          where: { id: payment.id },
+          data: {
+            reversedAt,
+            reversedByUserId: actor.actorUserId,
+            reversalReason: reason,
+          },
+        });
+
+        await refreshDistributorDocumentProjections(
+          tx,
+          payment.distributorId,
+          paymentEntries.map((entry) => ({
+            saleId: entry.saleId ?? undefined,
+            settlementId: entry.settlementId ?? undefined,
+          })),
+        );
+
+        await auditWithClient(tx, {
+          actor,
+          action: "distributor_payment.reverse",
+          entity: "distributor_payment",
+          targetId: payment.id,
+          before: payment,
+          after: reversed,
+        });
+
+        return { payment: reversed };
       },
     );
   }
@@ -1194,7 +1305,12 @@ export class DistributionService {
         where,
         include: {
           distributor: true,
-          allocations: true,
+          allocations: {
+            include: {
+              sale: { select: { id: true, reference: true } },
+              settlement: { select: { id: true, reference: true } },
+            },
+          },
         },
         orderBy: orderByFor<
           "paidAt" | "amountTnd",
@@ -1876,21 +1992,6 @@ async function auditWithClient(
   });
 }
 
-function derivePaymentState(
-  totalTnd: Prisma.Decimal,
-  paidAmountTnd: Prisma.Decimal,
-): SalePaymentState {
-  if (paidAmountTnd.equals(totalTnd)) {
-    return SalePaymentState.PAID;
-  }
-
-  if (paidAmountTnd.equals(0)) {
-    return SalePaymentState.UNPAID;
-  }
-
-  return SalePaymentState.PARTIALLY_PAID;
-}
-
 function parsePositiveQuantity(value: string): Prisma.Decimal {
   const decimal = new Prisma.Decimal(value);
 
@@ -1905,118 +2006,255 @@ function parsePositiveQuantity(value: string): Prisma.Decimal {
   return decimal.toDecimalPlaces(6, Prisma.Decimal.ROUND_HALF_UP);
 }
 
-/// A document balance is what that sale or settlement still owes: its
-/// receivable entry less every payment allocated to it.
-async function validateAllocations(
-  client: Prisma.TransactionClient,
-  params: {
-    distributorId: string;
-    amountTnd: Prisma.Decimal;
-    allocations: DistributorAllocationInput[];
+const distributorAllocationErrors = {
+  duplicate: {
+    code: "DUPLICATE_DISTRIBUTOR_ALLOCATION",
+    message: "Un document ne peut être alloué qu'une seule fois.",
   },
-) {
-  if (params.allocations.length === 0) {
-    return [];
+  unknownDocument: {
+    code: "POSTED_DOCUMENT_ALLOCATION_REQUIRED",
+    message:
+      "Chaque allocation doit viser une vente directe ou un règlement confirmé du distributeur.",
+  },
+  exceedsBalance: {
+    code: "PAYMENT_ALLOCATION_EXCEEDS_DOCUMENT_BALANCE",
+    message: "Une allocation dépasse le solde du document.",
+  },
+};
+
+/// The planner works on one key per document; a distributor owes on two
+/// kinds, so the key carries the kind.
+function documentKeyOf(allocation: {
+  saleId?: string;
+  settlementId?: string;
+}): string {
+  if (Boolean(allocation.saleId) === Boolean(allocation.settlementId)) {
+    throw new AppError({
+      statusCode: 400,
+      code: "ALLOCATION_TARGET_REQUIRED",
+      message:
+        "Chaque allocation doit viser soit une vente directe, soit un règlement.",
+    });
   }
 
-  const allocations = params.allocations.map((allocation) => {
-    if (Boolean(allocation.saleId) === Boolean(allocation.settlementId)) {
-      throw new AppError({
-        statusCode: 400,
-        code: "ALLOCATION_TARGET_REQUIRED",
-        message:
-          "Chaque allocation doit viser soit une vente directe, soit un règlement.",
-      });
-    }
+  return allocation.saleId
+    ? `sale:${allocation.saleId}`
+    : `settlement:${allocation.settlementId}`;
+}
 
-    return {
-      saleId: allocation.saleId,
-      settlementId: allocation.settlementId,
-      amountTnd: parsePositiveMoney(allocation.amountTnd),
-    };
+function parseDocumentKey(key: string): {
+  saleId?: string;
+  settlementId?: string;
+} {
+  const [kind, id] = key.split(":", 2);
+  return kind === "sale" ? { saleId: id } : { settlementId: id };
+}
+
+/// Serializes the payments of one distributor so two payments arriving
+/// together cannot both pass the overpayment check.
+async function lockDistributor(
+  client: Prisma.TransactionClient,
+  distributorId: string,
+) {
+  await client.$queryRaw`SELECT "id" FROM "distributors" WHERE "id" = ${distributorId} FOR UPDATE`;
+
+  const distributor = await client.distributor.findUnique({
+    where: { id: distributorId },
   });
 
-  if (
-    findDuplicate(
-      allocations.map(
-        (allocation) => allocation.saleId ?? allocation.settlementId ?? "",
-      ),
-    )
-  ) {
+  if (!distributor) {
     throw new AppError({
-      statusCode: 400,
-      code: "DUPLICATE_DISTRIBUTOR_ALLOCATION",
-      message: "Un document ne peut être alloué qu'une seule fois.",
+      statusCode: 404,
+      code: "DISTRIBUTOR_NOT_FOUND",
+      message: "Distributeur introuvable.",
     });
   }
 
-  const allocationTotal = sumDecimals(
-    allocations.map((allocation) => allocation.amountTnd),
-    3,
-  );
+  return distributor;
+}
 
-  if (!allocationTotal.equals(params.amountTnd)) {
-    throw new AppError({
-      statusCode: 400,
-      code: "PAYMENT_ALLOCATION_TOTAL_MISMATCH",
-      message: "Les allocations doivent correspondre au montant payé.",
-    });
-  }
-
-  // Document balances come from the ledger, summed by the database for the
-  // allocated documents only.
+/// Per-document ledger balances for a distributor, summed by the database.
+async function distributorDocumentBalances(
+  client: Prisma.TransactionClient,
+  distributorId: string,
+  scope?: { saleIds: string[]; settlementIds: string[] },
+) {
   const [saleTotals, settlementTotals] = await Promise.all([
     client.distributorLedgerEntry.groupBy({
       by: ["saleId"],
       where: {
-        distributorId: params.distributorId,
-        saleId: {
-          in: allocations
-            .map((allocation) => allocation.saleId)
-            .filter((id): id is string => Boolean(id)),
-        },
+        distributorId,
+        saleId: scope ? { in: scope.saleIds } : { not: null },
       },
       _sum: { amountTnd: true },
     }),
     client.distributorLedgerEntry.groupBy({
       by: ["settlementId"],
       where: {
-        distributorId: params.distributorId,
-        settlementId: {
-          in: allocations
-            .map((allocation) => allocation.settlementId)
-            .filter((id): id is string => Boolean(id)),
-        },
+        distributorId,
+        settlementId: scope ? { in: scope.settlementIds } : { not: null },
       },
       _sum: { amountTnd: true },
     }),
   ]);
-  const saleBalance = balancesByKey(
-    saleTotals,
-    (row) => row.saleId,
-    (row) => row._sum.amountTnd,
-  );
-  const settlementBalance = balancesByKey(
-    settlementTotals,
-    (row) => row.settlementId,
-    (row) => row._sum.amountTnd,
-  );
 
-  for (const allocation of allocations) {
-    const balance = allocation.saleId
-      ? balanceOf(saleBalance, allocation.saleId)
-      : balanceOf(settlementBalance, allocation.settlementId as string);
+  return {
+    sales: balancesByKey(
+      saleTotals,
+      (row) => row.saleId,
+      (row) => row._sum.amountTnd,
+    ),
+    settlements: balancesByKey(
+      settlementTotals,
+      (row) => row.settlementId,
+      (row) => row._sum.amountTnd,
+    ),
+  };
+}
 
-    if (allocation.amountTnd.greaterThan(balance)) {
-      throw new AppError({
-        statusCode: 400,
-        code: "PAYMENT_ALLOCATION_EXCEEDS_DOCUMENT_BALANCE",
-        message: "Une allocation dépasse le solde du document.",
-      });
-    }
+/// The distributor's posted sales and settlements that still owe something,
+/// oldest first: the automatic allocation order. Documents the client named
+/// are included even when settled, so a wrong target is reported as
+/// exceeding that document's balance.
+async function openDistributorDocuments(
+  client: Prisma.TransactionClient,
+  distributorId: string,
+  namedKeys: string[],
+) {
+  const balances = await distributorDocumentBalances(client, distributorId);
+  const named = namedKeys.map(parseDocumentKey);
+  const saleIds = new Set([
+    ...[...balances.sales.entries()]
+      .filter(([, balance]) => balance.greaterThan(0))
+      .map(([id]) => id),
+    ...named.map((key) => key.saleId).filter((id): id is string => Boolean(id)),
+  ]);
+  const settlementIds = new Set([
+    ...[...balances.settlements.entries()]
+      .filter(([, balance]) => balance.greaterThan(0))
+      .map(([id]) => id),
+    ...named
+      .map((key) => key.settlementId)
+      .filter((id): id is string => Boolean(id)),
+  ]);
+  const [sales, settlements] = await Promise.all([
+    saleIds.size > 0
+      ? client.distributorSale.findMany({
+          where: {
+            id: { in: [...saleIds] },
+            distributorId,
+            status: SaleStatus.POSTED,
+          },
+          select: { id: true, postedAt: true },
+        })
+      : [],
+    settlementIds.size > 0
+      ? client.distributorSettlement.findMany({
+          where: { id: { in: [...settlementIds] }, distributorId },
+          select: { id: true, postedAt: true },
+        })
+      : [],
+  ]);
+
+  return [
+    ...sales.map((sale) => ({
+      key: `sale:${sale.id}`,
+      postedAt: sale.postedAt,
+      balanceTnd: balanceOf(balances.sales, sale.id),
+    })),
+    ...settlements.map((settlement) => ({
+      key: `settlement:${settlement.id}`,
+      postedAt: settlement.postedAt,
+      balanceTnd: balanceOf(balances.settlements, settlement.id),
+    })),
+  ]
+    .sort(
+      (left, right) =>
+        left.postedAt.getTime() - right.postedAt.getTime() ||
+        left.key.localeCompare(right.key),
+    )
+    .map(({ key, balanceTnd }) => ({ key, balanceTnd }));
+}
+
+/// GOV-006: a document's stored paid amount, remaining due and state are
+/// projections of its ledger, rewritten in the same transaction as the
+/// entries that moved it.
+async function refreshDistributorDocumentProjections(
+  client: Prisma.TransactionClient,
+  distributorId: string,
+  documents: Array<{ saleId?: string; settlementId?: string }>,
+) {
+  const saleIds = [
+    ...new Set(
+      documents
+        .map((document) => document.saleId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const settlementIds = [
+    ...new Set(
+      documents
+        .map((document) => document.settlementId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+
+  if (saleIds.length === 0 && settlementIds.length === 0) {
+    return;
   }
 
-  return allocations;
+  const balances = await distributorDocumentBalances(client, distributorId, {
+    saleIds,
+    settlementIds,
+  });
+  const [sales, settlements] = await Promise.all([
+    saleIds.length > 0
+      ? client.distributorSale.findMany({
+          where: { id: { in: saleIds } },
+          select: { id: true, totalTnd: true },
+        })
+      : [],
+    settlementIds.length > 0
+      ? client.distributorSettlement.findMany({
+          where: { id: { in: settlementIds } },
+          select: { id: true, totalTnd: true },
+        })
+      : [],
+  ]);
+
+  for (const sale of sales) {
+    await client.distributorSale.update({
+      where: { id: sale.id },
+      data: documentPaymentProjection(
+        sale.totalTnd,
+        balanceOf(balances.sales, sale.id),
+      ),
+    });
+  }
+
+  for (const settlement of settlements) {
+    await client.distributorSettlement.update({
+      where: { id: settlement.id },
+      data: documentPaymentProjection(
+        settlement.totalTnd,
+        balanceOf(balances.settlements, settlement.id),
+      ),
+    });
+  }
+}
+
+function requireReason(value: string): string {
+  const reason = value.trim();
+
+  if (reason.length < 3) {
+    throw new AppError({
+      statusCode: 400,
+      code: "REASON_REQUIRED",
+      message: "Une raison est requise.",
+    });
+  }
+
+  return reason;
 }
 
 function parsePositiveMoney(value: string): Prisma.Decimal {

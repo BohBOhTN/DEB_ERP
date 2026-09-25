@@ -68,7 +68,7 @@ test("creates and posts a purchase, then pays the supplier with allocations", as
   await dialog
     .getByRole("textbox", { name: "Affectation AC-000003" })
     .fill("100");
-  await expect(dialog).toContainText("Reste non alloué");
+  await expect(dialog).toContainText("Reste à répartir");
   await expect(dialog).toContainText("0,000 TND");
   await dialog.getByRole("button", { name: "Enregistrer le paiement" }).click();
   await expect(page.getByText("Paiement enregistré").first()).toBeVisible();

@@ -192,3 +192,20 @@ export function useCreateDistributorPayment() {
     onSuccess: invalidate,
   });
 }
+
+export function useReverseDistributorPayment() {
+  const invalidate = useInvalidateAfter("distribution.payment");
+  return useMutation({
+    mutationFn: (input: {
+      paymentId: string;
+      reason: string;
+      idempotencyKey: string;
+    }) =>
+      api.reverseDistributorPayment(
+        input.paymentId,
+        input.reason,
+        input.idempotencyKey,
+      ),
+    onSuccess: invalidate,
+  });
+}

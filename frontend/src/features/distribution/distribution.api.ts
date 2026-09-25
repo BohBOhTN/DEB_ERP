@@ -139,7 +139,12 @@ export interface DistributorPayment {
     saleId: string | null;
     settlementId: string | null;
     amountTnd: string;
+    sale?: { id: string; reference: string } | null;
+    settlement?: { id: string; reference: string } | null;
   }>;
+  /// Set when the payment was reversed; its ledger effect is compensated.
+  reversedAt: string | null;
+  reversalReason: string | null;
 }
 
 export interface DistributorStatement {
@@ -409,14 +414,42 @@ export interface DistributorPaymentInput {
   }>;
 }
 
+/// The server completes the allocations (the amount left unallocated goes
+/// to the oldest open documents), so the answer's allocations are what the
+/// payment settled.
 export async function createDistributorPayment(
   input: DistributorPaymentInput,
   idempotencyKey: string,
 ): Promise<DistributorPayment> {
+  const result = await apiClient.post<{
+    payment: Omit<DistributorPayment, "allocations">;
+    allocations: Array<{
+      saleId?: string | null;
+      settlementId?: string | null;
+      amountTnd: string;
+    }>;
+  }>("/distributor-payments", input, { idempotencyKey });
+
+  return {
+    ...result.payment,
+    allocations: result.allocations.map((allocation) => ({
+      id: `${result.payment.id}:${allocation.saleId ?? allocation.settlementId}`,
+      saleId: allocation.saleId ?? null,
+      settlementId: allocation.settlementId ?? null,
+      amountTnd: allocation.amountTnd,
+    })),
+  };
+}
+
+export async function reverseDistributorPayment(
+  paymentId: string,
+  reason: string,
+  idempotencyKey: string,
+): Promise<DistributorPayment> {
   return (
     await apiClient.post<{ payment: DistributorPayment }>(
-      "/distributor-payments",
-      input,
+      `/distributor-payments/${paymentId}/reverse`,
+      { reason },
       { idempotencyKey },
     )
   ).payment;

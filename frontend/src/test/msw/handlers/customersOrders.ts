@@ -90,6 +90,7 @@ let sequence = 100;
 
 function allocatedTo(store: CustomersOrdersStore, saleId: string): Decimal {
   return store.payments
+    .filter((payment) => !payment.reversedAt)
     .flatMap((payment) => payment.allocations)
     .filter((allocation) => allocation.saleId === saleId)
     .reduce(
@@ -305,9 +306,17 @@ export function customersOrdersHandlers(
       const customerId = new URL(request.url).searchParams.get("customerId");
       return ok(
         makePage(
-          store.payments.filter(
-            (payment) => !customerId || payment.customerId === customerId,
-          ),
+          store.payments
+            .filter(
+              (payment) => !customerId || payment.customerId === customerId,
+            )
+            .map((payment) => ({
+              ...payment,
+              allocations: payment.allocations.map((allocation) => ({
+                ...allocation,
+                sale: store.sales.find((sale) => sale.id === allocation.saleId),
+              })),
+            })),
         ),
       );
     }),
@@ -338,6 +347,45 @@ export function customersOrdersHandlers(
           "POS_SESSION_NOT_OPEN",
           "Ouvrez une session de caisse avant cette opération.",
         );
+      // Like the server: explicit allocations first, the remainder on the
+      // oldest open sales, and allocations above the amount refused.
+      const requestedTotal = body.allocations.reduce(
+        (sum, allocation) => sum.plus(allocation.amountTnd),
+        new Decimal(0),
+      );
+      if (requestedTotal.greaterThan(body.amountTnd))
+        return apiError(
+          400,
+          "PAYMENT_ALLOCATION_EXCEEDS_AMOUNT",
+          "La somme des affectations dépasse le montant payé.",
+        );
+      const planned = new Map(
+        body.allocations.map((allocation) => [
+          allocation.saleId,
+          new Decimal(allocation.amountTnd),
+        ]),
+      );
+      let remainder = new Decimal(body.amountTnd).minus(requestedTotal);
+      const openSales = store.sales
+        .filter(
+          (sale) =>
+            sale.customerId === customer.id &&
+            saleBalance(store, sale).greaterThan(0),
+        )
+        .sort((left, right) => left.soldAt.localeCompare(right.soldAt));
+      for (const sale of openSales) {
+        if (!remainder.greaterThan(0)) break;
+        const available = saleBalance(store, sale).minus(
+          planned.get(sale.id) ?? 0,
+        );
+        if (!available.greaterThan(0)) continue;
+        const take = available.lessThan(remainder) ? available : remainder;
+        planned.set(
+          sale.id,
+          (planned.get(sale.id) ?? new Decimal(0)).plus(take),
+        );
+        remainder = remainder.minus(take);
+      }
       sequence += 1;
       const payment = makeCustomerPayment({
         id: `cpayment-${sequence}`,
@@ -348,16 +396,65 @@ export function customersOrdersHandlers(
         paidAt: new Date(body.paidAt).toISOString(),
         reference: body.reference ?? null,
         notes: body.notes ?? null,
-        allocations: body.allocations.map((allocation, index) => ({
-          id: `calloc-${sequence}-${index}`,
-          paymentId: `cpayment-${sequence}`,
-          saleId: allocation.saleId,
-          amountTnd: new Decimal(allocation.amountTnd).toFixed(3),
-        })),
+        allocations: openSales
+          .filter((sale) => planned.has(sale.id))
+          .map((sale, index) => ({
+            id: `calloc-${sequence}-${index}`,
+            paymentId: `cpayment-${sequence}`,
+            saleId: sale.id,
+            amountTnd: (planned.get(sale.id) ?? new Decimal(0)).toFixed(3),
+          })),
       });
       store.payments.unshift(payment);
-      return ok({ payment }, 201);
+      return ok(
+        {
+          payment,
+          allocations: payment.allocations.map((allocation) => ({
+            saleId: allocation.saleId,
+            amountTnd: allocation.amountTnd,
+          })),
+        },
+        201,
+      );
     }),
+    http.post(
+      `${apiV1}/customer-payments/:paymentId/reverse`,
+      async ({ params, request }) => {
+        if (!request.headers.get("Idempotency-Key"))
+          return apiError(
+            400,
+            "IDEMPOTENCY_KEY_REQUIRED",
+            "Une clé d'idempotence est requise.",
+          );
+        const body = (await request.json()) as { reason?: string };
+        const payment = store.payments.find(
+          (row) => row.id === params.paymentId,
+        );
+        if (!payment)
+          return apiError(
+            404,
+            "CUSTOMER_PAYMENT_NOT_FOUND",
+            "Règlement introuvable.",
+          );
+        if (payment.reversedAt)
+          return apiError(
+            409,
+            "PAYMENT_ALREADY_REVERSED",
+            "Ce règlement a déjà été annulé.",
+          );
+        if (payment.sessionId && !store.session)
+          return apiError(
+            409,
+            "POS_SESSION_NOT_OPEN",
+            "Ouvrez une session de caisse avant cette opération.",
+          );
+        Object.assign(payment, {
+          reversedAt: new Date().toISOString(),
+          reversalReason: body.reason ?? null,
+        });
+        return ok({ payment }, 201);
+      },
+    ),
     http.get(`${apiV1}/orders`, ({ request }) => {
       const url = new URL(request.url);
       const status = url.searchParams.get("status");

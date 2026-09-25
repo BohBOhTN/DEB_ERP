@@ -8,6 +8,7 @@ import {
   makeDispatch,
   makeDispatchLine,
   makeDistributor,
+  makeDistributorPayment,
   makeSettlement,
 } from "../../test/factories/distribution";
 import { makeUser } from "../../test/factories/user";
@@ -349,7 +350,7 @@ describe("Distribution", () => {
       "20",
     );
     expect(
-      within(dialog).getByText("Reste non alloué").parentElement,
+      within(dialog).getByText("Reste à répartir").parentElement,
     ).toHaveTextContent("0,000 TND");
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Enregistrer le paiement" }),
@@ -367,6 +368,75 @@ describe("Distribution", () => {
         "16,000 TND",
       ),
     );
+  });
+
+  // DST-026: reversing a payment gives the receivable back and touches no
+  // custody; the row stays visible as annulé.
+  it("reverses a distributor payment from the payments page", async () => {
+    const karim = makeDistributor({
+      id: "distributor-1",
+      name: "Karim Distribution",
+    });
+    const store = makeDistributionStore({
+      distributors: [karim],
+      dispatches: [],
+      settlements: [
+        makeSettlement({
+          id: "settlement-1",
+          reference: "RG-000001",
+          distributorId: karim.id,
+          totalTnd: "36.000",
+          remainingDueTnd: "36.000",
+        }),
+      ],
+      payments: [
+        makeDistributorPayment({
+          id: "dpayment-1",
+          distributor: karim,
+          distributorId: karim.id,
+          amountTnd: "20.000",
+          allocations: [
+            {
+              id: "dalloc-1",
+              saleId: null,
+              settlementId: "settlement-1",
+              amountTnd: "20.000",
+            },
+          ],
+        }),
+      ],
+    });
+    server.use(...distributionHandlers(store));
+    renderAt("/distribution/reglements");
+
+    const payments = await screen.findByRole("table", {
+      name: "Paiements distributeurs",
+    });
+    expect(within(payments).getByText("Encaissé")).toBeInTheDocument();
+    await userEvent.click(
+      within(payments).getByRole("button", { name: "Actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Annuler le paiement" }),
+    );
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "Annuler le paiement",
+    });
+    await userEvent.type(
+      within(confirm).getByLabelText(/Motif/),
+      "Montant erroné",
+    );
+    await userEvent.click(
+      within(confirm).getByRole("button", { name: "Annuler le paiement" }),
+    );
+
+    expect(await screen.findByText("Paiement annulé")).toBeInTheDocument();
+    expect(store.payments[0]?.reversedAt).toBeTruthy();
+    expect(
+      await within(
+        screen.getByRole("table", { name: "Paiements distributeurs" }),
+      ).findByText("Annulé"),
+    ).toBeInTheDocument();
   });
 
   it("lists distributors with custody and balance and creates one", async () => {
