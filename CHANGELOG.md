@@ -4,6 +4,13 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+### Fixed
+
+- The application reached over plain HTTP on an address never sent a
+  request: correlation ids, idempotency keys and toast ids came from
+  `crypto.randomUUID`, which browsers expose in a secure context only. One
+  helper now falls back to `getRandomValues` (`frontend/src/lib/ids.ts`).
+
 ## [2.0.0] - 2026-09-25
 
 Release R10 polish, operations and launch (Sprints 27 and 28, then the
