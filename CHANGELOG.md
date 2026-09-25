@@ -31,6 +31,12 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
 
 ### Fixed
 
+- Issue #42, Accueil: the expenses tile reads the selected business day
+  ("Dépenses du jour" / "Dépenses d'hier") instead of the calendar month
+  in UTC; every daily tile follows the `Aujourd'hui` / `Hier` control;
+  "Encaissé en espèces" uses the drawer formula with advances and till
+  règlements; the balance tiles say they are current; the empty hint shows
+  only on a fresh database; quick actions open the creation pages.
 - Issue #46, Clients: a customer is deactivated and reactivated under the
   new `customers.deactivate` permission, never deleted, and only once
   settled; the customer page shows orders without the cancelled ones,
