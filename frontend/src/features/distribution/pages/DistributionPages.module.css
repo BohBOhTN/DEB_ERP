@@ -52,6 +52,9 @@
 
 .editor {
   display: grid;
+  /* One explicit column: a wide value in the totals card wraps inside it
+     instead of widening the page (issue 009). */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   align-items: start;
 }
@@ -66,6 +69,7 @@
 .editorSide {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: var(--space-3);
 }
 
