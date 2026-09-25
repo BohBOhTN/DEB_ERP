@@ -5,6 +5,21 @@
 -- Purchases store their remaining due like sales and distributor documents.
 ALTER TABLE "purchases" ADD COLUMN "remaining_due_tnd" DECIMAL(14,3) NOT NULL DEFAULT 0;
 
+-- `paid_amount_tnd` becomes a live projection of the supplier ledger, so the
+-- posting-time terms can no longer pin it: an UNPAID purchase settled later
+-- keeps its terms and carries what was paid since. The terms still fix the
+-- due date, the service still validates the amount paid at posting, and
+-- `purchases_amounts_check` still bounds the paid amount by the total.
+ALTER TABLE "purchases" DROP CONSTRAINT "purchases_payment_terms_check";
+ALTER TABLE "purchases" ADD CONSTRAINT "purchases_payment_terms_check" CHECK (
+    ("payment_terms" = 'PAID' AND "due_date" IS NULL)
+    OR
+    ("payment_terms" IN ('PARTIAL', 'UNPAID') AND "total_tnd" > 0 AND "due_date" IS NOT NULL)
+);
+ALTER TABLE "purchases" ADD CONSTRAINT "purchases_remaining_due_check" CHECK (
+    "remaining_due_tnd" >= 0 AND "remaining_due_tnd" <= "total_tnd"
+);
+
 -- Reversal trail on the three payment tables. A till règlement reversed later
 -- leaves the drawer of the session it is reversed in.
 ALTER TABLE "customer_payments"
@@ -76,6 +91,12 @@ FROM (
   GROUP BY "settlement_id"
 ) b
 WHERE s."id" = b."settlement_id";
+
+-- Posted purchases first take their posting-time remainder, then the ledger
+-- overrides it wherever an entry exists.
+UPDATE "purchases"
+SET "remaining_due_tnd" = "total_tnd" - "paid_amount_tnd"
+WHERE "status" = 'POSTED';
 
 UPDATE "purchases" p
 SET "remaining_due_tnd" = GREATEST(0, LEAST(p."total_tnd", b."balance")),

@@ -123,7 +123,7 @@ Run locally on macOS, Node 24:
 
 ## Database and Migration Impact
 
-One additive migration, `20260924180000_payment_document_state`:
+One migration, `20260924180000_payment_document_state`:
 `purchases.remaining_due_tnd`; `reversed_at`, `reversed_by_user_id`,
 `reversal_reason` on `customer_payments`, `supplier_payments`,
 `distributor_payments`; `customer_payments.reversed_in_session_id` with its
@@ -132,6 +132,22 @@ rebuild the stored paid state of posted sales, distributor sales,
 settlements and purchases from their ledger entries. Apply to the shared
 development database with the controlled deploy command after review; the
 UPDATEs are idempotent.
+
+The migration also replaces `purchases_payment_terms_check`. The original
+constraint pinned `paid_amount_tnd` to the posting-time terms (`UNPAID`
+means zero paid, forever), which the live projection breaks as soon as a
+règlement settles an unpaid purchase; the first deploy on the shared
+database failed on exactly that row. The new constraint keeps the terms
+tied to the due date and the total only; the service still validates the
+amount paid at posting, `purchases_amounts_check` still bounds the paid
+amount by the total, and a new `purchases_remaining_due_check` bounds the
+remainder. A failed first attempt must be marked rolled back before
+deploying again:
+
+```
+npx prisma migrate resolve --rolled-back 20260924180000_payment_document_state
+npx prisma migrate deploy
+```
 
 ## Environment Impact
 
