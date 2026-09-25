@@ -96,7 +96,7 @@ const app = createApp({
     authService,
     cookie: {
       name: env.SESSION_COOKIE_NAME,
-      secure: env.NODE_ENV === "production",
+      secure: env.SESSION_COOKIE_SECURE ?? env.NODE_ENV === "production",
       maxAgeMs: env.SESSION_TTL_MINUTES * 60 * 1000,
     },
     rateLimit: {
