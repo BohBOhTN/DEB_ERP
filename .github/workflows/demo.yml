@@ -30,7 +30,10 @@ jobs:
           --health-retries 10
 
     env:
-      DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+      # Spelled out: a job-level env block cannot read the env context, and a
+      # workflow with that reference is invalid, which shows as a failed run
+      # on every push although the workflow only starts by hand.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/dar_el_barka_ci?schema=public
       NODE_ENV: development
       PORT: "4000"
       LOG_LEVEL: warn
