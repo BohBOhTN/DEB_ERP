@@ -43,14 +43,14 @@ export function quickActionsFor(
     {
       id: "order",
       label: "Nouvelle commande",
-      to: "/commandes",
+      to: "/commandes/nouvelle",
       icon: ClipboardPlus,
       anyOf: ["orders.create"],
     },
     {
       id: "purchase",
       label: "Nouvel achat",
-      to: "/achats",
+      to: "/achats/nouveau",
       icon: ShoppingCart,
       anyOf: ["purchases.create"],
     },
