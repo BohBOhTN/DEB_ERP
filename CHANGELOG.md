@@ -9,8 +9,13 @@ All notable project changes are recorded here.
 - The customer balances page makes three sequential database rounds
   instead of six: the page and its count are read in parallel rather than
   in a batch transaction, and the open-order count runs alongside the
-  ledger totals. The performance suite measured that read at the edge of
-  its 150 ms budget on the CI runner.
+  ledger totals.
+- The performance suite analyses the fixture tables before measuring, so
+  every run measures the same plans; one CI run had measured the customer
+  balances at 150 ms against the usual 22 to 31 ms.
+- The demo workflow no longer shows a failed run on every push: its job
+  read the `env` context from a job-level `env` block, which makes the
+  workflow file invalid.
 
 ## [2.0.0] - 2026-09-25
 
