@@ -20,6 +20,7 @@ import {
   startOfBusinessDay,
   type SortSpec,
 } from "../../shared/listQuery.js";
+import { unitCostSnapshot } from "../../shared/costSnapshot.js";
 import { sumOrZero } from "../../shared/ledger.js";
 import { normalizeName } from "../../shared/text.js";
 import {
@@ -717,6 +718,7 @@ export class OrdersService {
                   lineTotalTnd: new Prisma.Decimal(line.lineTotalTnd).toFixed(
                     3,
                   ),
+                  unitCostTnd: unitCostSnapshot(line.product),
                   productNameSnapshot: line.productNameSnapshot,
                   unitNameSnapshot: line.unitNameSnapshot,
                 })),

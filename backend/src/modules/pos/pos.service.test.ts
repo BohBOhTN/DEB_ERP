@@ -191,6 +191,8 @@ describe("PosService", () => {
       { actorUserId: "user-1" },
     );
     expect(paid.sale).toMatchObject({ paymentState: "PAID" });
+    // Issue 008: the product's cost travels with the line.
+    expect(prisma.store.saleLines[0]).toMatchObject({ unitCostTnd: "0.800" });
 
     await expect(
       service.postPaidSale(
@@ -642,6 +644,7 @@ interface PosStore {
     name: string;
     baseUnitId: string;
     salePriceTnd: string;
+    approximateCostTnd?: string | null;
     isActive: boolean;
     isStockable: boolean;
     baseUnit: { id: string; name: string };
@@ -705,6 +708,7 @@ function createStore(): PosStore {
         name: "Baguette",
         baseUnitId: "unit-piece",
         salePriceTnd: "2.500",
+        approximateCostTnd: "0.800",
         isActive: true,
         isStockable: true,
         baseUnit: {

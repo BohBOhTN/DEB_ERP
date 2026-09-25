@@ -16,6 +16,7 @@ import {
   derivePaymentState,
   documentPaymentProjection,
 } from "../../shared/paymentState.js";
+import { unitCostSnapshot } from "../../shared/costSnapshot.js";
 import {
   balanceOf,
   balancesByKey,
@@ -375,6 +376,7 @@ export class DistributionService {
                   quantity: line.quantity.toFixed(6),
                   unitPriceTnd: line.unitPriceTnd.toFixed(3),
                   lineTotalTnd: line.lineTotalTnd.toFixed(3),
+                  unitCostTnd: line.unitCostTnd,
                   productNameSnapshot: line.productNameSnapshot,
                   unitNameSnapshot: line.unitNameSnapshot,
                 })),
@@ -792,6 +794,16 @@ export class DistributionService {
           lineRows.map((line) => line.lineTotalTnd),
           3,
         );
+        // Issue 008: the cost of each sold product as it stands now.
+        const costedProducts = await tx.product.findMany({
+          where: {
+            id: { in: lineRows.map((line) => line.dispatchLine.productId) },
+          },
+        });
+        const costOf = (productId: string) =>
+          unitCostSnapshot(
+            costedProducts.find((product) => product.id === productId),
+          );
         // DST-017: a settlement may be paid now or left as receivable, so an
         // omitted amount means nothing was collected.
         const paidAmountTnd =
@@ -839,6 +851,7 @@ export class DistributionService {
                   unaccountedQuantity: line.unaccountedQuantity.toFixed(6),
                   unitPriceTnd: line.unitPriceTnd.toFixed(3),
                   lineTotalTnd: line.lineTotalTnd.toFixed(3),
+                  unitCostTnd: costOf(line.dispatchLine.productId),
                   productNameSnapshot: line.dispatchLine.productNameSnapshot,
                   unitNameSnapshot: line.dispatchLine.unitNameSnapshot,
                 })),
@@ -1661,6 +1674,7 @@ interface SaleLineRow {
   quantity: Prisma.Decimal;
   unitPriceTnd: Prisma.Decimal;
   lineTotalTnd: Prisma.Decimal;
+  unitCostTnd: string | null;
   productNameSnapshot: string;
   unitNameSnapshot: string;
   isStockable: boolean;
@@ -1732,6 +1746,7 @@ async function buildSaleLines(
       lineTotalTnd: line.quantity
         .mul(line.unitPriceTnd)
         .toDecimalPlaces(3, Prisma.Decimal.ROUND_HALF_UP),
+      unitCostTnd: unitCostSnapshot(product),
       productNameSnapshot: product.name,
       unitNameSnapshot: product.baseUnit.name,
       isStockable: product.isStockable,
