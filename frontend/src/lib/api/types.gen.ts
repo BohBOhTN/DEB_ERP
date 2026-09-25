@@ -3826,6 +3826,7 @@ export interface operations {
                     categoryId: string;
                     baseUnitId: string;
                     salePriceTnd: string;
+                    approximateCostTnd?: (string | "") | null;
                     isStockable: boolean;
                     notes?: string;
                 };
@@ -3961,6 +3962,7 @@ export interface operations {
                     categoryId?: string;
                     baseUnitId?: string;
                     salePriceTnd?: string;
+                    approximateCostTnd?: (string | "") | null;
                     isStockable?: boolean;
                     notes?: string;
                 };

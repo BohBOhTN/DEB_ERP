@@ -77,6 +77,7 @@ export const permissionKeys = [
   "simulations.update",
   "simulations.delete",
   "audit.view",
+  "margin.view",
 ] as const;
 
 export type PermissionKey = (typeof permissionKeys)[number];
@@ -105,4 +106,5 @@ export const permissionModules = [
   "Catégories de dépenses",
   "Simulations",
   "Audit",
+  "Marge",
 ] as const;
