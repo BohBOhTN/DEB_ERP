@@ -163,11 +163,50 @@ function withSaleState(
   };
 }
 
+/// The figures the API states per order (issue #45).
+function withFigures(order: Order): Order {
+  const received = (order.advances ?? []).reduce(
+    (sum, advance) =>
+      advance.movement === "RECEIPT"
+        ? sum.plus(advance.amountTnd)
+        : sum.minus(advance.amountTnd),
+    new Decimal(0),
+  );
+  const remaining =
+    order.status === "CANCELLED"
+      ? new Decimal(0)
+      : order.status === "COMPLETED"
+        ? new Decimal(order.sale?.remainingDueTnd ?? 0)
+        : new Decimal(order.totalTnd).minus(order.advanceBalanceTnd);
+  return {
+    ...order,
+    advanceReceivedTnd: received.toFixed(3),
+    remainingDueTnd: (remaining.lessThan(0)
+      ? new Decimal(0)
+      : remaining
+    ).toFixed(3),
+  };
+}
+
 function summary(order: Order): Order {
-  const { lines, advances, sale, ...rest } = order;
+  const { lines, advances, sale, ...rest } = withFigures(order);
   void advances;
   void sale;
   return { ...rest, _count: { lines: lines?.length ?? 0 } };
+}
+
+function matchesScope(
+  order: Order,
+  customerId: string | null,
+  q: string | null,
+): boolean {
+  const needle = q?.trim().toLowerCase();
+  return (
+    (!customerId || order.customerId === customerId) &&
+    (!needle ||
+      order.reference.toLowerCase().includes(needle) ||
+      order.customer.name.toLowerCase().includes(needle))
+  );
 }
 
 export function customersOrdersHandlers(
@@ -188,18 +227,124 @@ export function customersOrdersHandlers(
       );
     }),
     http.get(`${apiV1}/customer-balances`, ({ request }) => {
-      const q = new URL(request.url).searchParams.get("q")?.toLowerCase() ?? "";
+      const url = new URL(request.url);
+      const q = url.searchParams.get("q")?.toLowerCase() ?? "";
+      const isActive = url.searchParams.get("isActive");
       return ok(
         makePage(
           store.customers
             .filter(
               (customer) =>
-                customer.name.toLowerCase().includes(q) ||
-                (customer.phone ?? "").includes(q),
+                (customer.name.toLowerCase().includes(q) ||
+                  (customer.phone ?? "").includes(q)) &&
+                (isActive === null ||
+                  customer.isActive === (isActive === "true")),
             )
             .map((customer) => balanceRow(store, customer)),
         ),
       );
+    }),
+    http.get(`${apiV1}/customers/:id/summary`, ({ params }) => {
+      const customer = store.customers.find((row) => row.id === params.id);
+      if (!customer)
+        return apiError(404, "CUSTOMER_NOT_FOUND", "Client introuvable.");
+      const orders = store.orders.filter(
+        (order) => order.customerId === customer.id,
+      );
+      const posted = store.sales.filter(
+        (sale) => sale.customerId === customer.id && sale.status === "POSTED",
+      );
+      const sum = (pick: (sale: SaleSummary) => string) =>
+        posted
+          .reduce((total, sale) => total.plus(pick(sale)), new Decimal(0))
+          .toFixed(3);
+      const payments = store.payments.filter(
+        (payment) => payment.customerId === customer.id && !payment.reversedAt,
+      );
+      return ok({
+        summary: {
+          ordersCount: orders.filter((order) => order.status !== "CANCELLED")
+            .length,
+          openOrdersCount: orders.filter((order) =>
+            openStatuses.has(order.status),
+          ).length,
+          salesCount: posted.length,
+          cancelledSalesCount: store.sales.filter(
+            (sale) =>
+              sale.customerId === customer.id && sale.status === "CANCELLED",
+          ).length,
+          salesTotalTnd: sum((sale) => sale.totalTnd),
+          paidTnd: sum((sale) =>
+            new Decimal(sale.totalTnd)
+              .minus(saleBalance(store, sale))
+              .toFixed(3),
+          ),
+          dueTnd: receivable(store, customer.id).toFixed(3),
+          advanceTnd: advanceBalance(store, customer.id).toFixed(3),
+          lastSaleAt: posted[0]?.soldAt ?? null,
+          lastPaymentAt: payments[0]?.paidAt ?? null,
+        },
+      });
+    }),
+    http.get(`${apiV1}/customers/:id/sales`, ({ params }) => {
+      const customer = store.customers.find((row) => row.id === params.id);
+      if (!customer)
+        return apiError(404, "CUSTOMER_NOT_FOUND", "Client introuvable.");
+      return ok(
+        makePage(
+          store.sales
+            .filter((sale) => sale.customerId === customer.id)
+            .map((sale) => withSaleState(store, sale)),
+        ),
+      );
+    }),
+    http.post(`${apiV1}/customers/:id/deactivate`, ({ params }) => {
+      const customer = store.customers.find((row) => row.id === params.id);
+      if (!customer)
+        return apiError(404, "CUSTOMER_NOT_FOUND", "Client introuvable.");
+      const isActive = false;
+      if (customer.isActive === isActive)
+        return apiError(
+          409,
+          isActive ? "CUSTOMER_ALREADY_ACTIVE" : "CUSTOMER_ALREADY_INACTIVE",
+          "Ce client est déjà dans cet état.",
+        );
+      if (
+        !isActive &&
+        (!receivable(store, customer.id).isZero() ||
+          !advanceBalance(store, customer.id).isZero())
+      )
+        return apiError(
+          409,
+          "CUSTOMER_HAS_BALANCE",
+          "Ce client a encore un solde ou une avance : réglez-les avant de le désactiver.",
+        );
+      Object.assign(customer, { isActive, version: customer.version + 1 });
+      return ok({ customer });
+    }),
+    http.post(`${apiV1}/customers/:id/reactivate`, ({ params }) => {
+      const customer = store.customers.find((row) => row.id === params.id);
+      if (!customer)
+        return apiError(404, "CUSTOMER_NOT_FOUND", "Client introuvable.");
+      const isActive = true;
+      if (customer.isActive === isActive)
+        return apiError(
+          409,
+          isActive ? "CUSTOMER_ALREADY_ACTIVE" : "CUSTOMER_ALREADY_INACTIVE",
+          "Ce client est déjà dans cet état.",
+        );
+      if (
+        !isActive &&
+        (!receivable(store, customer.id).isZero() ||
+          !advanceBalance(store, customer.id).isZero())
+      )
+        return apiError(
+          409,
+          "CUSTOMER_HAS_BALANCE",
+          "Ce client a encore un solde ou une avance : réglez-les avant de le désactiver.",
+        );
+      Object.assign(customer, { isActive, version: customer.version + 1 });
+      return ok({ customer });
     }),
     http.get(`${apiV1}/customers/:id/statement`, ({ params }) => {
       const customer = store.customers.find((row) => row.id === params.id);
@@ -455,10 +600,68 @@ export function customersOrdersHandlers(
         return ok({ payment }, 201);
       },
     ),
+    http.get(`${apiV1}/orders/summary`, ({ request }) => {
+      const url = new URL(request.url);
+      const customerId = url.searchParams.get("customerId");
+      const q = url.searchParams.get("q");
+      const dueAfter = url.searchParams.get("dueAfter");
+      const dueBefore = url.searchParams.get("dueBefore");
+      const now = Date.now();
+      const inScope = store.orders.filter((order) =>
+        matchesScope(order, customerId, q),
+      );
+      const inWindow = inScope.filter(
+        (order) =>
+          (!dueAfter ||
+            order.requestedFulfillmentAt >= new Date(dueAfter).toISOString()) &&
+          (!dueBefore ||
+            order.requestedFulfillmentAt <= new Date(dueBefore).toISOString()),
+      );
+      const open = inWindow.filter((order) => openStatuses.has(order.status));
+      const sum = (rows: Order[], pick: (order: Order) => string) =>
+        rows.reduce((total, row) => total.plus(pick(row)), new Decimal(0));
+      const today = new Date(now).toISOString().slice(0, 10);
+      return ok({
+        summary: {
+          count: inWindow.length,
+          openCount: open.length,
+          readyCount: inWindow.filter((order) => order.status === "READY")
+            .length,
+          completedCount: inWindow.filter(
+            (order) => order.status === "COMPLETED",
+          ).length,
+          cancelledCount: inWindow.filter(
+            (order) => order.status === "CANCELLED",
+          ).length,
+          overdueCount: inScope.filter(
+            (order) =>
+              openStatuses.has(order.status) &&
+              new Date(order.requestedFulfillmentAt).getTime() < now,
+          ).length,
+          dueTodayCount: inScope.filter(
+            (order) =>
+              openStatuses.has(order.status) &&
+              order.requestedFulfillmentAt.startsWith(today),
+          ).length,
+          openTotalTnd: sum(open, (order) => order.totalTnd).toFixed(3),
+          advanceHeldTnd: sum(open, (order) => order.advanceBalanceTnd).toFixed(
+            3,
+          ),
+          remainingTnd: sum(open, (order) => order.totalTnd)
+            .minus(sum(open, (order) => order.advanceBalanceTnd))
+            .toFixed(3),
+          completedTotalTnd: sum(
+            inWindow.filter((order) => order.status === "COMPLETED"),
+            (order) => order.totalTnd,
+          ).toFixed(3),
+        },
+      });
+    }),
     http.get(`${apiV1}/orders`, ({ request }) => {
       const url = new URL(request.url);
       const status = url.searchParams.get("status");
       const customerId = url.searchParams.get("customerId");
+      const q = url.searchParams.get("q");
       const dueState = url.searchParams.get("dueState");
       const dueAfter = url.searchParams.get("dueAfter");
       const dueBefore = url.searchParams.get("dueBefore");
@@ -467,7 +670,7 @@ export function customersOrdersHandlers(
         .filter(
           (order) =>
             (!status || order.status === status) &&
-            (!customerId || order.customerId === customerId),
+            matchesScope(order, customerId, q),
         )
         .filter(
           (order) =>
@@ -549,7 +752,7 @@ export function customersOrdersHandlers(
     http.get(`${apiV1}/orders/:id`, ({ params }) => {
       const order = store.orders.find((row) => row.id === params.id);
       return order
-        ? ok({ order })
+        ? ok({ order: withFigures(order) })
         : apiError(404, "ORDER_NOT_FOUND", "Commande introuvable.");
     }),
     http.post(`${apiV1}/orders/:id/status`, async ({ params, request }) => {
@@ -599,7 +802,7 @@ export function customersOrdersHandlers(
           .greaterThan(order.totalTnd)
       )
         return apiError(
-          409,
+          400,
           "ORDER_ADVANCE_EXCEEDS_TOTAL",
           "L'acompte dépasse le total de la commande.",
         );
@@ -629,6 +832,10 @@ export function customersOrdersHandlers(
         completedAt: string;
         paidAmountTnd?: string;
       };
+      if (body.paidAmountTnd === undefined)
+        return apiError(400, "VALIDATION_ERROR", "Indiquez le montant payé.", {
+          paidAmountTnd: "Indiquez le montant payé.",
+        });
       const order = store.orders.find((row) => row.id === params.id);
       if (!order)
         return apiError(404, "ORDER_NOT_FOUND", "Commande introuvable.");

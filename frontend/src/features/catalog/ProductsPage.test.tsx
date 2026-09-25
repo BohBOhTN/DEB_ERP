@@ -154,6 +154,81 @@ describe("Produits", () => {
     expect(
       screen.queryByRole("button", { name: "Actions" }),
     ).not.toBeInTheDocument();
+    // Issue 008: the cost and the margin are the owner's figures.
+    expect(
+      screen.queryByRole("columnheader", { name: "Coût" }),
+    ).not.toBeInTheDocument();
+  });
+
+  // Issue 008: with margin.view the owner types an approximate cost, sees
+  // it in the list with the margin, and on the product page as price less
+  // cost with its share of the price.
+  it("captures the approximate cost and shows the margin with margin.view", async () => {
+    const store = makeCatalogStore();
+    server.use(...catalogHandlers(store));
+    const router = renderAt("/produits", [
+      ...manager.effectivePermissions,
+      "margin.view",
+    ]);
+
+    const table = await screen.findByRole("table", { name: "Produits" });
+    expect(
+      within(table).getByRole("columnheader", { name: "Coût" }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByRole("columnheader", { name: "Marge" }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByText("Pain complet").closest("tr"),
+    ).toHaveTextContent("—");
+
+    await userEvent.click(
+      within(
+        within(table).getByText("Pain complet").closest("tr") as HTMLElement,
+      ).getByRole("button", { name: "Actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Modifier" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Modifier Pain complet",
+    });
+    await userEvent.type(
+      within(dialog).getByRole("textbox", { name: /Coût approximatif/ }),
+      "0,8",
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Enregistrer" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(store.products[0]).toMatchObject({ approximateCostTnd: "0.8" });
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("table", { name: "Produits" }))
+          .getByText("Pain complet")
+          .closest("tr"),
+      ).toHaveTextContent("0,400"),
+    );
+
+    await userEvent.click(
+      within(screen.getByRole("table", { name: "Produits" })).getByText(
+        "Pain complet",
+      ),
+    );
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/produits/product-1"),
+    );
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Pain complet" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Coût approximatif").parentElement,
+    ).toHaveTextContent("0,800");
+    expect(
+      screen.getByText("Marge approximative").parentElement,
+    ).toHaveTextContent("0,400 TND (33,3 %)");
   });
 
   it("shows the empty and error states", async () => {

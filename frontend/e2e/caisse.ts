@@ -163,6 +163,7 @@ function totalsOf(state: CaisseState, sessionId: string) {
     advancesRefundedTnd: "0.000",
     customerPaymentsTnd: "0.000",
     customerPaymentReversalsTnd: "0.000",
+    saleRefundsTnd: "0.000",
   };
 }
 
@@ -377,6 +378,32 @@ export async function handleCaisse(
       return (route.abort("connectionreset"), true);
     }
     return (route.fulfill(envelope({ sale }, 201)), true);
+  }
+  if (path === "/pos/sales/summary" && method === "GET") {
+    const posted = state.sales.filter((sale) => sale.status === "POSTED");
+    const sum = (pick: (sale: Sale) => string) =>
+      money(posted.reduce((acc, sale) => acc + Number(pick(sale)), 0));
+    return (
+      route.fulfill(
+        envelope({
+          summary: {
+            count: posted.length,
+            paidCount: posted.filter((sale) => sale.paymentState === "PAID")
+              .length,
+            partiallyPaidCount: posted.filter(
+              (sale) => sale.paymentState === "PARTIALLY_PAID",
+            ).length,
+            unpaidCount: posted.filter((sale) => sale.paymentState === "UNPAID")
+              .length,
+            cancelledCount: 0,
+            totalTnd: sum((sale) => sale.totalTnd),
+            paidTnd: sum((sale) => sale.paidAmountTnd),
+            remainingTnd: sum((sale) => sale.remainingDueTnd),
+          },
+        }),
+      ),
+      true
+    );
   }
   if (path === "/pos/sales" && method === "GET") {
     const sessionId = url.searchParams.get("sessionId");

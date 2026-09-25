@@ -8,6 +8,11 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
 
 ### Added
 
+- Issue #48, Produits and Accueil: an approximate cost per product (per
+  base unit, ingredients only) behind the new `margin.view` permission,
+  the margin per product on the list and the page, the cost snapshotted
+  on every sold line at posting, and a `Marge approximative` tile on
+  Accueil over the day's costed sales.
 - Sprint 27 polish: a command palette (`Ctrl+K` / `⌘K`) over the
   navigation, the actions and a search of customers, products and
   suppliers; a print stylesheet with `Imprimer` on the three statements;
@@ -31,6 +36,46 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
 
 ### Fixed
 
+- Issue #49, line editors: product and raw-material pickers read a
+  session cache instead of calling the API on every opening; the direct
+  distributor sale takes an edited unit price, refused below the product's
+  approximate cost; every editable line accepts a typed line total that
+  sets the unit price; a `Vente directe distributeur` quick action on
+  Accueil opens the dialog on the distributors page.
+- Issue #42, Accueil: the expenses tile reads the selected business day
+  ("Dépenses du jour" / "Dépenses d'hier") instead of the calendar month
+  in UTC; every daily tile follows the `Aujourd'hui` / `Hier` control;
+  "Encaissé en espèces" uses the drawer formula with advances and till
+  règlements; the balance tiles say they are current; the empty hint shows
+  only on a fresh database; quick actions open the creation pages.
+- Issue #46, Clients: a customer is deactivated and reactivated under the
+  new `customers.deactivate` permission, never deleted, and only once
+  settled; the customer page shows orders without the cancelled ones,
+  sales, paid and due, and pages the customer's sales with their state;
+  the list has an activity filter and row actions; the form captures the
+  address and the tax identifier; tabs follow the viewer's permissions.
+- Issue #44, Ventes: a KPI row, the period filter, a search and a status
+  filter on the sales list; a sale can be cancelled under the new
+  `pos.cancel_sale` permission with its stock, receivable and cash
+  reversed and a reason kept; the remainder of a credit sale is collected
+  from its row through the customer's règlement dialog; the receipt lists
+  every movement of money and the order it came from; customer ledger
+  labels match the backend's entry types.
+- Issue #45, Commandes: a KPI row, the period filter and a search on the
+  queue, the detail page's actions on every row, `Avance` and `Reste`
+  stated by the API for every state; a completion now always states the
+  amount paid (an empty amount was recorded as paid in full); the
+  "Aujourd'hui" and "À venir" queues no longer return the same rows; the
+  deposit is capped inline, worded as a deposit and gated like its route;
+  the order editor shows the catalogue price instead of an ignored field.
+- Issue #41, one period filter: `Aujourd'hui` (default), `Hier`,
+  `Cette semaine`, `Ce mois` or a custom date or range, kept in the URL,
+  on the sales, session, movement, audit and expense lists.
+- Issue #43, Caisse: the whole product card adds the product; the cashier
+  stays on the till after a sale with a `Voir` action on the toast; the
+  payment method control is gone (cash only); Enter on a focused tile
+  activates that tile; emptying a cart of several lines asks first; a
+  cashier without `pos.credit_sale` can post a fully paid sale.
 - Issue #47, règlements tied to documents: a payment settles the party's
   open documents (explicit allocations first, the remainder oldest first),
   sales, distributor sales, settlements and purchases keep `Payé`, `Reste`

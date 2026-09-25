@@ -122,6 +122,59 @@ export interface CustomerListQuery {
   q?: string;
   sort?: "name" | "balance";
   minBalance?: string;
+  /// Active customers by default; inactive ones on request.
+  isActive?: boolean;
+}
+
+/// The figures of the customer page (issue #46).
+export interface CustomerSummary {
+  ordersCount: number;
+  openOrdersCount: number;
+  salesCount: number;
+  cancelledSalesCount: number;
+  salesTotalTnd: string;
+  paidTnd: string;
+  dueTnd: string;
+  advanceTnd: string;
+  lastSaleAt: string | null;
+  lastPaymentAt: string | null;
+}
+
+export async function getCustomerSummary(
+  customerId: string,
+): Promise<CustomerSummary> {
+  return (
+    await apiClient.get<{ summary: CustomerSummary }>(
+      `/customers/${customerId}/summary`,
+    )
+  ).summary;
+}
+
+/// Every sale of the customer, newest first, with what the ledger still
+/// carries for each.
+export function listCustomerSales(
+  customerId: string,
+  query: { page: number; pageSize: number },
+): Promise<PageResult<SaleSummary & { balanceTnd: string }>> {
+  return apiClient.list<SaleSummary & { balanceTnd: string }>(
+    `/customers/${customerId}/sales`,
+    { query: toSearchParams({ ...query }) },
+  );
+}
+
+/// CUS-004: deactivation keeps the history and blocks new credit; a
+/// customer with a balance cannot be deactivated.
+export async function setCustomerActive(
+  customerId: string,
+  isActive: boolean,
+  reason?: string,
+): Promise<Customer> {
+  return (
+    await apiClient.post<{ customer: Customer }>(
+      `/customers/${customerId}/${isActive ? "reactivate" : "deactivate"}`,
+      { reason },
+    )
+  ).customer;
 }
 
 /// The plain directory (`customers.view`): names for pickers when the

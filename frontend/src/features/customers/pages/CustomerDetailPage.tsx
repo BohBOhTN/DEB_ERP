@@ -1,4 +1,12 @@
-import { Banknote, MoreHorizontal, Pencil, Plus, Undo2 } from "lucide-react";
+import {
+  Banknote,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Undo2,
+  UserMinus,
+  UserPlus,
+} from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
@@ -6,10 +14,14 @@ import {
   type DataTableColumn,
 } from "../../../components/patterns/DataTable/DataTable.js";
 import { KeyValueList } from "../../../components/patterns/KeyValueList/KeyValueList.js";
+import { KpiGrid } from "../../../components/patterns/KpiGrid/KpiGrid.js";
+import { KpiTile } from "../../../components/patterns/KpiTile/KpiTile.js";
 import { PageHeader } from "../../../components/patterns/PageHeader/PageHeader.js";
 import { PermissionGate } from "../../../components/patterns/PermissionGate/PermissionGate.js";
 import { ReversePaymentDialog } from "../../../components/patterns/ReversePaymentDialog/ReversePaymentDialog.js";
+import { ConfirmDialog } from "../../../components/ui/ConfirmDialog/ConfirmDialog.js";
 import { DropdownMenu } from "../../../components/ui/DropdownMenu/DropdownMenu.js";
+import { useConfirm } from "../../../lib/hooks/useConfirm.js";
 import { IconButton } from "../../../components/ui/IconButton/IconButton.js";
 import { useToast } from "../../../components/ui/Toast/useToast.js";
 import { Button } from "../../../components/ui/Button/Button.js";
@@ -31,10 +43,12 @@ import type { CustomerPayment, SaleSummary } from "../customers.api.js";
 import {
   useCustomer,
   useCustomerPayments,
-  useCustomerStatementPages,
+  useCustomerSales,
+  useCustomerSummary,
   useReverseCustomerPayment,
+  useSetCustomerActive,
 } from "../customers.queries.js";
-import { salePaymentPill } from "../components/customerLabels.js";
+import { salePill } from "../components/customerLabels.js";
 import { CustomerFormDialog } from "../components/CustomerFormDialog.js";
 import { CustomerPaymentDialog } from "../components/CustomerPaymentDialog.js";
 import { CustomerStatement } from "../components/CustomerStatement.js";
@@ -46,7 +60,11 @@ export function CustomerDetailPage() {
   const { customerId = "" } = useParams();
   const permissions = useSessionPermissions();
   const navigate = useNavigate();
+  const toast = useToast();
   const query = useCustomer(customerId);
+  const summary = useCustomerSummary(customerId);
+  const activation = useConfirm();
+  const setActive = useSetCustomerActive();
   const [editing, setEditing] = useState(false);
   const [paying, setPaying] = useState(false);
   const customer = query.data;
@@ -67,6 +85,34 @@ export function CustomerDetailPage() {
   }
 
   const owes = Number(customer.balanceTnd) > 0;
+  const count = (value: number | undefined) => value ?? 0;
+
+  const toggleActive = async () => {
+    const deactivating = customer.isActive;
+    const { confirmed } = await activation.confirm({
+      title: deactivating
+        ? `Désactiver ${customer.name} ?`
+        : `Réactiver ${customer.name} ?`,
+      tone: deactivating ? "danger" : "default",
+      confirmLabel: deactivating ? "Désactiver" : "Réactiver",
+      impact: deactivating
+        ? "Le client ne sera plus proposé pour une vente à crédit, une commande ou un règlement. Ses ventes, commandes et règlements restent consultables."
+        : "Le client sera de nouveau proposé pour les ventes à crédit, les commandes et les règlements.",
+    });
+    if (!confirmed) return;
+    try {
+      await setActive.mutateAsync({
+        customerId: customer.id,
+        isActive: !deactivating,
+      });
+      toast.success(
+        deactivating ? "Client désactivé" : "Client réactivé",
+        customer.name,
+      );
+    } catch (error) {
+      toast.fromError(error);
+    }
+  };
 
   return (
     <>
@@ -89,9 +135,22 @@ export function CustomerDetailPage() {
               <Button
                 leftIcon={<Banknote />}
                 onClick={() => setPaying(true)}
-                disabled={!owes}
+                disabled={!owes || !customer.isActive}
               >
                 Encaisser un règlement
+              </Button>
+            </PermissionGate>
+            <PermissionGate
+              permissions={permissions}
+              permission="customers.deactivate"
+            >
+              <Button
+                variant={customer.isActive ? "danger" : "secondary"}
+                leftIcon={customer.isActive ? <UserMinus /> : <UserPlus />}
+                loading={setActive.isPending}
+                onClick={() => void toggleActive()}
+              >
+                {customer.isActive ? "Désactiver" : "Réactiver"}
               </Button>
             </PermissionGate>
             <PermissionGate
@@ -133,6 +192,7 @@ export function CustomerDetailPage() {
               items={[
                 { label: "Téléphone", value: customer.phone },
                 { label: "Adresse", value: customer.address },
+                { label: "Identifiant fiscal", value: customer.taxIdentifier },
                 { label: "Créé le", value: formatDate(customer.createdAt) },
                 { label: "Notes", value: customer.notes },
               ]}
@@ -159,32 +219,80 @@ export function CustomerDetailPage() {
             </div>
           </Card>
         </div>
+        <KpiGrid columns={4}>
+          <KpiTile
+            label="Commandes"
+            value={count(summary.data?.ordersCount)}
+            note={`dont ${count(summary.data?.openOrdersCount)} ouverte${count(summary.data?.openOrdersCount) > 1 ? "s" : ""} · sans les annulées`}
+            loading={summary.isPending}
+          />
+          <KpiTile
+            label="Ventes"
+            value={count(summary.data?.salesCount)}
+            note={`${formatMoney(summary.data?.salesTotalTnd ?? "0")}${count(summary.data?.cancelledSalesCount) > 0 ? ` · ${count(summary.data?.cancelledSalesCount)} annulée${count(summary.data?.cancelledSalesCount) > 1 ? "s" : ""}` : ""}`}
+            loading={summary.isPending}
+          />
+          <KpiTile
+            label="Payé"
+            value={formatMoney(summary.data?.paidTnd ?? "0")}
+            note={
+              summary.data?.lastPaymentAt
+                ? `dernier règlement le ${formatDate(summary.data.lastPaymentAt)}`
+                : "aucun règlement"
+            }
+            loading={summary.isPending}
+          />
+          <KpiTile
+            label="Dû"
+            value={formatMoney(summary.data?.dueTnd ?? "0")}
+            note={
+              summary.data?.lastSaleAt
+                ? `dernière vente le ${formatDate(summary.data.lastSaleAt)}`
+                : "aucune vente"
+            }
+            loading={summary.isPending}
+            featured
+          />
+        </KpiGrid>
         <Tabs
           label="Détail du client"
           items={[
-            {
-              value: "sales",
-              label: "Ventes",
-              content: <CustomerSalesTab customerId={customer.id} />,
-            },
+            ...(permissions.has("customer_balances.view")
+              ? [
+                  {
+                    value: "sales",
+                    label: "Ventes",
+                    content: <CustomerSalesTab customerId={customer.id} />,
+                  },
+                ]
+              : []),
             {
               value: "orders",
               label: "Commandes",
               content: <CustomerOrdersTab customerId={customer.id} />,
             },
-            {
-              value: "statement",
-              label: "Relevé",
-              content: <CustomerStatement customerId={customer.id} />,
-            },
-            {
-              value: "payments",
-              label: "Règlements",
-              content: <CustomerPaymentsTab customerId={customer.id} />,
-            },
+            ...(permissions.has("customer_balances.view")
+              ? [
+                  {
+                    value: "statement",
+                    label: "Relevé",
+                    content: <CustomerStatement customerId={customer.id} />,
+                  },
+                ]
+              : []),
+            ...(permissions.has("customer_payments.view")
+              ? [
+                  {
+                    value: "payments",
+                    label: "Règlements",
+                    content: <CustomerPaymentsTab customerId={customer.id} />,
+                  },
+                ]
+              : []),
           ]}
         />
       </div>
+      <ConfirmDialog {...activation.dialog} />
       <CustomerFormDialog
         open={editing}
         onOpenChange={setEditing}
@@ -199,15 +307,20 @@ export function CustomerDetailPage() {
   );
 }
 
-/// Sales come from the statement, which carries each sale's remaining due.
+/// Every sale of the customer, paged, with the balance the ledger still
+/// carries and the state pill (issue #46).
 function CustomerSalesTab({ customerId }: { customerId: string }) {
-  const query = useCustomerStatementPages(customerId, {});
-  const sales = query.data?.pages[0]?.sales ?? [];
+  const [page, setPage] = useState(1);
+  const query = useCustomerSales(customerId, { page, pageSize: 10 });
   const columns: DataTableColumn<SaleSummary & { balanceTnd: string }>[] = [
     {
       id: "reference",
       header: "Référence",
-      accessorFn: (row) => row.reference,
+      cell: ({ row }) => (
+        <Link to={`/caisse/ventes/${row.original.id}`}>
+          {row.original.reference}
+        </Link>
+      ),
     },
     {
       id: "date",
@@ -221,6 +334,12 @@ function CustomerSalesTab({ customerId }: { customerId: string }) {
       accessorFn: (row) => formatMoney(row.totalTnd),
     },
     {
+      id: "paid",
+      header: "Payé",
+      meta: { align: "right" },
+      accessorFn: (row) => formatMoney(row.paidAmountTnd),
+    },
+    {
       id: "balance",
       header: "Reste",
       meta: { align: "right" },
@@ -228,10 +347,8 @@ function CustomerSalesTab({ customerId }: { customerId: string }) {
     },
     {
       id: "state",
-      header: "Paiement",
-      cell: ({ row }) => (
-        <StatusPill {...salePaymentPill(row.original.paymentState)} />
-      ),
+      header: "État",
+      cell: ({ row }) => <StatusPill {...salePill(row.original)} />,
     },
   ];
 
@@ -239,11 +356,11 @@ function CustomerSalesTab({ customerId }: { customerId: string }) {
     <DataTable<SaleSummary & { balanceTnd: string }>
       label="Ventes du client"
       columns={columns}
-      data={sales}
-      total={sales.length}
-      page={1}
-      pageSize={Math.max(sales.length, 1)}
-      onChange={() => undefined}
+      data={query.data?.items ?? []}
+      total={query.data?.total ?? 0}
+      page={page}
+      pageSize={10}
+      onChange={(change) => change.page && setPage(change.page)}
       loading={query.isPending}
       error={query.error}
       onRetry={() => void query.refetch()}
@@ -261,7 +378,7 @@ function CustomerSalesTab({ customerId }: { customerId: string }) {
           <span className={styles.muted}>
             {formatDateTime(row.soldAt)} · reste {formatMoney(row.balanceTnd)}
           </span>
-          <StatusPill {...salePaymentPill(row.paymentState)} />
+          <StatusPill {...salePill(row)} />
         </>
       )}
     />

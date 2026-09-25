@@ -1,4 +1,4 @@
-import { PosSessionStatus, SalePaymentState } from "@prisma/client";
+import { PosSessionStatus, SalePaymentState, SaleStatus } from "@prisma/client";
 import { Router, type Response } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
@@ -37,14 +37,27 @@ export const listQuerySchema = z.object({
   ...pageFields,
 });
 
-export const saleListQuerySchema = z.object({
-  sort: sortField(["soldAt", "totalTnd"]),
+const saleFilterFields = {
   ...dateRangeFields,
   customerId: z.string().trim().min(1).optional(),
   paymentState: z.nativeEnum(SalePaymentState).optional(),
   cashierUserId: z.string().trim().min(1).optional(),
   sessionId: z.string().trim().min(1).optional(),
+  status: z.nativeEnum(SaleStatus).optional(),
+  ...searchFields,
+};
+
+export const saleListQuerySchema = z.object({
+  sort: sortField(["soldAt", "totalTnd"]),
+  ...saleFilterFields,
   ...pageFields,
+});
+
+/// The KPI row above the sales list takes the list's filters without paging.
+export const saleSummaryQuerySchema = z.object(saleFilterFields);
+
+export const cancelSaleSchema = z.object({
+  reason: z.string().trim().min(3),
 });
 
 export const sessionListQuerySchema = z.object({
@@ -184,7 +197,7 @@ export function posRouter(params: {
     requirePermission("pos.access"),
     async (request, response, next) => {
       try {
-        const query = saleListQuerySchema.parse(request.query);
+        const query = withSearch(saleListQuerySchema.parse(request.query));
         const sales = await params.posService.listSales(query);
         response.json(okFor(response, { sales }));
       } catch (error) {
@@ -199,11 +212,48 @@ export function posRouter(params: {
     async (request, response, next) => {
       try {
         const body = postSaleSchema.parse(request.body);
-        assertCreditSalePermission(body.paidAmountTnd, response);
         const result = await params.posService.postPaidSale(
           {
             ...body,
             idempotencyKey: readIdempotencyKey(request.headers),
+            // Only a sale that leaves a remainder needs pos.credit_sale; the
+            // service knows the total, so it decides (issue #43).
+            creditAllowed: hasPermission(response, "pos.credit_sale"),
+          },
+          actorFromResponse(response),
+        );
+        sendCommandResult(response, 201, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/sales/summary",
+    requirePermission("pos.access"),
+    async (request, response, next) => {
+      try {
+        const query = withSearch(saleSummaryQuerySchema.parse(request.query));
+        const summary = await params.posService.summarizeSales(query);
+        response.json(okFor(response, { summary }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/sales/:saleId/cancel",
+    requirePermission("pos.cancel_sale"),
+    async (request, response, next) => {
+      try {
+        const body = cancelSaleSchema.parse(request.body);
+        const result = await params.posService.cancelSale(
+          parseRouteParam(request.params.saleId),
+          {
+            idempotencyKey: readIdempotencyKey(request.headers),
+            reason: body.reason,
           },
           actorFromResponse(response),
         );
@@ -290,25 +340,12 @@ function readIdempotencyKey(headers: IncomingHttpHeaders): string {
   return value;
 }
 
-function assertCreditSalePermission(
-  paidAmountTnd: string | undefined,
-  response: Response,
-) {
-  if (paidAmountTnd === undefined) {
-    return;
-  }
-
+function hasPermission(response: Response, permission: string): boolean {
   const user = response.locals.currentUser as {
     effectivePermissions: string[];
   };
 
-  if (!user.effectivePermissions.includes("pos.credit_sale")) {
-    throw new AppError({
-      statusCode: 403,
-      code: "PERMISSION_DENIED",
-      message: "Vous n'avez pas l'autorisation nécessaire.",
-    });
-  }
+  return user.effectivePermissions.includes(permission);
 }
 
 function parseRouteParam(value: string | string[] | undefined): string {

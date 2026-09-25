@@ -27,9 +27,8 @@ test("creates an order with an advance and completes it with the remainder", asy
   await page.getByPlaceholder("Rechercher produit").fill("pain");
   await page.getByText("Pain complet").click();
   await page.getByRole("textbox", { name: "Quantité 1" }).fill("10");
-  await expect(
-    page.getByRole("textbox", { name: "Prix unitaire 1" }),
-  ).toHaveValue("4,000");
+  // The price comes from the catalogue and is shown, not edited (#45).
+  await expect(page.getByRole("main")).toContainText("4,000 TND");
   await page.getByRole("textbox", { name: /Acompte/ }).fill("20");
   await page.getByRole("button", { name: "Enregistrer la commande" }).click();
 

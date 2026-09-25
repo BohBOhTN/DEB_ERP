@@ -180,6 +180,9 @@ model Product {
   categoryId           String                      @map("category_id")
   baseUnitId           String                      @map("base_unit_id")
   salePriceTnd         Decimal                     @map("sale_price_tnd") @db.Decimal(12, 3)
+  /// Issue 008: what the owner estimates one base unit costs (ingredients
+  /// only). Typed by hand, never computed; snapshotted on sale lines.
+  approximateCostTnd   Decimal?                    @map("approximate_cost_tnd") @db.Decimal(12, 3)
   isStockable          Boolean                     @default(true) @map("is_stockable")
   isActive             Boolean                     @default(true) @map("is_active")
   notes                String?
@@ -274,6 +277,7 @@ enum InventorySourceType {
   PURCHASE
   PURCHASE_CANCELLATION
   POS_SALE
+  POS_SALE_CANCELLATION
   CUSTOMER_ORDER_SALE
   DISTRIBUTOR_DIRECT_SALE
   DISTRIBUTOR_DISPATCH
@@ -596,6 +600,11 @@ model Sale {
   remainingDueTnd    Decimal                     @default(0) @map("remaining_due_tnd") @db.Decimal(14, 3)
   postedAt           DateTime                    @map("posted_at")
   postedByUserId     String                      @map("posted_by_user_id")
+  /// A cancelled sale keeps its lines and figures; its effects are reversed
+  /// by compensating records (rule 04 section 12, issue #44).
+  cancelledAt        DateTime?                   @map("cancelled_at")
+  cancelledByUserId  String?                     @map("cancelled_by_user_id")
+  cancellationReason String?                     @map("cancellation_reason")
   correlationId      String?                     @map("correlation_id")
   createdAt          DateTime                    @default(now()) @map("created_at")
   updatedAt          DateTime                    @updatedAt @map("updated_at")
@@ -614,6 +623,8 @@ model Sale {
   @@index([paymentState])
   @@index([postedByUserId])
   @@index([sessionId, postedAt])
+  @@index([status, soldAt])
+  @@index([customerId, status, soldAt])
   @@map("sales")
 }
 
@@ -624,6 +635,7 @@ model SaleLine {
   unitId              String   @map("unit_id")
   quantity            Decimal  @db.Decimal(18, 6)
   unitPriceTnd        Decimal  @map("unit_price_tnd") @db.Decimal(14, 3)
+  unitCostTnd         Decimal? @map("unit_cost_tnd") @db.Decimal(14, 3)
   lineTotalTnd        Decimal  @map("line_total_tnd") @db.Decimal(14, 3)
   productNameSnapshot String   @map("product_name_snapshot")
   unitNameSnapshot    String   @map("unit_name_snapshot")
@@ -639,17 +651,20 @@ model SaleLine {
 }
 
 model SalePayment {
-  id            String        @id @default(cuid())
-  saleId        String        @map("sale_id")
-  sessionId     String        @map("session_id")
-  amountTnd     Decimal       @map("amount_tnd") @db.Decimal(14, 3)
-  method        PaymentMethod @default(CASH)
-  paidAt        DateTime      @map("paid_at")
-  actorUserId   String        @map("actor_user_id")
-  correlationId String?       @map("correlation_id")
-  createdAt     DateTime      @default(now()) @map("created_at")
-  sale          Sale          @relation(fields: [saleId], references: [id], onDelete: Restrict)
-  session       PosSession    @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  id            String              @id @default(cuid())
+  saleId        String              @map("sale_id")
+  /// The session whose drawer the money went through: the sale's session
+  /// for a receipt, the session open at cancellation for a refund.
+  sessionId     String              @map("session_id")
+  movement      SalePaymentMovement @default(RECEIPT)
+  amountTnd     Decimal             @map("amount_tnd") @db.Decimal(14, 3)
+  method        PaymentMethod       @default(CASH)
+  paidAt        DateTime            @map("paid_at")
+  actorUserId   String              @map("actor_user_id")
+  correlationId String?             @map("correlation_id")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  sale          Sale                @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  session       PosSession          @relation(fields: [sessionId], references: [id], onDelete: Restrict)
 
   @@index([saleId])
   @@index([sessionId])
@@ -732,6 +747,7 @@ model CustomerLedgerEntry {
   @@index([balanceKind])
   @@index([occurredAt])
   @@index([customerId, balanceKind])
+  @@index([customerId, occurredAt])
   @@map("customer_ledger_entries")
 }
 
@@ -770,6 +786,7 @@ model CustomerOrder {
   @@index([status])
   @@index([requestedFulfillmentAt])
   @@index([status, requestedFulfillmentAt])
+  @@index([customerId, requestedFulfillmentAt])
   @@map("customer_orders")
 }
 
@@ -818,6 +835,7 @@ model CustomerOrderAdvance {
   @@index([customerId])
   @@index([sessionId])
   @@index([paidAt])
+  @@index([orderId, paidAt])
   @@map("customer_order_advances")
 }
 
@@ -829,6 +847,13 @@ enum PosSessionStatus {
 enum SaleStatus {
   POSTED
   CANCELLED
+}
+
+/// Cash through the drawer for a sale: taken at posting, or handed back
+/// when the sale is cancelled.
+enum SalePaymentMovement {
+  RECEIPT
+  REFUND
 }
 
 enum SalePaymentState {
@@ -937,6 +962,7 @@ model DistributorSaleLine {
   unitId              String          @map("unit_id")
   quantity            Decimal         @db.Decimal(18, 6)
   unitPriceTnd        Decimal         @map("unit_price_tnd") @db.Decimal(14, 3)
+  unitCostTnd         Decimal?        @map("unit_cost_tnd") @db.Decimal(14, 3)
   lineTotalTnd        Decimal         @map("line_total_tnd") @db.Decimal(14, 3)
   productNameSnapshot String          @map("product_name_snapshot")
   unitNameSnapshot    String          @map("unit_name_snapshot")
@@ -1044,6 +1070,7 @@ model DistributorSettlementLine {
   returnedQuantity    Decimal                 @default(0) @map("returned_quantity") @db.Decimal(18, 6)
   unaccountedQuantity Decimal                 @default(0) @map("unaccounted_quantity") @db.Decimal(18, 6)
   unitPriceTnd        Decimal                 @map("unit_price_tnd") @db.Decimal(14, 3)
+  unitCostTnd         Decimal?                @map("unit_cost_tnd") @db.Decimal(14, 3)
   lineTotalTnd        Decimal                 @map("line_total_tnd") @db.Decimal(14, 3)
   productNameSnapshot String                  @map("product_name_snapshot")
   unitNameSnapshot    String                  @map("unit_name_snapshot")

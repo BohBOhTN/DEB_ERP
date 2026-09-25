@@ -16,6 +16,7 @@ export interface DistributionStore {
     name: string;
     baseUnitId: string;
     salePriceTnd: string;
+    approximateCostTnd?: string | null;
     isActive: boolean;
     isStockable: boolean;
     baseUnit: { id: string; name: string };

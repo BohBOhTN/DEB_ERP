@@ -10,8 +10,9 @@ export const simulationKeys = {
   detail: (id: string) => ["simulations", "detail", id] as const,
 };
 
-export function useSimulations(query: api.SimulationListQuery) {
+export function useSimulations(query: api.SimulationListQuery, enabled = true) {
   return useQuery({
+    enabled,
     queryKey: simulationKeys.list(query),
     queryFn: () => api.listSimulations(query),
     placeholderData: (previous) => previous,

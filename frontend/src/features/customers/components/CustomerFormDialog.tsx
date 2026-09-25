@@ -84,6 +84,19 @@ export function CustomerFormDialog({
           autoComplete="tel"
         />
       </FormField>
+      <FormField label="Adresse" error={errors.address?.message}>
+        <TextInput
+          {...form.register("address")}
+          autoComplete="street-address"
+        />
+      </FormField>
+      <FormField
+        label="Identifiant fiscal"
+        error={errors.taxIdentifier?.message}
+        hint="Facultatif."
+      >
+        <TextInput {...form.register("taxIdentifier")} />
+      </FormField>
       <FormField label="Notes" error={errors.notes?.message}>
         <TextArea {...form.register("notes")} rows={3} />
       </FormField>

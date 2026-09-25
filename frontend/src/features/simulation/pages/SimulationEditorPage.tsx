@@ -26,6 +26,8 @@ import {
   listProducts,
   type Product,
 } from "../../catalog/catalog.api.js";
+import { useCachedSearch } from "../../../lib/query/cachedOptions.js";
+import { roots } from "../../../lib/query/invalidation.js";
 import type { SimulationInput } from "../simulation.api.js";
 import { useUnits } from "../../catalog/catalog.queries.js";
 import {
@@ -51,24 +53,20 @@ interface ProductOption extends ComboboxOption {
   product: Product;
 }
 
-async function loadProducts(query: string): Promise<ProductOption[]> {
-  try {
-    const page = await listProducts({
-      page: 1,
-      pageSize: 8,
-      q: query || undefined,
-      isActive: true,
-      sort: { field: "name", direction: "asc" },
-    });
-    return page.items.map((product) => ({
-      value: product.id,
-      label: product.name,
-      description: `${formatMoney(product.salePriceTnd)} / ${product.baseUnit.symbol}`,
-      product,
-    }));
-  } catch {
-    return [];
-  }
+async function fetchProductOptions(query: string): Promise<ProductOption[]> {
+  const page = await listProducts({
+    page: 1,
+    pageSize: 8,
+    q: query || undefined,
+    isActive: true,
+    sort: { field: "name", direction: "asc" },
+  });
+  return page.items.map((product) => ({
+    value: product.id,
+    label: product.name,
+    description: `${formatMoney(product.salePriceTnd)} / ${product.baseUnit.symbol}`,
+    product,
+  }));
 }
 
 /// `/simulations/nouvelle` and `/simulations/:id/modifier` (UI-18, AS-018):
@@ -78,6 +76,11 @@ export function SimulationEditorPage() {
   const { simulationId } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  // Issue 009: the target product picker reads the session cache.
+  const loadProducts = useCachedSearch(
+    roots.catalogProducts,
+    fetchProductOptions,
+  );
   const existing = useSimulation(simulationId ?? "");
   const create = useCreateSimulation();
   const update = useUpdateSimulation();

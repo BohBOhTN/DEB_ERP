@@ -169,7 +169,6 @@ export const fr = {
   unitPrice: "Prix unitaire",
   lineTotal: "Total ligne",
   cash: "Espèces",
-  paymentMethod: "Mode de paiement",
   balance: "Solde",
   advance: "Avance",
 
@@ -214,6 +213,20 @@ export const fr = {
   updatedAt: "Modifié le",
   postedAt: "Validé le",
   dueDate: "Échéance",
+
+  // Accueil
+  salesOfDay: "Ventes du jour",
+  salesOfYesterday: "Ventes d'hier",
+  cashCollected: "Encaissé en espèces",
+  expensesOfDay: "Dépenses du jour",
+  expensesOfYesterday: "Dépenses d'hier",
+  vsPreviousDay: "vs la veille",
+  samePreviousDay: "Comme la veille",
+  previousDayWas: "La veille : {amount}",
+  currentBalance: "Solde actuel",
+  approximateMarginOfDay: "Marge approximative",
+  approximateCost: "Coût approximatif",
+  approximateMargin: "Marge approximative",
 
   // Shell
   navigation: "Navigation",

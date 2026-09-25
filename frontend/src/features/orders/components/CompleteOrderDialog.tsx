@@ -77,11 +77,13 @@ export function CompleteOrderDialog({
         if (overpaid) {
           throw new Error("Le montant dépasse le reste dû.");
         }
+        // Always stated: "0.000" leaves the remainder on the customer's
+        // account, it is never read as "paid in full" (issue #45).
         const completed = await complete.mutateAsync({
           orderId: order.id,
           body: {
             completedAt: new Date().toISOString(),
-            ...(paid.greaterThan(0) ? { paidAmountTnd: paid.toFixed(3) } : {}),
+            paidAmountTnd: paid.toFixed(3),
           },
           idempotencyKey,
         });

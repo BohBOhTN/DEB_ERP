@@ -124,6 +124,17 @@ async function createTestApp(permissionKeys: string[]) {
       ledgerEntries: [],
       payments: [],
     }),
+    setCustomerActive: vi
+      .fn()
+      .mockResolvedValue({ id: "customer-1", isActive: false, version: 2 }),
+    getCustomerSummary: vi.fn().mockResolvedValue({ ordersCount: 0 }),
+    listCustomerSales: vi.fn().mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 25,
+      total: 0,
+      pageCount: 0,
+    }),
     reverseCustomerPayment: vi.fn().mockResolvedValue({
       payment: { id: "payment-1", reversedAt: "2026-09-24T10:00:00.000Z" },
     }),
@@ -411,5 +422,77 @@ describe("api versioning", () => {
 
     expect(v1.body.data.statement.balanceTnd).toBe("30.000");
     expect(legacy.body.data.statement.balanceTnd).toBe("30.000");
+  });
+
+  describe("customer lifecycle and figures (issue #46)", () => {
+    it("deactivates a customer with customers.deactivate", async () => {
+      const { app, cookie, customersService } = await createTestApp([
+        "customers.deactivate",
+      ]);
+
+      await request(app)
+        .post("/api/v1/customers/customer-1/deactivate")
+        .set("Cookie", cookie)
+        .send({ reason: "Doublon" })
+        .expect(200);
+
+      expect(customersService.setCustomerActive).toHaveBeenCalledWith(
+        "customer-1",
+        { isActive: false, reason: "Doublon" },
+        expect.objectContaining({ actorUserId: expect.any(String) }),
+      );
+    });
+
+    it("refuses the deactivation with customers.update alone", async () => {
+      const { app, cookie, customersService } = await createTestApp([
+        "customers.update",
+      ]);
+
+      await request(app)
+        .post("/api/v1/customers/customer-1/deactivate")
+        .set("Cookie", cookie)
+        .send({})
+        .expect(403);
+
+      expect(customersService.setCustomerActive).not.toHaveBeenCalled();
+    });
+
+    it("serves the figures and the sales page with customer_balances.view", async () => {
+      const { app, cookie, customersService } = await createTestApp([
+        "customer_balances.view",
+      ]);
+
+      await request(app)
+        .get("/api/v1/customers/customer-1/summary")
+        .set("Cookie", cookie)
+        .expect(200);
+      await request(app)
+        .get("/api/v1/customers/customer-1/sales?page=2&pageSize=10")
+        .set("Cookie", cookie)
+        .expect(200);
+
+      expect(customersService.getCustomerSummary).toHaveBeenCalledWith(
+        "customer-1",
+      );
+      expect(customersService.listCustomerSales).toHaveBeenCalledWith(
+        "customer-1",
+        { page: 2, pageSize: 10 },
+      );
+    });
+
+    it("filters the balances by activity", async () => {
+      const { app, cookie, customersService } = await createTestApp([
+        "customer_balances.view",
+      ]);
+
+      await request(app)
+        .get("/api/v1/customer-balances?isActive=false")
+        .set("Cookie", cookie)
+        .expect(200);
+
+      expect(customersService.listCustomerBalances).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: false }),
+      );
+    });
   });
 });

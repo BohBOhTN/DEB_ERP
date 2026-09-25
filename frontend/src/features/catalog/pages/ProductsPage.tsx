@@ -24,6 +24,7 @@ import {
   useSetProductActivation,
 } from "../catalog.queries.js";
 import { ProductFormDialog } from "../components/ProductFormDialog.js";
+import { productMargin } from "../components/productMargin.js";
 import {
   RowActions,
   activeFilter,
@@ -79,6 +80,34 @@ export function ProductsPage() {
       meta: { align: "right", sortField: "salePriceTnd" },
       accessorFn: (row) => formatMoney(row.salePriceTnd),
     },
+    ...(permissions.has("margin.view")
+      ? ([
+          {
+            id: "cost",
+            header: "Coût",
+            meta: { align: "right", sortField: "approximateCostTnd" },
+            accessorFn: (row) =>
+              row.approximateCostTnd === null ||
+              row.approximateCostTnd === undefined
+                ? "—"
+                : formatMoney(row.approximateCostTnd),
+          },
+          {
+            id: "margin",
+            header: "Marge",
+            meta: { align: "right" },
+            accessorFn: (row) => {
+              const margin = productMargin(
+                row.salePriceTnd,
+                row.approximateCostTnd,
+              );
+              return margin
+                ? `${formatMoney(margin.amountTnd)}${margin.rate ? ` (${margin.rate.replace(".", ",")} %)` : ""}`
+                : "—";
+            },
+          },
+        ] satisfies DataTableColumn<Product>[])
+      : []),
     {
       id: "stockable",
       header: "Stockable",

@@ -125,6 +125,11 @@ export function SessionDetailPage() {
                 numeric: true,
               },
               {
+                label: "Ventes annulées remboursées",
+                value: formatMoney(totals.saleRefundsTnd),
+                numeric: true,
+              },
+              {
                 label: "Espèces attendues",
                 value: formatMoney(expected),
                 numeric: true,
@@ -140,7 +145,9 @@ export function SessionDetailPage() {
               {
                 label: "Ventes de la session",
                 value: (
-                  <Link to={`/caisse/ventes?sessionId=${session.id}&from=&to=`}>
+                  <Link
+                    to={`/caisse/ventes?sessionId=${session.id}&period=custom`}
+                  >
                     Voir les ventes
                   </Link>
                 ),

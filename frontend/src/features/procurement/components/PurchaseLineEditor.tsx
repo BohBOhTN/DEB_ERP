@@ -3,15 +3,29 @@ import { useCallback, useRef } from "react";
 import {
   LineEditor,
   newLine,
+  unitPriceForTotal,
   type EditorLine,
 } from "../../../components/patterns/LineEditor/LineEditor.js";
 import type { ComboboxOption } from "../../../components/ui/Combobox/Combobox.js";
 import { formatQuantity } from "../../../i18n/format.js";
+import { useCachedSearch } from "../../../lib/query/cachedOptions.js";
+import { roots } from "../../../lib/query/invalidation.js";
 import {
   listRawMaterials,
   type RawMaterial,
 } from "../../catalog/catalog.api.js";
 import { purchaseLineTotal } from "../procurement.schemas.js";
+
+async function fetchRawMaterials(query: string): Promise<RawMaterial[]> {
+  const page = await listRawMaterials({
+    page: 1,
+    pageSize: 8,
+    q: query || undefined,
+    isActive: true,
+    sort: { field: "name", direction: "asc" },
+  });
+  return page.items;
+}
 
 /// A purchase line keeps the raw material record with it so the unit
 /// options, the conversion factor and the base symbol never need a lookup.
@@ -76,18 +90,15 @@ export function PurchaseLineEditor({
   disabled,
 }: PurchaseLineEditorProps) {
   const cache = useRef(new Map<string, RawMaterial>());
+  // Issue 009: one read per query for the session, refreshed by a
+  // raw-material write.
+  const search = useCachedSearch(roots.catalogRawMaterials, fetchRawMaterials);
 
   const loadItems = useCallback(
     async (query: string): Promise<RawMaterialOption[]> => {
-      const page = await listRawMaterials({
-        page: 1,
-        pageSize: 8,
-        q: query || undefined,
-        isActive: true,
-        sort: { field: "name", direction: "asc" },
-      });
+      const items = await search(query);
 
-      return page.items.map((rawMaterial) => {
+      return items.map((rawMaterial) => {
         cache.current.set(rawMaterial.id, rawMaterial);
         return {
           value: rawMaterial.id,
@@ -97,7 +108,7 @@ export function PurchaseLineEditor({
         };
       });
     },
-    [],
+    [search],
   );
 
   const handleChange = (next: EditorLine[]) => {
@@ -173,6 +184,13 @@ export function PurchaseLineEditor({
       lineTotalFor={(line) =>
         purchaseLineTotal(line as PurchaseEditorLine).toFixed(3)
       }
+      // The price is per base unit: a typed total divides by the base
+      // quantity (entered quantity × the unit's factor). Issue 009.
+      unitPriceFromTotal={(line, totalTnd) => {
+        const { factorToBase, quantity } = line as PurchaseEditorLine;
+        const base = safeTimes(quantity, factorToBase || "1");
+        return unitPriceForTotal(base, totalTnd);
+      }}
       errors={errors}
       disabled={disabled}
     />

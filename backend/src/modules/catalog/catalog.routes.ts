@@ -26,7 +26,13 @@ export const listQuerySchema = z.object({
 });
 
 export const productListQuerySchema = listQuerySchema.extend({
-  sort: sortField(["name", "createdAt", "salePriceTnd", "isActive"]),
+  sort: sortField([
+    "name",
+    "createdAt",
+    "salePriceTnd",
+    "approximateCostTnd",
+    "isActive",
+  ]),
   categoryId: z.string().trim().min(1).optional(),
   isStockable: z
     .enum(["true", "false"])
@@ -104,6 +110,17 @@ export const activationSchema = z.object({
   isActive: z.boolean(),
 });
 
+/// Issue 008: the approximate cost is optional and an empty string clears
+/// it; `margin.view` is needed to read it back.
+const approximateCostSchema = z
+  .string()
+  .trim()
+  .regex(/^\d+(\.\d{1,3})?$/)
+  .or(z.literal(""))
+  .nullable()
+  .optional()
+  .transform((value) => (value === "" ? null : value));
+
 export const createProductSchema = z.object({
   code: z.string().optional(),
   barcode: z.string().optional(),
@@ -114,6 +131,7 @@ export const createProductSchema = z.object({
     .string()
     .trim()
     .regex(/^\d+(\.\d{1,3})?$/),
+  approximateCostTnd: approximateCostSchema,
   isStockable: z.boolean(),
   notes: z.string().optional(),
 });
@@ -130,9 +148,29 @@ export const updateProductSchema = z.object({
     .trim()
     .regex(/^\d+(\.\d{1,3})?$/)
     .optional(),
+  approximateCostTnd: approximateCostSchema,
   isStockable: z.boolean().optional(),
   notes: z.string().optional(),
 });
+
+/// The cost and the margin are the owner's figures: a caller without
+/// `margin.view` (a cashier with `products.view`) reads the product without
+/// them (issue 008).
+function withoutCostUnlessAllowed<T extends { approximateCostTnd?: unknown }>(
+  response: Response,
+  product: T,
+): T {
+  const user = response.locals.currentUser as
+    { effectivePermissions: string[] } | undefined;
+
+  if (user?.effectivePermissions.includes("margin.view")) {
+    return product;
+  }
+
+  const rest = { ...product };
+  delete rest.approximateCostTnd;
+  return rest;
+}
 
 export function catalogRouter(params: {
   authService: AuthService;
@@ -339,7 +377,16 @@ export function catalogRouter(params: {
       try {
         const query = withSearch(productListQuerySchema.parse(request.query));
         const result = await params.catalogService.listProducts(query);
-        response.json(okFor(response, { products: result }));
+        response.json(
+          okFor(response, {
+            products: {
+              ...result,
+              items: result.items.map((item) =>
+                withoutCostUnlessAllowed(response, item),
+              ),
+            },
+          }),
+        );
       } catch (error) {
         next(error);
       }
@@ -356,7 +403,11 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.status(201).json(okFor(response, { product }));
+        response.status(201).json(
+          okFor(response, {
+            product: withoutCostUnlessAllowed(response, product),
+          }),
+        );
       } catch (error) {
         next(error);
       }
@@ -374,7 +425,11 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(okFor(response, { product }));
+        response.json(
+          okFor(response, {
+            product: withoutCostUnlessAllowed(response, product),
+          }),
+        );
       } catch (error) {
         next(error);
       }
@@ -392,7 +447,11 @@ export function catalogRouter(params: {
           body,
           actorFromResponse(response),
         );
-        response.json(okFor(response, { product }));
+        response.json(
+          okFor(response, {
+            product: withoutCostUnlessAllowed(response, product),
+          }),
+        );
       } catch (error) {
         next(error);
       }
@@ -407,7 +466,11 @@ export function catalogRouter(params: {
         const product = await params.catalogService.getProduct(
           parseRouteParam(request.params.productId),
         );
-        response.json(okFor(response, { product }));
+        response.json(
+          okFor(response, {
+            product: withoutCostUnlessAllowed(response, product),
+          }),
+        );
       } catch (error) {
         next(error);
       }

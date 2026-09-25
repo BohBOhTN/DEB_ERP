@@ -99,8 +99,14 @@ export function makeSale(overrides: Partial<Sale> = {}): Sale {
     remainingDueTnd: "0.000",
     postedAt: "2026-09-23T08:30:00.000Z",
     postedByUserId: "user-1",
+    cancelledAt: null,
+    cancellationReason: null,
     customer: null,
     postedBy: { id: "user-1", displayName: "Salma Ben Ali" },
+    cancelledBy: null,
+    order: null,
+    paymentAllocations: [],
+    appliedAdvanceTnd: "0.000",
     lines: [
       {
         id: `sline-${n}`,
@@ -117,6 +123,7 @@ export function makeSale(overrides: Partial<Sale> = {}): Sale {
         id: `spay-${n}`,
         amountTnd: "3.400",
         method: "CASH",
+        movement: "RECEIPT",
         paidAt: "2026-09-23T08:30:00.000Z",
       },
     ],

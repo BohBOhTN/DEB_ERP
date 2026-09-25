@@ -1,4 +1,4 @@
-import { Banknote, MoreHorizontal, Pencil, Plus } from "lucide-react";
+import { Banknote, MoreHorizontal, Pencil, Plus, Truck } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -17,6 +17,7 @@ import { useUrlState } from "../../../lib/hooks/useUrlState.js";
 import { useSessionPermissions } from "../../../app/sessionContext.js";
 import type { Distributor } from "../distribution.api.js";
 import { useDistributors } from "../distribution.queries.js";
+import { DirectSaleDialog } from "../components/DirectSaleDialog.js";
 import { DistributorFormDialog } from "../components/DistributorFormDialog.js";
 import { DistributorPaymentDialog } from "../components/DistributorPaymentDialog.js";
 import styles from "./DistributionPages.module.css";
@@ -27,6 +28,9 @@ const defaults = {
   sort: "name:asc",
   page: 1,
   pageSize: 25,
+  /// `?vente=directe` opens the direct-sale dialog (the Accueil quick
+  /// action, issue 009).
+  vente: "",
 };
 
 /// `/distributeurs` (UI-16): the directory with what each distributor holds
@@ -95,14 +99,28 @@ export function DistributorsPage() {
         title="Distributeurs"
         description="Les distributeurs, ce qu'ils gardent en dépôt et ce qu'ils doivent."
         actions={
-          <PermissionGate
-            permissions={permissions}
-            permission="distributors.create"
-          >
-            <Button leftIcon={<Plus />} onClick={() => setEditing("new")}>
-              Nouveau distributeur
-            </Button>
-          </PermissionGate>
+          <>
+            <PermissionGate
+              permissions={permissions}
+              permission="distribution.direct_sale"
+            >
+              <Button
+                variant="secondary"
+                leftIcon={<Truck />}
+                onClick={() => setState({ vente: "directe" })}
+              >
+                Vente directe
+              </Button>
+            </PermissionGate>
+            <PermissionGate
+              permissions={permissions}
+              permission="distributors.create"
+            >
+              <Button leftIcon={<Plus />} onClick={() => setEditing("new")}>
+                Nouveau distributeur
+              </Button>
+            </PermissionGate>
+          </>
         }
       />
       <FilterBar
@@ -199,6 +217,10 @@ export function DistributorsPage() {
         open={paying !== null}
         onOpenChange={(open) => !open && setPaying(null)}
         distributor={paying}
+      />
+      <DirectSaleDialog
+        open={state.vente === "directe"}
+        onOpenChange={(open) => !open && setState({ vente: "" })}
       />
     </>
   );

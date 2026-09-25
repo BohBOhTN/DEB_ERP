@@ -43,6 +43,7 @@ export const permissionKeys = [
   "pos.open_session",
   "pos.sell",
   "pos.credit_sale",
+  "pos.cancel_sale",
   "pos.close_session",
   "orders.view",
   "orders.create",
@@ -53,6 +54,7 @@ export const permissionKeys = [
   "customers.view",
   "customers.create",
   "customers.update",
+  "customers.deactivate",
   "customer_balances.view",
   "customer_payments.view",
   "customer_payments.create",
@@ -75,6 +77,7 @@ export const permissionKeys = [
   "simulations.update",
   "simulations.delete",
   "audit.view",
+  "margin.view",
 ] as const;
 
 export type PermissionKey = (typeof permissionKeys)[number];
@@ -103,4 +106,5 @@ export const permissionModules = [
   "Catégories de dépenses",
   "Simulations",
   "Audit",
+  "Marge",
 ] as const;

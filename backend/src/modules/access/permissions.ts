@@ -120,7 +120,8 @@ export const permissionCatalog = [
   permission("pos.access", "Caisse", "Accéder à la caisse"),
   permission("pos.open_session", "Caisse", "Ouvrir une session de caisse"),
   permission("pos.sell", "Caisse", "Enregistrer une vente"),
-  permission("pos.credit_sale", "Caisse", "Enregistrer une vente a crédit"),
+  permission("pos.credit_sale", "Caisse", "Enregistrer une vente à crédit"),
+  permission("pos.cancel_sale", "Caisse", "Annuler une vente"),
   permission("pos.close_session", "Caisse", "Fermer une session de caisse"),
   permission("orders.view", "Commandes client", "Voir les commandes client"),
   permission("orders.create", "Commandes client", "Créer des commandes client"),
@@ -139,6 +140,7 @@ export const permissionCatalog = [
   permission("customers.view", "Clients", "Voir les clients"),
   permission("customers.create", "Clients", "Créer des clients"),
   permission("customers.update", "Clients", "Modifier les clients"),
+  permission("customers.deactivate", "Clients", "Désactiver un client"),
   permission(
     "customer_balances.view",
     "Soldes clients",
@@ -209,6 +211,7 @@ export const permissionCatalog = [
   permission("simulations.update", "Simulations", "Modifier les simulations"),
   permission("simulations.delete", "Simulations", "Supprimer les simulations"),
   permission("audit.view", "Audit", "Voir le journal d'audit"),
+  permission("margin.view", "Marge", "Voir la marge approximative"),
 ] as const;
 
 export type PermissionKey = (typeof permissionCatalog)[number]["key"];

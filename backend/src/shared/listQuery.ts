@@ -116,6 +116,16 @@ export function orderByFor<TField extends string, TOrder>(
   return [...chosen, tiebreak];
 }
 
+/// The `YYYY-MM-DD` business day an instant falls on in Tunis.
+export function businessDateOf(instant: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: businessTimeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+}
+
 export function startOfBusinessDay(day: string): Date {
   const utcMidnight = new Date(`${day}T00:00:00.000Z`);
   return new Date(utcMidnight.getTime() - zoneOffsetMs(utcMidnight));

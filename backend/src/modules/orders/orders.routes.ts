@@ -10,7 +10,12 @@ import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { SessionCookieConfig } from "../auth/cookies.js";
 import { okFor, sendCommandResult } from "../../shared/apiResponse.js";
-import { pageFields, sortField } from "../../shared/listQuery.js";
+import {
+  pageFields,
+  searchFields,
+  sortField,
+  withSearch,
+} from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { OrdersService } from "./orders.service.js";
@@ -30,15 +35,23 @@ export const orderLineSchema = z.object({
   quantity,
 });
 
-export const listQuerySchema = z.object({
-  sort: sortField(["requestedFulfillmentAt", "createdAt", "totalTnd"]),
+const orderFilterFields = {
   status: z.nativeEnum(CustomerOrderStatus).optional(),
   customerId: z.string().trim().min(1).optional(),
   dueBefore: z.coerce.date().optional(),
   dueAfter: z.coerce.date().optional(),
   dueState: z.enum(["OVERDUE", "UPCOMING"]).optional(),
+  ...searchFields,
+};
+
+export const listQuerySchema = z.object({
+  sort: sortField(["requestedFulfillmentAt", "createdAt", "totalTnd"]),
+  ...orderFilterFields,
   ...pageFields,
 });
+
+/// The KPI row above the queue takes the list's filters without paging.
+export const summaryQuerySchema = z.object(orderFilterFields);
 
 export const createOrderSchema = z.object({
   customerId: z.string().trim().min(1),
@@ -71,9 +84,11 @@ export const advanceSchema = z.object({
   notes: z.string().optional(),
 });
 
+/// The amount paid at completion is always stated (issue #45): "0.000"
+/// leaves the remainder on the customer's account, nothing is inferred.
 export const completeOrderSchema = z.object({
   completedAt: z.coerce.date(),
-  paidAmountTnd: moneyTnd.optional(),
+  paidAmountTnd: moneyTnd,
 });
 
 export const cancelOrderSchema = z.object({
@@ -100,9 +115,23 @@ export function ordersRouter(params: {
     requirePermission("orders.view"),
     async (request, response, next) => {
       try {
-        const query = listQuerySchema.parse(request.query);
+        const query = withSearch(listQuerySchema.parse(request.query));
         const orders = await params.ordersService.listOrders(query);
         response.json(okFor(response, { orders }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/orders/summary",
+    requirePermission("orders.view"),
+    async (request, response, next) => {
+      try {
+        const query = withSearch(summaryQuerySchema.parse(request.query));
+        const summary = await params.ordersService.summarizeOrders(query);
+        response.json(okFor(response, { summary }));
       } catch (error) {
         next(error);
       }

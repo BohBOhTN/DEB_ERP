@@ -13,6 +13,8 @@ import { Skeleton } from "../../../components/ui/Skeleton/Skeleton.js";
 import { useToast } from "../../../components/ui/Toast/useToast.js";
 import { describeError } from "../../../i18n/errors.js";
 import { formatMoney } from "../../../i18n/format.js";
+import { ConfirmDialog } from "../../../components/ui/ConfirmDialog/ConfirmDialog.js";
+import { useConfirm } from "../../../lib/hooks/useConfirm.js";
 import { useDebounce } from "../../../lib/hooks/useDebounce.js";
 import { useIsPhone } from "../../../lib/hooks/useBreakpoint.js";
 import { useHotkeys } from "../../../lib/hooks/useHotkeys.js";
@@ -54,6 +56,7 @@ export function CaissePage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const customerRef = useRef<HTMLButtonElement>(null);
+  const clearConfirm = useConfirm();
   const debounced = useDebounce(query, 250);
   const products = useQuery({
     queryKey: posKeys.products(debounced),
@@ -100,13 +103,31 @@ export function CaissePage() {
       categoryName: product.category.name,
     });
 
+  // Empties the cart after a confirmation when several lines would be lost;
+  // shared by the button and the Escape shortcut.
+  const requestClear = async () => {
+    if (cart.lines.length > 1) {
+      const { confirmed } = await clearConfirm.confirm({
+        title: "Vider le panier ?",
+        impact: `Les ${cartCount(cart.lines)} articles du panier seront retirés. Aucune vente n'est enregistrée.`,
+        confirmLabel: "Vider le panier",
+        tone: "danger",
+      });
+      if (!confirmed) return;
+    }
+    cart.clear();
+  };
+
   const hotkeys = useMemo(
     () => [
       { key: "/", handler: () => searchRef.current?.focus() },
       {
+        // Enter adds the first match only from the search field; on a
+        // focused tile or button it keeps its native click (issue #43).
         key: "Enter",
         handler: () => visible[0] && add(visible[0]),
         inInputs: true,
+        when: (event: KeyboardEvent) => event.target === searchRef.current,
       },
       {
         key: "F2",
@@ -118,9 +139,9 @@ export function CaissePage() {
           )?.focus(),
       },
       { key: "F9", handler: () => !blocker && setConfirming(true) },
-      { key: "Escape", handler: () => cart.clear() },
+      { key: "Escape", handler: () => void requestClear() },
     ],
-    [visible, blocker],
+    [visible, blocker, cart.lines.length],
   );
   useHotkeys(hotkeys, Boolean(session.data) && !phone);
 
@@ -252,7 +273,7 @@ export function CaissePage() {
             description="Le total reste visible ; « Encaisser » est en bas."
           >
             <div className={styles.sheetBody}>
-              <CartPanel />
+              <CartPanel onClearRequest={() => void requestClear()} />
               {checkout}
             </div>
           </Sheet>
@@ -282,7 +303,7 @@ export function CaissePage() {
           </Card>
           <Card className={styles.panel}>
             <CardHeader as="h2" title="Panier" />
-            <CartPanel />
+            <CartPanel onClearRequest={() => void requestClear()} />
           </Card>
           <Card className={styles.panel}>
             <CardHeader as="h2" title="Encaissement" />
@@ -307,16 +328,25 @@ export function CaissePage() {
           onCancel={() => setClosing(false)}
         />
       ) : null}
+      <ConfirmDialog {...clearConfirm.dialog} />
       <SaleConfirmDialog
         open={confirming}
         onSold={(sale) => {
-          toast.success(
-            "Vente enregistrée",
-            `${sale.reference} · ${formatMoney(sale.totalTnd)}${Number(sale.remainingDueTnd) > 0 ? ` · reste ${formatMoney(sale.remainingDueTnd)}` : ""}.`,
-          );
+          // The cashier stays on the till for the next customer (issue #43);
+          // the receipt is one tap away on the toast.
+          toast.toast({
+            kind: "success",
+            title: "Vente enregistrée",
+            description: `${sale.reference} · ${formatMoney(sale.totalTnd)}${Number(sale.remainingDueTnd) > 0 ? ` · reste ${formatMoney(sale.remainingDueTnd)}` : ""}.`,
+            action: {
+              label: "Voir",
+              onClick: () => navigate(`/caisse/ventes/${sale.id}`),
+            },
+          });
           setConfirming(false);
+          setSheetOpen(false);
           cart.clear();
-          navigate(`/caisse/ventes/${sale.id}`);
+          if (!phone) searchRef.current?.focus();
         }}
         onOrdered={(orderId, reference) => {
           toast.success("Commande enregistrée", reference);

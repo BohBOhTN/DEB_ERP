@@ -12,6 +12,7 @@ import { TextArea } from "../../../components/ui/TextArea/TextArea.js";
 import { TextInput } from "../../../components/ui/TextInput/TextInput.js";
 import { useToast } from "../../../components/ui/Toast/useToast.js";
 import { fr } from "../../../i18n/fr.js";
+import { useSessionPermissions } from "../../../app/sessionContext.js";
 import type { Product } from "../catalog.api.js";
 import {
   useCategories,
@@ -40,6 +41,7 @@ function defaultsFor(product: Product | null | undefined): ProductFormInput {
     categoryId: product?.categoryId ?? "",
     baseUnitId: product?.baseUnitId ?? "",
     salePriceTnd: product?.salePriceTnd ?? "",
+    approximateCostTnd: product?.approximateCostTnd ?? "",
     isStockable: product?.isStockable ?? true,
     code: product?.code ?? "",
     barcode: product?.barcode ?? "",
@@ -57,6 +59,7 @@ export function ProductFormDialog({
 }: ProductFormDialogProps) {
   const toast = useToast();
   const queryClient = useQueryClient();
+  const permissions = useSessionPermissions();
   const categories = useCategories();
   const units = useUnits();
   const create = useCreateProduct();
@@ -85,9 +88,14 @@ export function ProductFormDialog({
         onOpenChange(false);
       }}
       onSubmit={async (values) => {
+        // Without margin.view the cost is neither shown nor sent, so an
+        // edit by a clerk never clears the owner's figure.
+        const input = permissions.has("margin.view")
+          ? values
+          : (({ approximateCostTnd: _cost, ...rest }) => rest)(values);
         const saved = product
-          ? await update.mutateAsync({ ...values, version: product.version })
-          : await create.mutateAsync(values);
+          ? await update.mutateAsync({ ...input, version: product.version })
+          : await create.mutateAsync(input);
         toast.success(product ? "Produit modifié" : "Produit créé", saved.name);
         onSaved?.(saved);
         onOpenChange(false);
@@ -162,6 +170,25 @@ export function ProductFormDialog({
           <TextInput {...form.register("code")} />
         </FormField>
       </div>
+      {permissions.has("margin.view") ? (
+        <FormField
+          label={fr.approximateCost}
+          error={errors.approximateCostTnd?.message}
+          hint="Facultatif · par unité de base, ingrédients seulement"
+        >
+          <Controller
+            control={form.control}
+            name="approximateCostTnd"
+            render={({ field }) => (
+              <MoneyInput
+                value={field.value ?? ""}
+                onChange={field.onChange}
+                invalid={Boolean(errors.approximateCostTnd)}
+              />
+            )}
+          />
+        </FormField>
+      ) : null}
       <FormField
         label="Code-barres"
         error={errors.barcode?.message}

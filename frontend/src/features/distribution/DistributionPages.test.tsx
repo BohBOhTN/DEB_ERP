@@ -11,8 +11,13 @@ import {
   makeDistributorPayment,
   makeSettlement,
 } from "../../test/factories/distribution";
+import { makeProduct } from "../../test/factories/catalog";
 import { makeUser } from "../../test/factories/user";
 import { authHandlers } from "../../test/msw/handlers/auth";
+import {
+  catalogHandlers,
+  makeCatalogStore,
+} from "../../test/msw/handlers/catalog";
 import {
   distributionHandlers,
   makeDistributionStore,
@@ -437,6 +442,90 @@ describe("Distribution", () => {
         screen.getByRole("table", { name: "Paiements distributeurs" }),
       ).findByText("Annulé"),
     ).toBeInTheDocument();
+  });
+
+  // Issue 009: the Accueil quick action lands on the distributors page with
+  // the direct-sale dialog open; the price is edited, never below the
+  // product's cost, and a typed line total sets the unit price.
+  it("sells directly from the quick action with an edited price bounded by the cost", async () => {
+    const store = makeDistributionStore();
+    server.use(
+      ...distributionHandlers(store),
+      ...catalogHandlers(
+        makeCatalogStore({
+          products: [
+            makeProduct({
+              id: "product-1",
+              name: "Pain complet",
+              approximateCostTnd: "0.900",
+            }),
+            makeProduct({ id: "product-2", name: "Croissant" }),
+          ],
+        }),
+      ),
+    );
+    renderAt("/distributeurs?vente=directe");
+
+    const dialog = await screen.findByRole("dialog", { name: "Vente directe" });
+    await userEvent.click(
+      within(dialog).getByRole("combobox", { name: "Distributeur" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: /Karim Distribution/ }),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("combobox", { name: "Produit 1" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: /Pain complet/ }),
+    );
+    await userEvent.type(
+      within(dialog).getByRole("textbox", { name: "Quantité 1" }),
+      "4",
+    );
+    const price = within(dialog).getByRole("textbox", {
+      name: "Prix unitaire 1",
+    });
+    expect(price).toHaveValue("1,200");
+    await userEvent.clear(price);
+    await userEvent.type(price, "0,5");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Suivant" }),
+    );
+    expect(
+      await within(dialog).findByText(
+        "Inférieur au coût approximatif (0,900 TND).",
+      ),
+    ).toBeInTheDocument();
+
+    await userEvent.clear(
+      within(dialog).getByRole("textbox", { name: "Total ligne 1" }),
+    );
+    await userEvent.type(
+      within(dialog).getByRole("textbox", { name: "Total ligne 1" }),
+      "10",
+    );
+    expect(price).toHaveValue("2,500");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Suivant" }),
+    );
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "Valider la vente directe",
+    });
+    expect(confirm).toHaveTextContent(
+      "Chiffre d'affaires reconnu maintenant : 10,000 TND.",
+    );
+    await userEvent.click(
+      within(confirm).getByRole("button", { name: "Valider" }),
+    );
+
+    expect(
+      await screen.findByText("Vente directe enregistrée"),
+    ).toBeInTheDocument();
+    expect(store.sales[0]).toMatchObject({
+      totalTnd: "10.000",
+      lines: [{ productId: "product-1", unitPriceTnd: "2.500" }],
+    });
   });
 
   it("lists distributors with custody and balance and creates one", async () => {

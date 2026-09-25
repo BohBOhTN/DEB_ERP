@@ -47,7 +47,23 @@ export function makeHomeSummary(
         },
       ],
     },
-    expenses: { monthTnd: "1250.000", monthCount: 9 },
+    expenses: { dayTnd: "85.000", dayCount: 3, previousDayTnd: "40.000" },
+    margin: {
+      today: {
+        revenueTnd: "1250.000",
+        costedRevenueTnd: "1000.000",
+        costTnd: "620.000",
+        marginTnd: "380.000",
+        uncostedLinesCount: 2,
+      },
+      previousDay: {
+        revenueTnd: "1116.000",
+        costedRevenueTnd: "1116.000",
+        costTnd: "780.000",
+        marginTnd: "336.000",
+        uncostedLinesCount: 0,
+      },
+    },
     custody: { heldLinesCount: 12 },
     recent: [
       {
@@ -87,7 +103,8 @@ export function makeFreshHomeSummary(): HomeSummary {
     payables: { suppliersTnd: "0.000", overdueCount: 0, overdueTnd: "0.000" },
     orders: { dueTodayCount: 0, overdueCount: 0, readyCount: 0 },
     stock: { negativeCount: 0, items: [] },
-    expenses: { monthTnd: "0.000", monthCount: 0 },
+    expenses: { dayTnd: "0.000", dayCount: 0, previousDayTnd: "0.000" },
+    margin: null,
     custody: { heldLinesCount: 0 },
     recent: [],
   });

@@ -182,11 +182,14 @@ describe("OrdersService", () => {
       { actorUserId: "user-1" },
     );
 
+    // The remainder after the 10,000 advance is paid now (issue #45: the
+    // amount is always stated, nothing is inferred from its absence).
     await service.completeOrder(
       order.id,
       {
         idempotencyKey: "complete-1",
         completedAt,
+        paidAmountTnd: "30.000",
       },
       { actorUserId: "user-1" },
     );
@@ -241,6 +244,7 @@ describe("OrdersService", () => {
     const payload = {
       idempotencyKey: "complete-1",
       completedAt,
+      paidAmountTnd: "0",
     };
 
     const first = await service.completeOrder(order.id, payload, {
@@ -260,6 +264,7 @@ describe("OrdersService", () => {
         {
           idempotencyKey: "complete-2",
           completedAt,
+          paidAmountTnd: "0",
         },
         { actorUserId: "user-1" },
       ),
@@ -280,6 +285,7 @@ describe("OrdersService", () => {
         {
           idempotencyKey: "complete-1",
           completedAt,
+          paidAmountTnd: "0",
         },
         { actorUserId: "user-1" },
       ),
@@ -432,6 +438,7 @@ describe("OrdersService", () => {
         {
           idempotencyKey: "complete-1",
           completedAt,
+          paidAmountTnd: "0",
         },
         { actorUserId: "user-1" },
       ),
@@ -458,6 +465,7 @@ describe("OrdersService", () => {
         {
           idempotencyKey: "complete-1",
           completedAt,
+          paidAmountTnd: "0",
         },
         { actorUserId: "user-1" },
       ),

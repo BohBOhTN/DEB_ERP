@@ -343,6 +343,20 @@ const errorCopy: Record<string, ErrorCopy> = {
     title: "Montant trop élevé",
     description: "Le paiement dépasse le reste dû de la vente.",
   },
+  SALE_ALREADY_CANCELLED: {
+    title: "Vente déjà annulée",
+    description: "Cette vente a déjà été annulée.",
+  },
+  SALE_LINKED_TO_ORDER: {
+    title: "Vente issue d'une commande",
+    description:
+      "Cette vente provient d'une commande terminée et ne peut pas être annulée ici.",
+  },
+  SALE_HAS_ALLOCATED_PAYMENTS: {
+    title: "Règlements affectés",
+    description:
+      "Des règlements ont été affectés à cette vente : annulez-les d'abord.",
+  },
   CUSTOMER_INACTIVE: {
     title: "Client désactivé",
     description: "Aucun règlement ne peut être enregistré pour ce client.",
@@ -372,6 +386,19 @@ const errorCopy: Record<string, ErrorCopy> = {
   ACTIVE_CUSTOMER_REQUIRED: {
     title: "Client inactif",
     description: "Choisissez un client actif.",
+  },
+  CUSTOMER_HAS_BALANCE: {
+    title: "Solde en cours",
+    description:
+      "Ce client a encore un solde ou une avance : réglez-les avant de le désactiver.",
+  },
+  CUSTOMER_ALREADY_ACTIVE: {
+    title: "Client déjà actif",
+    description: "Ce client est déjà actif.",
+  },
+  CUSTOMER_ALREADY_INACTIVE: {
+    title: "Client déjà désactivé",
+    description: "Ce client est déjà désactivé.",
   },
   CUSTOMER_BALANCE_NOT_DUE: {
     title: "Aucun montant dû",
@@ -473,6 +500,11 @@ const errorCopy: Record<string, ErrorCopy> = {
   DUPLICATE_DISTRIBUTOR_SALE_LINE: {
     title: "Ligne en double",
     description: "Le même produit apparaît deux fois.",
+  },
+  DISTRIBUTOR_PRICE_BELOW_COST: {
+    title: "Prix inférieur au coût",
+    description:
+      "Le prix unitaire d'un produit est inférieur à son coût approximatif.",
   },
   DISTRIBUTOR_SALE_TOTAL_REQUIRED: {
     title: "Total invalide",

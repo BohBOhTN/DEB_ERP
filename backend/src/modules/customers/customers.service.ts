@@ -9,7 +9,10 @@ import {
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
 import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
-import { runIdempotentCommand } from "../../shared/idempotency.js";
+import {
+  postingTransactionOptions,
+  runIdempotentCommand,
+} from "../../shared/idempotency.js";
 import { planPaymentAllocations } from "../../shared/paymentAllocation.js";
 import { documentPaymentProjection } from "../../shared/paymentState.js";
 import {
@@ -37,6 +40,8 @@ export interface CustomerListParams {
 
 export interface CustomerBalanceListParams {
   search?: string;
+  /// Active customers by default on the screen; inactive ones on request.
+  isActive?: boolean;
   /// `name` is the directory order; `balance` puts the biggest debtors first
   /// and only lists customers that have ledger activity.
   sort?: "name" | "balance";
@@ -230,7 +235,10 @@ export class CustomersService {
   /// customer directory (name order) or from the ledger aggregate (balance
   /// order), and only the page's customers are then enriched.
   public async listCustomerBalances(params: CustomerBalanceListParams) {
-    const searchWhere = customerSearchWhere(params.search);
+    const searchWhere: Prisma.CustomerWhereInput | undefined =
+      params.isActive === undefined
+        ? customerSearchWhere(params.search)
+        : { ...customerSearchWhere(params.search), isActive: params.isActive };
     const minBalance =
       params.minBalance === undefined
         ? undefined
@@ -786,6 +794,192 @@ export class CustomersService {
 
         return { payment: reversed };
       },
+    );
+  }
+
+  /// CUS-004: deactivation keeps every document and blocks new credit
+  /// operations (the till, the orders and the règlements refuse an inactive
+  /// customer). A customer who still owes or holds an advance cannot be
+  /// deactivated (issue #46).
+  public async setCustomerActive(
+    customerId: string,
+    params: { isActive: boolean; reason?: string },
+    actor: CustomerActor,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.customer.findUnique({
+        where: { id: customerId },
+      });
+
+      if (!existing) {
+        throw new AppError({
+          statusCode: 404,
+          code: "CUSTOMER_NOT_FOUND",
+          message: "Client introuvable.",
+        });
+      }
+
+      if (existing.isActive === params.isActive) {
+        throw new AppError({
+          statusCode: 409,
+          code: params.isActive
+            ? "CUSTOMER_ALREADY_ACTIVE"
+            : "CUSTOMER_ALREADY_INACTIVE",
+          message: params.isActive
+            ? "Ce client est déjà actif."
+            : "Ce client est déjà désactivé.",
+        });
+      }
+
+      if (!params.isActive) {
+        const totals = await tx.customerLedgerEntry.groupBy({
+          by: ["balanceKind"],
+          where: { customerId },
+          _sum: { amountTnd: true },
+        });
+
+        if (totals.some((row) => !sumOrZero(row._sum.amountTnd).isZero())) {
+          throw new AppError({
+            statusCode: 409,
+            code: "CUSTOMER_HAS_BALANCE",
+            message:
+              "Ce client a encore un solde ou une avance : réglez-les avant de le désactiver.",
+          });
+        }
+      }
+
+      const customer = await tx.customer.update({
+        where: { id: customerId },
+        data: {
+          isActive: params.isActive,
+          version: { increment: 1 },
+          updatedByUserId: actor.actorUserId,
+        },
+      });
+
+      await this.auditWithClient(tx, {
+        actor,
+        action: params.isActive ? "customer.reactivate" : "customer.deactivate",
+        entity: "customer",
+        targetId: customerId,
+        before: existing,
+        after: { ...customer, reason: emptyToNull(params.reason) },
+      });
+
+      return customer;
+    }, postingTransactionOptions);
+  }
+
+  /// The figures of the customer page (issue #46), summed by the database:
+  /// orders except the cancelled ones, posted sales with what was paid on
+  /// them (the projection kept by #47), what is still due and the advance
+  /// held, and the last sale and règlement.
+  public async getCustomerSummary(customerId: string) {
+    await this.findCustomerOrThrow(customerId);
+    const open = [
+      CustomerOrderStatus.DRAFT,
+      CustomerOrderStatus.CONFIRMED,
+      CustomerOrderStatus.PREPARING,
+      CustomerOrderStatus.READY,
+    ];
+    const [
+      orders,
+      openOrders,
+      sales,
+      cancelledSales,
+      kinds,
+      lastSale,
+      lastPayment,
+    ] = await Promise.all([
+      this.prisma.customerOrder.count({
+        where: { customerId, status: { not: CustomerOrderStatus.CANCELLED } },
+      }),
+      this.prisma.customerOrder.count({
+        where: { customerId, status: { in: open } },
+      }),
+      this.prisma.sale.aggregate({
+        where: { customerId, status: SaleStatus.POSTED },
+        _count: { _all: true },
+        _sum: { totalTnd: true, paidAmountTnd: true },
+      }),
+      this.prisma.sale.count({
+        where: { customerId, status: SaleStatus.CANCELLED },
+      }),
+      this.prisma.customerLedgerEntry.groupBy({
+        by: ["balanceKind"],
+        where: { customerId },
+        _sum: { amountTnd: true },
+      }),
+      this.prisma.sale.findFirst({
+        where: { customerId, status: SaleStatus.POSTED },
+        orderBy: [{ soldAt: "desc" }],
+        select: { soldAt: true },
+      }),
+      this.prisma.customerPayment.findFirst({
+        where: { customerId, reversedAt: null },
+        orderBy: [{ paidAt: "desc" }],
+        select: { paidAt: true },
+      }),
+    ]);
+    const kind = new Map(
+      kinds.map((row) => [row.balanceKind, sumOrZero(row._sum.amountTnd)]),
+    );
+
+    return {
+      ordersCount: orders,
+      openOrdersCount: openOrders,
+      salesCount: sales._count._all,
+      cancelledSalesCount: cancelledSales,
+      salesTotalTnd: money(sales._sum.totalTnd),
+      paidTnd: money(sales._sum.paidAmountTnd),
+      dueTnd: money(kind.get(CustomerLedgerBalanceKind.RECEIVABLE)),
+      advanceTnd: money(kind.get(CustomerLedgerBalanceKind.ADVANCE)),
+      lastSaleAt: lastSale?.soldAt ?? null,
+      lastPaymentAt: lastPayment?.paidAt ?? null,
+    };
+  }
+
+  /// The customer's sales, every state, newest first, with the balance the
+  /// ledger still carries for each; paged, unlike the statement's fifty.
+  public async listCustomerSales(
+    customerId: string,
+    params: { page: number; pageSize: number },
+  ) {
+    await this.findCustomerOrThrow(customerId);
+    const where = { customerId };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.sale.findMany({
+        where,
+        orderBy: [{ soldAt: "desc" }, { id: "desc" }],
+        skip: (params.page - 1) * params.pageSize,
+        take: params.pageSize,
+      }),
+      this.prisma.sale.count({ where }),
+    ]);
+    const totals = items.length
+      ? await this.prisma.customerLedgerEntry.groupBy({
+          by: ["saleId"],
+          where: {
+            customerId,
+            balanceKind: CustomerLedgerBalanceKind.RECEIVABLE,
+            saleId: { in: items.map((sale) => sale.id) },
+          },
+          _sum: { amountTnd: true },
+        })
+      : [];
+    const balances = balancesByKey(
+      totals,
+      (row) => row.saleId,
+      (row) => row._sum.amountTnd,
+    );
+
+    return paginated(
+      items.map((sale) => ({
+        ...sale,
+        balanceTnd: balanceOf(balances, sale.id).toFixed(3),
+      })),
+      total,
+      params,
     );
   }
 

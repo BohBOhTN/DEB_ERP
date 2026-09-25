@@ -39,6 +39,31 @@ export function makePosStore(overrides: Partial<PosStore> = {}): PosStore {
 
 let sequence = 100;
 
+/// The list and the summary share the same filters: posted sales unless a
+/// status is asked for, the customer, the session, the paid state, the
+/// business days and the search (issue #44).
+function saleRows(store: PosStore, url: URL, allStatuses: boolean): Sale[] {
+  const customerId = url.searchParams.get("customerId");
+  const sessionId = url.searchParams.get("sessionId");
+  const paymentState = url.searchParams.get("paymentState");
+  const status = url.searchParams.get("status");
+  const q = url.searchParams.get("q")?.trim().toLowerCase();
+  const from = url.searchParams.get("from");
+  const to = url.searchParams.get("to");
+  return store.sales.filter(
+    (sale) =>
+      (allStatuses && !status ? true : sale.status === (status ?? "POSTED")) &&
+      (!customerId || sale.customerId === customerId) &&
+      (!sessionId || sale.sessionId === sessionId) &&
+      (!paymentState || sale.paymentState === paymentState) &&
+      (!from || sale.soldAt.slice(0, 10) >= from) &&
+      (!to || sale.soldAt.slice(0, 10) <= to) &&
+      (!q ||
+        sale.reference.toLowerCase().includes(q) ||
+        (sale.customer?.name.toLowerCase().includes(q) ?? false)),
+  );
+}
+
 function totalsOf(store: PosStore, sessionId: string) {
   const sales = store.sales.filter(
     (sale) => sale.sessionId === sessionId && sale.status === "POSTED",
@@ -58,6 +83,7 @@ function totalsOf(store: PosStore, sessionId: string) {
     advancesRefundedTnd: "0.000",
     customerPaymentsTnd: "0.000",
     customerPaymentReversalsTnd: "0.000",
+    saleRefundsTnd: "0.000",
   };
 }
 
@@ -241,6 +267,7 @@ export function posHandlers(store: PosStore = makePosStore()) {
                 id: `spay-${sequence}`,
                 amountTnd: paid.toFixed(3),
                 method: "CASH",
+                movement: "RECEIPT" as const,
                 paidAt: new Date().toISOString(),
               },
             ]
@@ -254,27 +281,97 @@ export function posHandlers(store: PosStore = makePosStore()) {
       }
       return ok({ sale }, 201);
     }),
+    http.get(`${apiV1}/pos/sales/summary`, ({ request }) => {
+      const rows = saleRows(store, new URL(request.url), true);
+      const posted = rows.filter((sale) => sale.status === "POSTED");
+      const sum = (pick: (sale: Sale) => string) =>
+        posted
+          .reduce((total, sale) => total.plus(pick(sale)), new Decimal(0))
+          .toFixed(3);
+      return ok({
+        summary: {
+          count: posted.length,
+          paidCount: posted.filter((sale) => sale.paymentState === "PAID")
+            .length,
+          partiallyPaidCount: posted.filter(
+            (sale) => sale.paymentState === "PARTIALLY_PAID",
+          ).length,
+          unpaidCount: posted.filter((sale) => sale.paymentState === "UNPAID")
+            .length,
+          cancelledCount: rows.filter((sale) => sale.status === "CANCELLED")
+            .length,
+          totalTnd: sum((sale) => sale.totalTnd),
+          paidTnd: sum((sale) => sale.paidAmountTnd),
+          remainingTnd: sum((sale) => sale.remainingDueTnd),
+        },
+      });
+    }),
+    http.post(`${apiV1}/pos/sales/:id/cancel`, async ({ params, request }) => {
+      if (!request.headers.get("Idempotency-Key"))
+        return apiError(
+          400,
+          "IDEMPOTENCY_KEY_REQUIRED",
+          "Une clé d'idempotence est requise.",
+        );
+      const body = (await request.json()) as { reason?: string };
+      const sale = store.sales.find((row) => row.id === params.id);
+      if (!sale) return apiError(404, "SALE_NOT_FOUND", "Vente introuvable.");
+      if (sale.status !== "POSTED")
+        return apiError(
+          409,
+          "SALE_ALREADY_CANCELLED",
+          "Cette vente est déjà annulée.",
+        );
+      if (sale.order)
+        return apiError(
+          409,
+          "SALE_LINKED_TO_ORDER",
+          "Cette vente provient d'une commande terminée et ne peut pas être annulée ici.",
+        );
+      const cash = (sale.payments ?? [])
+        .filter((payment) => payment.movement === "RECEIPT")
+        .reduce((sum, payment) => sum.plus(payment.amountTnd), new Decimal(0));
+      if (cash.greaterThan(0) && !store.session)
+        return apiError(
+          409,
+          "POS_SESSION_NOT_OPEN",
+          "Ouvrez une session de caisse pour rembourser les espèces de cette vente.",
+        );
+      sequence += 1;
+      Object.assign(sale, {
+        status: "CANCELLED",
+        cancelledAt: new Date().toISOString(),
+        cancellationReason: body.reason ?? null,
+        cancelledBy: { id: "user-1", displayName: "Salma Ben Ali" },
+        payments: [
+          ...(sale.payments ?? []),
+          ...(cash.greaterThan(0)
+            ? [
+                {
+                  id: `spay-${sequence}`,
+                  amountTnd: cash.toFixed(3),
+                  method: "CASH" as const,
+                  movement: "REFUND" as const,
+                  paidAt: new Date().toISOString(),
+                },
+              ]
+            : []),
+        ],
+      });
+      return ok({ sale }, 201);
+    }),
     http.get(`${apiV1}/pos/sales`, ({ request }) => {
-      const url = new URL(request.url);
-      const customerId = url.searchParams.get("customerId");
-      const sessionId = url.searchParams.get("sessionId");
-      const paymentState = url.searchParams.get("paymentState");
       return ok(
         makePage(
-          store.sales
-            .filter(
-              (sale) =>
-                (!customerId || sale.customerId === customerId) &&
-                (!sessionId || sale.sessionId === sessionId) &&
-                (!paymentState || sale.paymentState === paymentState),
-            )
-            .map(({ lines, payments, ...sale }) => ({
+          saleRows(store, new URL(request.url), false).map(
+            ({ lines, payments, ...sale }) => ({
               ...sale,
               lines: undefined,
               payments: undefined,
               ...(lines ? {} : {}),
               ...(payments ? {} : {}),
-            })),
+            }),
+          ),
         ),
       );
     }),

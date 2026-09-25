@@ -1,4 +1,4 @@
-import { Router, type Response } from "express";
+import { Router, type Response, type RequestHandler } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
 import { requirePermission } from "../access/permission.middleware.js";
@@ -45,6 +45,14 @@ export const balanceListQuerySchema = pageQuerySchema.extend({
   ...searchFields,
   sort: z.enum(["name", "balance"]).optional(),
   minBalance: moneyTnd.optional(),
+  isActive: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+});
+
+export const activationSchema = z.object({
+  reason: z.string().trim().max(300).optional(),
 });
 
 export const statementQuerySchema = z.object({
@@ -167,6 +175,65 @@ export function customersRouter(params: {
         next(error);
       }
     },
+  );
+
+  router.get(
+    "/customers/:customerId/summary",
+    requirePermission("customer_balances.view"),
+    async (request, response, next) => {
+      try {
+        const summary = await params.customersService.getCustomerSummary(
+          parseRouteParam(request.params.customerId),
+        );
+        response.json(okFor(response, { summary }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/customers/:customerId/sales",
+    requirePermission("customer_balances.view"),
+    async (request, response, next) => {
+      try {
+        const sales = await params.customersService.listCustomerSales(
+          parseRouteParam(request.params.customerId),
+          pageQuerySchema.parse(request.query),
+        );
+        response.json(okFor(response, { sales }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  const activation =
+    (isActive: boolean): RequestHandler =>
+    async (request, response, next) => {
+      try {
+        const body = activationSchema.parse(request.body);
+        const customer = await params.customersService.setCustomerActive(
+          parseRouteParam(request.params.customerId),
+          { isActive, reason: body.reason },
+          actorFromResponse(response),
+        );
+        response.json(okFor(response, { customer }));
+      } catch (error) {
+        next(error);
+      }
+    };
+
+  router.post(
+    "/customers/:customerId/deactivate",
+    requirePermission("customers.deactivate"),
+    activation(false),
+  );
+
+  router.post(
+    "/customers/:customerId/reactivate",
+    requirePermission("customers.deactivate"),
+    activation(true),
   );
 
   router.get(
