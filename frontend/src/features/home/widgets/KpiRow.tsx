@@ -7,17 +7,21 @@ import {
   type KpiDelta,
 } from "../../../components/patterns/KpiTile/KpiTile.js";
 import { formatMoney } from "../../../i18n/format.js";
-import { plural } from "../../../i18n/fr.js";
+import { fr, plural, t } from "../../../i18n/fr.js";
 import type { HomeSummary } from "../home.api.js";
+import type { HomePeriod } from "../homePeriod.js";
 
 export interface KpiRowProps {
   summary: HomeSummary | undefined;
   loading: boolean;
+  period: HomePeriod;
 }
 
 /// Row 1 of `Accueil`: the four figures the owner looks at first. A tile is
 /// absent when its block is `null` (no permission), never shown as zero.
-export function KpiRow({ summary, loading }: KpiRowProps) {
+/// The two daily tiles follow the period control; the two balances are
+/// current and say so (issue #42).
+export function KpiRow({ summary, loading, period }: KpiRowProps) {
   if (loading || !summary) {
     return (
       <KpiGrid>
@@ -36,7 +40,7 @@ export function KpiRow({ summary, loading }: KpiRowProps) {
       <KpiTile
         key="sales"
         featured
-        label="Ventes du jour"
+        label={period === "yesterday" ? fr.salesOfYesterday : fr.salesOfDay}
         value={formatMoney(summary.sales.today.totalTnd, { unit: false })}
         unit="TND"
         icon={<Receipt />}
@@ -48,10 +52,15 @@ export function KpiRow({ summary, loading }: KpiRowProps) {
       />,
       <KpiTile
         key="cash"
-        label="Encaissé en espèces"
+        label={fr.cashCollected}
         value={formatMoney(summary.sales.today.cashTnd, { unit: false })}
         unit="TND"
         icon={<Banknote />}
+        note={
+          period === "yesterday"
+            ? "Espèces de la veille à la caisse"
+            : "Espèces du jour à la caisse"
+        }
       />,
     );
   }
@@ -75,8 +84,8 @@ export function KpiRow({ summary, loading }: KpiRowProps) {
         note={
           summary.receivables.distributorsTnd !== null &&
           summary.receivables.customersTnd !== null
-            ? `dont distributeurs ${formatMoney(summary.receivables.distributorsTnd)}`
-            : undefined
+            ? `${fr.currentBalance} · dont distributeurs ${formatMoney(summary.receivables.distributorsTnd)}`
+            : fr.currentBalance
         }
         href="/clients"
       />,
@@ -91,6 +100,7 @@ export function KpiRow({ summary, loading }: KpiRowProps) {
         value={formatMoney(summary.payables.suppliersTnd, { unit: false })}
         unit="TND"
         icon={<Wallet />}
+        note={fr.currentBalance}
         badge={
           summary.payables.overdueCount > 0 ? (
             <Badge tone="danger">
@@ -123,8 +133,11 @@ export function salesDelta(
 
   if (before.isZero()) {
     return current.isZero()
-      ? { label: "Comme hier", direction: "flat" }
-      : { label: "Hier : 0,000 TND", direction: "up" };
+      ? { label: fr.samePreviousDay, direction: "flat" }
+      : {
+          label: t("previousDayWas", { amount: formatMoney("0") }),
+          direction: "up",
+        };
   }
 
   const ratio = current
@@ -139,5 +152,8 @@ export function salesDelta(
       : "flat";
   const sign = direction === "up" ? "+" : direction === "down" ? "−" : "";
 
-  return { label: `${sign}${ratio.abs().toString()} % vs hier`, direction };
+  return {
+    label: `${sign}${ratio.abs().toString()} % ${fr.vsPreviousDay}`,
+    direction,
+  };
 }
