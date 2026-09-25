@@ -227,18 +227,124 @@ export function customersOrdersHandlers(
       );
     }),
     http.get(`${apiV1}/customer-balances`, ({ request }) => {
-      const q = new URL(request.url).searchParams.get("q")?.toLowerCase() ?? "";
+      const url = new URL(request.url);
+      const q = url.searchParams.get("q")?.toLowerCase() ?? "";
+      const isActive = url.searchParams.get("isActive");
       return ok(
         makePage(
           store.customers
             .filter(
               (customer) =>
-                customer.name.toLowerCase().includes(q) ||
-                (customer.phone ?? "").includes(q),
+                (customer.name.toLowerCase().includes(q) ||
+                  (customer.phone ?? "").includes(q)) &&
+                (isActive === null ||
+                  customer.isActive === (isActive === "true")),
             )
             .map((customer) => balanceRow(store, customer)),
         ),
       );
+    }),
+    http.get(`${apiV1}/customers/:id/summary`, ({ params }) => {
+      const customer = store.customers.find((row) => row.id === params.id);
+      if (!customer)
+        return apiError(404, "CUSTOMER_NOT_FOUND", "Client introuvable.");
+      const orders = store.orders.filter(
+        (order) => order.customerId === customer.id,
+      );
+      const posted = store.sales.filter(
+        (sale) => sale.customerId === customer.id && sale.status === "POSTED",
+      );
+      const sum = (pick: (sale: SaleSummary) => string) =>
+        posted
+          .reduce((total, sale) => total.plus(pick(sale)), new Decimal(0))
+          .toFixed(3);
+      const payments = store.payments.filter(
+        (payment) => payment.customerId === customer.id && !payment.reversedAt,
+      );
+      return ok({
+        summary: {
+          ordersCount: orders.filter((order) => order.status !== "CANCELLED")
+            .length,
+          openOrdersCount: orders.filter((order) =>
+            openStatuses.has(order.status),
+          ).length,
+          salesCount: posted.length,
+          cancelledSalesCount: store.sales.filter(
+            (sale) =>
+              sale.customerId === customer.id && sale.status === "CANCELLED",
+          ).length,
+          salesTotalTnd: sum((sale) => sale.totalTnd),
+          paidTnd: sum((sale) =>
+            new Decimal(sale.totalTnd)
+              .minus(saleBalance(store, sale))
+              .toFixed(3),
+          ),
+          dueTnd: receivable(store, customer.id).toFixed(3),
+          advanceTnd: advanceBalance(store, customer.id).toFixed(3),
+          lastSaleAt: posted[0]?.soldAt ?? null,
+          lastPaymentAt: payments[0]?.paidAt ?? null,
+        },
+      });
+    }),
+    http.get(`${apiV1}/customers/:id/sales`, ({ params }) => {
+      const customer = store.customers.find((row) => row.id === params.id);
+      if (!customer)
+        return apiError(404, "CUSTOMER_NOT_FOUND", "Client introuvable.");
+      return ok(
+        makePage(
+          store.sales
+            .filter((sale) => sale.customerId === customer.id)
+            .map((sale) => withSaleState(store, sale)),
+        ),
+      );
+    }),
+    http.post(`${apiV1}/customers/:id/deactivate`, ({ params }) => {
+      const customer = store.customers.find((row) => row.id === params.id);
+      if (!customer)
+        return apiError(404, "CUSTOMER_NOT_FOUND", "Client introuvable.");
+      const isActive = false;
+      if (customer.isActive === isActive)
+        return apiError(
+          409,
+          isActive ? "CUSTOMER_ALREADY_ACTIVE" : "CUSTOMER_ALREADY_INACTIVE",
+          "Ce client est déjà dans cet état.",
+        );
+      if (
+        !isActive &&
+        (!receivable(store, customer.id).isZero() ||
+          !advanceBalance(store, customer.id).isZero())
+      )
+        return apiError(
+          409,
+          "CUSTOMER_HAS_BALANCE",
+          "Ce client a encore un solde ou une avance : réglez-les avant de le désactiver.",
+        );
+      Object.assign(customer, { isActive, version: customer.version + 1 });
+      return ok({ customer });
+    }),
+    http.post(`${apiV1}/customers/:id/reactivate`, ({ params }) => {
+      const customer = store.customers.find((row) => row.id === params.id);
+      if (!customer)
+        return apiError(404, "CUSTOMER_NOT_FOUND", "Client introuvable.");
+      const isActive = true;
+      if (customer.isActive === isActive)
+        return apiError(
+          409,
+          isActive ? "CUSTOMER_ALREADY_ACTIVE" : "CUSTOMER_ALREADY_INACTIVE",
+          "Ce client est déjà dans cet état.",
+        );
+      if (
+        !isActive &&
+        (!receivable(store, customer.id).isZero() ||
+          !advanceBalance(store, customer.id).isZero())
+      )
+        return apiError(
+          409,
+          "CUSTOMER_HAS_BALANCE",
+          "Ce client a encore un solde ou une avance : réglez-les avant de le désactiver.",
+        );
+      Object.assign(customer, { isActive, version: customer.version + 1 });
+      return ok({ customer });
     }),
     http.get(`${apiV1}/customers/:id/statement`, ({ params }) => {
       const customer = store.customers.find((row) => row.id === params.id);
