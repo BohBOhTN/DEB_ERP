@@ -29,6 +29,7 @@ export function expectedCash(
 ): Decimal {
   return new Decimal(session.openingCashTnd)
     .plus(totals.cashCollectedTnd)
+    .minus(totals.saleRefundsTnd)
     .plus(totals.advancesReceivedTnd)
     .minus(totals.advancesRefundedTnd)
     .plus(totals.customerPaymentsTnd)
@@ -95,6 +96,11 @@ export function CloseSessionDialog({
                 {
                   label: "Règlements clients annulés",
                   value: `−${formatMoney(detail.data.totals.customerPaymentReversalsTnd)}`,
+                  numeric: true,
+                },
+                {
+                  label: "Ventes annulées remboursées",
+                  value: `−${formatMoney(detail.data.totals.saleRefundsTnd)}`,
                   numeric: true,
                 },
                 {

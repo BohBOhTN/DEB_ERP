@@ -41,6 +41,7 @@ const actionLabels: Record<string, string> = {
   "pos_session.open": "Ouverture de caisse",
   "pos_session.close": "Clôture de caisse",
   "pos_sale.post": "Vente en caisse",
+  "pos_sale.cancel": "Annulation d'une vente",
   "customer.create": "Création d'un client",
   "customer.update": "Modification d'un client",
   "customer_payment.create": "Règlement client",

@@ -274,6 +274,7 @@ enum InventorySourceType {
   PURCHASE
   PURCHASE_CANCELLATION
   POS_SALE
+  POS_SALE_CANCELLATION
   CUSTOMER_ORDER_SALE
   DISTRIBUTOR_DIRECT_SALE
   DISTRIBUTOR_DISPATCH
@@ -596,6 +597,11 @@ model Sale {
   remainingDueTnd    Decimal                     @default(0) @map("remaining_due_tnd") @db.Decimal(14, 3)
   postedAt           DateTime                    @map("posted_at")
   postedByUserId     String                      @map("posted_by_user_id")
+  /// A cancelled sale keeps its lines and figures; its effects are reversed
+  /// by compensating records (rule 04 section 12, issue #44).
+  cancelledAt        DateTime?                   @map("cancelled_at")
+  cancelledByUserId  String?                     @map("cancelled_by_user_id")
+  cancellationReason String?                     @map("cancellation_reason")
   correlationId      String?                     @map("correlation_id")
   createdAt          DateTime                    @default(now()) @map("created_at")
   updatedAt          DateTime                    @updatedAt @map("updated_at")
@@ -614,6 +620,7 @@ model Sale {
   @@index([paymentState])
   @@index([postedByUserId])
   @@index([sessionId, postedAt])
+  @@index([status, soldAt])
   @@map("sales")
 }
 
@@ -639,17 +646,20 @@ model SaleLine {
 }
 
 model SalePayment {
-  id            String        @id @default(cuid())
-  saleId        String        @map("sale_id")
-  sessionId     String        @map("session_id")
-  amountTnd     Decimal       @map("amount_tnd") @db.Decimal(14, 3)
-  method        PaymentMethod @default(CASH)
-  paidAt        DateTime      @map("paid_at")
-  actorUserId   String        @map("actor_user_id")
-  correlationId String?       @map("correlation_id")
-  createdAt     DateTime      @default(now()) @map("created_at")
-  sale          Sale          @relation(fields: [saleId], references: [id], onDelete: Restrict)
-  session       PosSession    @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  id            String              @id @default(cuid())
+  saleId        String              @map("sale_id")
+  /// The session whose drawer the money went through: the sale's session
+  /// for a receipt, the session open at cancellation for a refund.
+  sessionId     String              @map("session_id")
+  movement      SalePaymentMovement @default(RECEIPT)
+  amountTnd     Decimal             @map("amount_tnd") @db.Decimal(14, 3)
+  method        PaymentMethod       @default(CASH)
+  paidAt        DateTime            @map("paid_at")
+  actorUserId   String              @map("actor_user_id")
+  correlationId String?             @map("correlation_id")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  sale          Sale                @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  session       PosSession          @relation(fields: [sessionId], references: [id], onDelete: Restrict)
 
   @@index([saleId])
   @@index([sessionId])
@@ -831,6 +841,13 @@ enum PosSessionStatus {
 enum SaleStatus {
   POSTED
   CANCELLED
+}
+
+/// Cash through the drawer for a sale: taken at posting, or handed back
+/// when the sale is cancelled.
+enum SalePaymentMovement {
+  RECEIPT
+  REFUND
 }
 
 enum SalePaymentState {

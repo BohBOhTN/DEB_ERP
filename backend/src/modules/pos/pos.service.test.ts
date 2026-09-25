@@ -442,6 +442,192 @@ describe("PosService", () => {
   });
 });
 
+describe("PosService sale cancellation (issue #44)", () => {
+  async function serviceWithPostedSale(
+    paidAmountTnd: string,
+    customerId?: string,
+  ) {
+    const prisma = new PosPrismaDouble();
+    const service = new PosService(prisma as unknown as PrismaClient);
+    await service.openSession(
+      {
+        idempotencyKey: "open-1",
+        openingCashTnd: "20.000",
+        openedAt: new Date("2026-09-21T08:00:00.000Z"),
+      },
+      { actorUserId: "user-1" },
+    );
+    const { sale } = await service.postPaidSale(
+      {
+        idempotencyKey: "sale-1",
+        sessionId: "session-1",
+        customerId,
+        soldAt: new Date("2026-09-21T08:10:00.000Z"),
+        paidAmountTnd,
+        lines: [{ productId: "product-1", quantity: "2" }],
+      },
+      { actorUserId: "user-1" },
+    );
+    return { prisma, service, sale };
+  }
+
+  it("cancels a cash sale: refund in the open drawer, stock back, sale kept as cancelled", async () => {
+    const { prisma, service, sale } = await serviceWithPostedSale("5.000");
+
+    const result = await service.cancelSale(
+      sale.id,
+      { idempotencyKey: "cancel-1", reason: "Erreur de saisie" },
+      { actorUserId: "user-2" },
+    );
+
+    expect(result.sale).toMatchObject({
+      status: "CANCELLED",
+      cancelledByUserId: "user-2",
+      cancellationReason: "Erreur de saisie",
+      reference: sale.reference,
+      totalTnd: "5.000",
+    });
+    expect(prisma.store.salePayments).toEqual([
+      expect.objectContaining({ movement: "RECEIPT", amountTnd: "5.000" }),
+      expect.objectContaining({
+        movement: "REFUND",
+        amountTnd: "5.000",
+        sessionId: "session-1",
+        saleId: sale.id,
+      }),
+    ]);
+    expect(prisma.store.inventoryMovements.at(-1)).toMatchObject({
+      movementType: "REVERSAL",
+      quantityDelta: "2.000000",
+      sourceType: "POS_SALE_CANCELLATION",
+      sourceId: sale.id,
+      reason: "Erreur de saisie",
+    });
+    expect(prisma.store.auditEvents.at(-1)).toMatchObject({
+      action: "pos_sale.cancel",
+    });
+
+    // The drawer expects its opening cash only: the refund undid the receipt.
+    const closed = await service.closeSession(
+      "session-1",
+      {
+        idempotencyKey: "close-1",
+        countedCashTnd: "20.000",
+        closedAt: new Date("2026-09-21T12:00:00.000Z"),
+      },
+      { actorUserId: "user-1" },
+    );
+    expect(closed.session).toMatchObject({
+      expectedCashTnd: "20.000",
+      cashDifferenceTnd: "0.000",
+    });
+
+    await expect(
+      service.cancelSale(
+        sale.id,
+        { idempotencyKey: "cancel-2", reason: "Encore" },
+        { actorUserId: "user-2" },
+      ),
+    ).rejects.toMatchObject({ code: "SALE_ALREADY_CANCELLED" });
+  });
+
+  it("cancels a credit sale by reversing the customer's receivable", async () => {
+    const { prisma, service, sale } = await serviceWithPostedSale(
+      "2.000",
+      "customer-1",
+    );
+
+    await service.cancelSale(
+      sale.id,
+      { idempotencyKey: "cancel-1", reason: "Client parti" },
+      { actorUserId: "user-1" },
+    );
+
+    expect(prisma.store.customerLedgerEntries).toEqual([
+      expect.objectContaining({
+        entryType: "SALE_RECEIVABLE",
+        amountTnd: "3.000",
+      }),
+      expect.objectContaining({
+        entryType: "SALE_REVERSAL",
+        amountTnd: "-3.000",
+        saleId: sale.id,
+        balanceKind: "RECEIVABLE",
+      }),
+    ]);
+  });
+
+  it("needs an open drawer to refund the cash of a sale", async () => {
+    const { prisma, service, sale } = await serviceWithPostedSale("5.000");
+    await service.closeSession(
+      "session-1",
+      {
+        idempotencyKey: "close-1",
+        countedCashTnd: "25.000",
+        closedAt: new Date("2026-09-21T12:00:00.000Z"),
+      },
+      { actorUserId: "user-1" },
+    );
+
+    await expect(
+      service.cancelSale(
+        sale.id,
+        { idempotencyKey: "cancel-1", reason: "Erreur de saisie" },
+        { actorUserId: "user-1" },
+      ),
+    ).rejects.toMatchObject({ code: "POS_SESSION_NOT_OPEN" });
+    expect(prisma.store.sales[0]).toMatchObject({ status: "POSTED" });
+  });
+
+  it("refuses a sale created by an order or one that received règlements", async () => {
+    const { prisma, service, sale } = await serviceWithPostedSale(
+      "2.000",
+      "customer-1",
+    );
+    const row = prisma.store.sales[0] as Record<string, unknown>;
+
+    row.order = { id: "order-1", reference: "CMD-000001" };
+    await expect(
+      service.cancelSale(
+        sale.id,
+        { idempotencyKey: "cancel-order", reason: "Erreur" },
+        { actorUserId: "user-1" },
+      ),
+    ).rejects.toMatchObject({ code: "SALE_LINKED_TO_ORDER" });
+
+    row.order = null;
+    row.paymentAllocations = [{ payment: { reversedAt: null } }];
+    await expect(
+      service.cancelSale(
+        sale.id,
+        { idempotencyKey: "cancel-paid", reason: "Erreur" },
+        { actorUserId: "user-1" },
+      ),
+    ).rejects.toMatchObject({ code: "SALE_HAS_ALLOCATED_PAYMENTS" });
+
+    // A reversed règlement no longer blocks.
+    row.paymentAllocations = [{ payment: { reversedAt: new Date() } }];
+    const result = await service.cancelSale(
+      sale.id,
+      { idempotencyKey: "cancel-ok", reason: "Erreur de saisie" },
+      { actorUserId: "user-1" },
+    );
+    expect(result.sale.status).toBe("CANCELLED");
+  });
+
+  it("returns the same cancellation on an idempotent retry", async () => {
+    const { prisma, service, sale } = await serviceWithPostedSale("5.000");
+    const params = { idempotencyKey: "cancel-1", reason: "Erreur de saisie" };
+
+    await service.cancelSale(sale.id, params, { actorUserId: "user-1" });
+    await service.cancelSale(sale.id, params, { actorUserId: "user-1" });
+
+    expect(
+      prisma.store.salePayments.filter((row) => row.movement === "REFUND"),
+    ).toHaveLength(1);
+  });
+});
+
 interface PosStore {
   posTerminals: Array<{
     id: string;
@@ -545,6 +731,8 @@ function makeTransactionClient(store: PosStore) {
   return {
     // Sale numbers come from a database sequence.
     $queryRawUnsafe: async () => [{ nextval: BigInt(++sequence) }],
+    // The row lock has no effect in a single-threaded double.
+    $queryRaw: async () => [],
     idempotencyRecord: {
       create: async (args: {
         data: { scope: string; key: string; requestHash: string };
@@ -659,18 +847,27 @@ function makeTransactionClient(store: PosStore) {
         store.salePayments.filter(
           (payment) => payment.sessionId === args.where.sessionId,
         ),
-      aggregate: async (args: { where: { sessionId: string } }) => ({
-        _sum: {
-          amountTnd: store.salePayments
-            .filter((payment) => payment.sessionId === args.where.sessionId)
-            .reduce((sum, payment) => sum + Number(payment.amountTnd), 0)
-            .toFixed(3),
-        },
-      }),
+      // Session cash sums receipts and refunds separately in SQL.
+      groupBy: async (args: { where: { sessionId: string } }) => {
+        const totals = new Map<string, number>();
+        for (const payment of store.salePayments) {
+          if (payment.sessionId !== args.where.sessionId) continue;
+          const movement = String(payment.movement ?? "RECEIPT");
+          totals.set(
+            movement,
+            (totals.get(movement) ?? 0) + Number(payment.amountTnd),
+          );
+        }
+        return [...totals.entries()].map(([movement, amount]) => ({
+          movement,
+          _sum: { amountTnd: amount.toFixed(3) },
+        }));
+      },
       create: async (args: { data: Record<string, unknown> }) => {
         const payment = {
           id: `payment-${store.salePayments.length + 1}`,
           method: "CASH" satisfies PaymentMethod,
+          movement: "RECEIPT",
           ...args.data,
         };
         store.salePayments.push(payment);
@@ -717,6 +914,43 @@ function makeTransactionClient(store: PosStore) {
           throw new Error("missing sale");
         }
 
+        return {
+          ...sale,
+          lines: getSaleLines(store, sale.id),
+          payments: store.salePayments.filter(
+            (payment) => payment.saleId === sale.id,
+          ),
+        };
+      },
+      // Cancellation reads the sale with its lines' stockable flag, its
+      // payments, its order and the règlements allocated to it.
+      findUnique: async (args: { where: { id: string } }) => {
+        const sale = store.sales.find((item) => item.id === args.where.id);
+        if (!sale) return null;
+        return {
+          ...sale,
+          lines: getSaleLines(store, sale.id).map((line) => ({
+            ...line,
+            product: {
+              isStockable:
+                store.products.find((product) => product.id === line.productId)
+                  ?.isStockable ?? false,
+            },
+          })),
+          payments: store.salePayments
+            .filter((payment) => payment.saleId === sale.id)
+            .map((payment) => ({ movement: "RECEIPT", ...payment })),
+          order: (sale.order as unknown) ?? null,
+          paymentAllocations: (sale.paymentAllocations as unknown[]) ?? [],
+        };
+      },
+      update: async (args: {
+        where: { id: string };
+        data: Record<string, unknown>;
+      }) => {
+        const sale = store.sales.find((item) => item.id === args.where.id);
+        if (!sale) throw new Error("missing sale");
+        Object.assign(sale, args.data);
         return {
           ...sale,
           lines: getSaleLines(store, sale.id),

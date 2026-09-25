@@ -343,6 +343,20 @@ const errorCopy: Record<string, ErrorCopy> = {
     title: "Montant trop élevé",
     description: "Le paiement dépasse le reste dû de la vente.",
   },
+  SALE_ALREADY_CANCELLED: {
+    title: "Vente déjà annulée",
+    description: "Cette vente a déjà été annulée.",
+  },
+  SALE_LINKED_TO_ORDER: {
+    title: "Vente issue d'une commande",
+    description:
+      "Cette vente provient d'une commande terminée et ne peut pas être annulée ici.",
+  },
+  SALE_HAS_ALLOCATED_PAYMENTS: {
+    title: "Règlements affectés",
+    description:
+      "Des règlements ont été affectés à cette vente : annulez-les d'abord.",
+  },
   CUSTOMER_INACTIVE: {
     title: "Client désactivé",
     description: "Aucun règlement ne peut être enregistré pour ce client.",

@@ -125,6 +125,11 @@ export function SessionDetailPage() {
                 numeric: true,
               },
               {
+                label: "Ventes annulées remboursées",
+                value: formatMoney(totals.saleRefundsTnd),
+                numeric: true,
+              },
+              {
                 label: "Espèces attendues",
                 value: formatMoney(expected),
                 numeric: true,

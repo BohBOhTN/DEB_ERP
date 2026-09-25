@@ -31,6 +31,13 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
 
 ### Fixed
 
+- Issue #44, Ventes: a KPI row, the period filter, a search and a status
+  filter on the sales list; a sale can be cancelled under the new
+  `pos.cancel_sale` permission with its stock, receivable and cash
+  reversed and a reason kept; the remainder of a credit sale is collected
+  from its row through the customer's règlement dialog; the receipt lists
+  every movement of money and the order it came from; customer ledger
+  labels match the backend's entry types.
 - Issue #45, Commandes: a KPI row, the period filter and a search on the
   queue, the detail page's actions on every row, `Avance` and `Reste`
   stated by the API for every state; a completion now always states the

@@ -43,6 +43,7 @@ export const permissionKeys = [
   "pos.open_session",
   "pos.sell",
   "pos.credit_sale",
+  "pos.cancel_sale",
   "pos.close_session",
   "orders.view",
   "orders.create",

@@ -43,6 +43,9 @@ export interface SessionTotals {
   /// Till règlements reversed during this session: cash handed back from
   /// this drawer.
   customerPaymentReversalsTnd: string;
+  /// Cash of sales cancelled during this session, handed back from this
+  /// drawer (issue #44).
+  saleRefundsTnd: string;
 }
 
 export interface SessionDetail {
@@ -85,17 +88,52 @@ export interface Sale {
   remainingDueTnd: string;
   postedAt: string;
   postedByUserId: string;
+  /// Set when the sale was cancelled (issue #44); the figures above are
+  /// kept as they were posted.
+  cancelledAt: string | null;
+  cancellationReason: string | null;
   customer: Customer | null;
   postedBy?: ActorSummary | null;
+  cancelledBy?: ActorSummary | null;
   /// Detail only.
   lines?: SaleLine[];
+  /// Cash through a drawer: taken at posting, handed back on cancellation.
   payments?: Array<{
     id: string;
     amountTnd: string;
     method: "CASH";
+    movement: "RECEIPT" | "REFUND";
     paidAt: string;
   }>;
   session?: PosSession;
+  /// The order this sale completed, when it came from one.
+  order?: { id: string; reference: string } | null;
+  /// Règlements allocated to this sale after posting.
+  paymentAllocations?: Array<{
+    id: string;
+    amountTnd: string;
+    payment: {
+      id: string;
+      paidAt: string;
+      reference: string | null;
+      amountTnd: string;
+      reversedAt: string | null;
+    };
+  }>;
+  /// The order advance applied at completion.
+  appliedAdvanceTnd?: string;
+}
+
+/// The KPI row above the sales list: the same filters, no paging.
+export interface SalesSummary {
+  count: number;
+  paidCount: number;
+  partiallyPaidCount: number;
+  unpaidCount: number;
+  cancelledCount: number;
+  totalTnd: string;
+  paidTnd: string;
+  remainingTnd: string;
 }
 
 export async function getCurrentSession(): Promise<PosSession | null> {
@@ -172,21 +210,52 @@ export async function postSale(
   ).sale;
 }
 
-export interface SaleListQuery {
-  page: number;
-  pageSize: number;
-  sort?: SortSpec;
+export interface SaleFilterQuery {
   from?: string;
   to?: string;
   customerId?: string;
   paymentState?: SalePaymentState;
   sessionId?: string;
+  /// Posted sales unless the cancelled ones are asked for.
+  status?: "POSTED" | "CANCELLED";
+  /// Reference or customer name.
+  q?: string;
+}
+
+export interface SaleListQuery extends SaleFilterQuery {
+  page: number;
+  pageSize: number;
+  sort?: SortSpec;
 }
 
 export function listSales(query: SaleListQuery): Promise<PageResult<Sale>> {
   return apiClient.list<Sale>("/pos/sales", {
     query: toSearchParams({ ...query }),
   });
+}
+
+export async function getSalesSummary(
+  query: SaleFilterQuery,
+): Promise<SalesSummary> {
+  return (
+    await apiClient.get<{ summary: SalesSummary }>("/pos/sales/summary", {
+      query: toSearchParams({ page: 1, pageSize: 1, ...query } as never),
+    })
+  ).summary;
+}
+
+export async function cancelSale(
+  saleId: string,
+  reason: string,
+  idempotencyKey: string,
+): Promise<Sale> {
+  return (
+    await apiClient.post<{ sale: Sale }>(
+      `/pos/sales/${saleId}/cancel`,
+      { reason },
+      { idempotencyKey },
+    )
+  ).sale;
 }
 
 export async function getSale(saleId: string): Promise<Sale> {
