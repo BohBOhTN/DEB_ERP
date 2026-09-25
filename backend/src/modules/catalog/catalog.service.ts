@@ -24,7 +24,9 @@ export interface ListParams {
 /// The product list also filters by category and stockability and sorts by
 /// price and status (07 section 4.1).
 export interface ProductListParams extends Omit<ListParams, "sort"> {
-  sort?: SortSpec<"name" | "createdAt" | "salePriceTnd" | "isActive">;
+  sort?: SortSpec<
+    "name" | "createdAt" | "salePriceTnd" | "approximateCostTnd" | "isActive"
+  >;
   categoryId?: string;
   isStockable?: boolean;
 }
@@ -672,7 +674,11 @@ export class CatalogService {
           baseUnit: true,
         },
         orderBy: orderByFor<
-          "name" | "createdAt" | "salePriceTnd" | "isActive",
+          | "name"
+          | "createdAt"
+          | "salePriceTnd"
+          | "approximateCostTnd"
+          | "isActive",
           Prisma.ProductOrderByWithRelationInput
         >(
           params.sort,
@@ -680,6 +686,9 @@ export class CatalogService {
             name: (direction) => [{ isActive: "desc" }, { name: direction }],
             createdAt: (direction) => [{ createdAt: direction }],
             salePriceTnd: (direction) => [{ salePriceTnd: direction }],
+            approximateCostTnd: (direction) => [
+              { approximateCostTnd: { sort: direction, nulls: "last" } },
+            ],
             isActive: (direction) => [{ isActive: direction }, { name: "asc" }],
           },
           [{ isActive: "desc" }, { name: "asc" }],
@@ -702,6 +711,7 @@ export class CatalogService {
       categoryId: string;
       baseUnitId: string;
       salePriceTnd: string;
+      approximateCostTnd?: string | null;
       isStockable: boolean;
       notes?: string;
     },
@@ -721,6 +731,7 @@ export class CatalogService {
         categoryId: params.categoryId,
         baseUnitId: params.baseUnitId,
         salePriceTnd: params.salePriceTnd,
+        approximateCostTnd: params.approximateCostTnd ?? null,
         isStockable: params.isStockable,
         notes: emptyToNull(params.notes),
         createdByUserId: actor.actorUserId,
@@ -753,6 +764,7 @@ export class CatalogService {
       categoryId?: string;
       baseUnitId?: string;
       salePriceTnd?: string;
+      approximateCostTnd?: string | null;
       isStockable?: boolean;
       notes?: string;
     },
@@ -795,6 +807,9 @@ export class CatalogService {
           : {}),
         ...(params.salePriceTnd !== undefined
           ? { salePriceTnd: params.salePriceTnd }
+          : {}),
+        ...(params.approximateCostTnd !== undefined
+          ? { approximateCostTnd: params.approximateCostTnd }
           : {}),
         ...(params.isStockable !== undefined
           ? { isStockable: params.isStockable }
