@@ -44,6 +44,16 @@ function renderAt(path: string, width = 1280) {
   return router;
 }
 
+/// Requests by API path since the call.
+function countRequests() {
+  const counts = new Map<string, number>();
+  server.events.on("request:start", ({ request }) => {
+    const path = new URL(request.url).pathname.replace(/^.*\/api\/v1/, "");
+    counts.set(path, (counts.get(path) ?? 0) + 1);
+  });
+  return { of: (path: string) => counts.get(path) ?? 0 };
+}
+
 describe("Procurement", () => {
   beforeAll(async () => {
     await Promise.all([
@@ -104,6 +114,7 @@ describe("Procurement", () => {
   it("creates a purchase with a converted unit, partial terms and posts it with the impact", async () => {
     const store = makeProcurementStore();
     server.use(...procurementHandlers(store));
+    const requests = countRequests();
     renderAt("/achats/nouveau");
 
     expect(
@@ -135,11 +146,34 @@ describe("Procurement", () => {
       await screen.findByRole("option", { name: "Sac de 50 kg" }),
     );
     expect(screen.getByText(/= 200 kg · prix par kg/)).toBeInTheDocument();
-    await userEvent.type(
-      screen.getByRole("textbox", { name: "Prix unitaire 1" }),
-      "1,25",
+    // Issue 009: the total typed for 4 sacs (200 kg) gives the price per
+    // kg, and the picker of a second line reads the session cache.
+    await userEvent.clear(
+      screen.getByRole("textbox", { name: "Total ligne 1" }),
     );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Total ligne 1" }),
+      "250",
+    );
+    expect(
+      screen.getByRole("textbox", { name: "Prix unitaire 1" }),
+    ).toHaveValue("1,250");
     expect(screen.getAllByText("250,000 TND").length).toBeGreaterThan(0);
+    const before = requests.of("/catalog/raw-materials");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ajouter une ligne" }),
+    );
+    await userEvent.click(
+      screen.getByRole("combobox", { name: "Matière première 2" }),
+    );
+    expect(
+      await screen.findByRole("option", { name: /Farine T55/ }),
+    ).toBeInTheDocument();
+    expect(requests.of("/catalog/raw-materials")).toBe(before);
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Retirer la ligne 2" }),
+    );
 
     await userEvent.click(screen.getByRole("radio", { name: "Partiel" }));
     await userEvent.type(
