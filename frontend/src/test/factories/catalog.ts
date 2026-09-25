@@ -79,6 +79,7 @@ export function makeProduct(overrides: Partial<Product> = {}): Product {
     categoryId: breadCategory.id,
     baseUnitId: piece.id,
     salePriceTnd: "1.200",
+    approximateCostTnd: null,
     isStockable: true,
     isActive: true,
     notes: null,

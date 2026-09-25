@@ -8,6 +8,11 @@ Release R10 polish, operations and launch, targeting `v2.0.0`.
 
 ### Added
 
+- Issue #48, Produits and Accueil: an approximate cost per product (per
+  base unit, ingredients only) behind the new `margin.view` permission,
+  the margin per product on the list and the page, the cost snapshotted
+  on every sold line at posting, and a `Marge approximative` tile on
+  Accueil over the day's costed sales.
 - Sprint 27 polish: a command palette (`Ctrl+K` / `⌘K`) over the
   navigation, the actions and a search of customers, products and
   suppliers; a print stylesheet with `Imprimer` on the three statements;

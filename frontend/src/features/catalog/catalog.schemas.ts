@@ -12,6 +12,12 @@ export const productSchema = z.object({
   categoryId: requiredString(1, 64),
   baseUnitId: requiredString(1, 64),
   salePriceTnd: tnd({ positive: true }),
+  // Issue 008: optional; an empty field clears the cost.
+  approximateCostTnd: z
+    .string()
+    .trim()
+    .transform((value) => (value === "" ? null : value))
+    .pipe(tnd().nullable()),
   isStockable: z.boolean(),
   code: optionalString(40),
   barcode: optionalString(64),

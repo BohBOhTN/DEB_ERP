@@ -29,6 +29,9 @@ export interface Product {
   categoryId: string;
   baseUnitId: string;
   salePriceTnd: string;
+  /// Issue 008: the owner's approximate cost per base unit; absent from the
+  /// response without `margin.view`.
+  approximateCostTnd?: string | null;
   isStockable: boolean;
   isActive: boolean;
   notes: string | null;
@@ -90,6 +93,7 @@ export interface ProductInput {
   categoryId: string;
   baseUnitId: string;
   salePriceTnd: string;
+  approximateCostTnd?: string | null;
   isStockable: boolean;
   code?: string;
   barcode?: string;

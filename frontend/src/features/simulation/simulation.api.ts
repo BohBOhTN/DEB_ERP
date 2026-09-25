@@ -64,6 +64,7 @@ export interface SimulationListQuery {
   page: number;
   pageSize: number;
   sort?: SortSpec;
+  targetProductId?: string;
 }
 
 export function listSimulations(

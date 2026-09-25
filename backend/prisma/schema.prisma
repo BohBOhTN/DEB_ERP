@@ -180,6 +180,9 @@ model Product {
   categoryId           String                      @map("category_id")
   baseUnitId           String                      @map("base_unit_id")
   salePriceTnd         Decimal                     @map("sale_price_tnd") @db.Decimal(12, 3)
+  /// Issue 008: what the owner estimates one base unit costs (ingredients
+  /// only). Typed by hand, never computed; snapshotted on sale lines.
+  approximateCostTnd   Decimal?                    @map("approximate_cost_tnd") @db.Decimal(12, 3)
   isStockable          Boolean                     @default(true) @map("is_stockable")
   isActive             Boolean                     @default(true) @map("is_active")
   notes                String?
@@ -632,6 +635,7 @@ model SaleLine {
   unitId              String   @map("unit_id")
   quantity            Decimal  @db.Decimal(18, 6)
   unitPriceTnd        Decimal  @map("unit_price_tnd") @db.Decimal(14, 3)
+  unitCostTnd         Decimal? @map("unit_cost_tnd") @db.Decimal(14, 3)
   lineTotalTnd        Decimal  @map("line_total_tnd") @db.Decimal(14, 3)
   productNameSnapshot String   @map("product_name_snapshot")
   unitNameSnapshot    String   @map("unit_name_snapshot")
@@ -958,6 +962,7 @@ model DistributorSaleLine {
   unitId              String          @map("unit_id")
   quantity            Decimal         @db.Decimal(18, 6)
   unitPriceTnd        Decimal         @map("unit_price_tnd") @db.Decimal(14, 3)
+  unitCostTnd         Decimal?        @map("unit_cost_tnd") @db.Decimal(14, 3)
   lineTotalTnd        Decimal         @map("line_total_tnd") @db.Decimal(14, 3)
   productNameSnapshot String          @map("product_name_snapshot")
   unitNameSnapshot    String          @map("unit_name_snapshot")
@@ -1065,6 +1070,7 @@ model DistributorSettlementLine {
   returnedQuantity    Decimal                 @default(0) @map("returned_quantity") @db.Decimal(18, 6)
   unaccountedQuantity Decimal                 @default(0) @map("unaccounted_quantity") @db.Decimal(18, 6)
   unitPriceTnd        Decimal                 @map("unit_price_tnd") @db.Decimal(14, 3)
+  unitCostTnd         Decimal?                @map("unit_cost_tnd") @db.Decimal(14, 3)
   lineTotalTnd        Decimal                 @map("line_total_tnd") @db.Decimal(14, 3)
   productNameSnapshot String                  @map("product_name_snapshot")
   unitNameSnapshot    String                  @map("unit_name_snapshot")

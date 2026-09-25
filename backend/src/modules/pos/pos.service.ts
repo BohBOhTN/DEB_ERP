@@ -15,6 +15,7 @@ import { AppError } from "../../shared/appError.js";
 import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
 import { nextSaleReference } from "../../shared/references.js";
+import { unitCostSnapshot } from "../../shared/costSnapshot.js";
 import { sumOrZero } from "../../shared/ledger.js";
 import { normalizeName } from "../../shared/text.js";
 
@@ -905,6 +906,7 @@ export class PosService {
                   quantity: line.quantity.toFixed(6),
                   unitPriceTnd: line.unitPriceTnd.toFixed(3),
                   lineTotalTnd: line.lineTotalTnd.toFixed(3),
+                  unitCostTnd: unitCostSnapshot(line.product),
                   productNameSnapshot: line.product.name,
                   unitNameSnapshot: line.product.baseUnit.name,
                 })),

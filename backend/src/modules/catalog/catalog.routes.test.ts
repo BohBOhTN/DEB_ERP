@@ -115,12 +115,14 @@ async function createTestApp(permissionKeys: string[]) {
       description: null,
       isActive: true,
     }),
+    createProduct: vi.fn(),
     listProducts: vi.fn().mockResolvedValue({
       items: [
         {
           id: "product-1",
           name: "Baguette",
           salePriceTnd: "0.500",
+          approximateCostTnd: "0.300",
           isStockable: true,
           isActive: true,
         },
@@ -266,10 +268,73 @@ describe("catalog routes", () => {
         name: "Baguette",
       }),
     ]);
+    // Issue 008: the cost is the owner's figure, absent without margin.view.
+    expect(response.body.data.products.items[0]).not.toHaveProperty(
+      "approximateCostTnd",
+    );
     expect(catalogService.listProducts).toHaveBeenCalledWith({
       page: 1,
       pageSize: 25,
     });
+  });
+
+  it("shows the approximate cost with margin.view and stores an empty one as null (issue 008)", async () => {
+    const { app, cookie, catalogService } = await createTestApp([
+      "products.view",
+      "products.create",
+      "margin.view",
+    ]);
+    catalogService.createProduct = vi
+      .fn()
+      .mockImplementation(async (body: Record<string, unknown>) => ({
+        id: "product-2",
+        ...body,
+      }));
+
+    const listed = await request(app)
+      .get("/api/catalog/products")
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(listed.body.data.products.items[0]).toMatchObject({
+      approximateCostTnd: "0.300",
+    });
+
+    const created = await request(app)
+      .post("/api/catalog/products")
+      .set("Cookie", cookie)
+      .send({
+        name: "Croissant",
+        categoryId: "category-1",
+        baseUnitId: "unit-1",
+        salePriceTnd: "1.000",
+        approximateCostTnd: "",
+        isStockable: true,
+      })
+      .expect(201);
+    expect(catalogService.createProduct).toHaveBeenCalledWith(
+      expect.objectContaining({ approximateCostTnd: null }),
+      expect.anything(),
+    );
+    expect(created.body.data.product).toMatchObject({
+      approximateCostTnd: null,
+    });
+
+    await request(app)
+      .post("/api/catalog/products")
+      .set("Cookie", cookie)
+      .send({
+        name: "Pain",
+        categoryId: "category-1",
+        baseUnitId: "unit-1",
+        salePriceTnd: "1.200",
+        approximateCostTnd: "0.8",
+        isStockable: true,
+      })
+      .expect(201);
+    expect(catalogService.createProduct).toHaveBeenLastCalledWith(
+      expect.objectContaining({ approximateCostTnd: "0.8" }),
+      expect.anything(),
+    );
   });
 
   it("creates raw materials when the user has raw_materials.create", async () => {

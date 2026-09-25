@@ -1,5 +1,5 @@
 import Decimal from "decimal.js-light";
-import { Banknote, Receipt, Users, Wallet } from "lucide-react";
+import { Banknote, Receipt, TrendingUp, Users, Wallet } from "lucide-react";
 import { Badge } from "../../../components/ui/Badge/Badge.js";
 import { KpiGrid } from "../../../components/patterns/KpiGrid/KpiGrid.js";
 import {
@@ -60,6 +60,38 @@ export function KpiRow({ summary, loading, period }: KpiRowProps) {
           period === "yesterday"
             ? "Espèces de la veille à la caisse"
             : "Espèces du jour à la caisse"
+        }
+      />,
+    );
+  }
+
+  if (summary.margin) {
+    const { today } = summary.margin;
+    const revenue = new Decimal(today.revenueTnd);
+    const share = revenue.greaterThan(0)
+      ? new Decimal(today.costedRevenueTnd)
+          .dividedBy(revenue)
+          .times(100)
+          .toDecimalPlaces(0)
+      : null;
+
+    tiles.push(
+      <KpiTile
+        key="margin"
+        label={fr.approximateMarginOfDay}
+        value={formatMoney(today.marginTnd, { unit: false })}
+        unit="TND"
+        icon={<TrendingUp />}
+        delta={salesDelta(
+          today.marginTnd,
+          summary.margin.previousDay.marginTnd,
+        )}
+        note={
+          today.uncostedLinesCount > 0
+            ? `sur ${share?.toString() ?? "0"} % du chiffre d'affaires · ${plural(today.uncostedLinesCount, "ligne sans coût", "lignes sans coût")}`
+            : revenue.greaterThan(0)
+              ? "ingrédients seulement, sur tout le chiffre d'affaires"
+              : "ingrédients seulement"
         }
       />,
     );
