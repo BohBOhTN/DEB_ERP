@@ -1,0 +1,66 @@
+# Deploying to the VPS
+
+The stack runs from `/opt/dar-el-barka` on the VPS: two images built by
+GitHub Actions and pushed to GHCR, one `docker compose` file (this folder's),
+and two files written by the deploy from GitHub secrets, `.env` (image tag,
+port, registry owner) and `backend.env` (the API's configuration). The API
+joins the database's network, `pg-network`, so Postgres keeps accepting
+internal connections only. The app is served on one origin: nginx in the
+frontend container forwards `/api` to the API container.
+
+## One-time setup
+
+1. On the VPS, a deploy user in the `docker` group and a key pair whose
+   private half is the `VPS_SSH_KEY` secret.
+2. `docker network create pg-network` if it does not exist, then
+   `docker network connect pg-network postgres-prod`.
+3. In `postgres-prod`, the application's role and database (see the
+   `DATABASE_URL` below); `pg_trgm` is created by the first migration.
+4. In the GitHub repository, an environment named `production` with the
+   owner as required reviewer and these secrets:
+
+| Secret         | Content                                                                                                                                                                                                                                                                                                                                             |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VPS_SSH_HOST` | VPS address                                                                                                                                                                                                                                                                                                                                         |
+| `VPS_SSH_USER` | Deploy user                                                                                                                                                                                                                                                                                                                                         |
+| `VPS_SSH_KEY`  | Private key                                                                                                                                                                                                                                                                                                                                         |
+| `VPS_SSH_PORT` | Optional, `22` by default                                                                                                                                                                                                                                                                                                                           |
+| `PUBLIC_PORT`  | Host port published for the app, `8081`                                                                                                                                                                                                                                                                                                             |
+| `PUBLIC_URL`   | `http://<ip>:8081`, used by the smoke step                                                                                                                                                                                                                                                                                                          |
+| `BACKEND_ENV`  | The API's `.env`: `NODE_ENV=production`, `PORT=4000`, `DATABASE_URL=postgresql://dar_el_baraka_user:<password>@postgres-prod:5432/dar_el_baraka?schema=public&connection_limit=10&pool_timeout=10`, `CORS_ALLOWED_ORIGINS=http://<ip>:8081`, `TRUST_PROXY=1`, `SESSION_COOKIE_SECURE=false`, `LOG_PRETTY=false`, the rest as `backend/.env.example` |
+
+`SESSION_COOKIE_SECURE=false` is what plain HTTP on an address needs. Once a
+hostname with TLS fronts the stack, set it to `true`, put the hostname in
+`CORS_ALLOWED_ORIGINS` and `PUBLIC_URL`, raise `TRUST_PROXY` to `2`, and
+publish the port on `127.0.0.1` in the compose file.
+
+## Each deploy
+
+A push to `main` runs the CI `quality` job, then waits for the reviewer's
+approval on the `production` environment, then builds the images tagged
+with the commit, copies this folder to the VPS and runs
+`remote-deploy.sh`, which writes the configuration, pulls, applies the
+pending migrations from a one-off container, restarts the stack and waits
+for the API's readiness. If the API never becomes ready, the script puts
+the previous image back and the run is red.
+
+`Run workflow` on the Actions page deploys the current commit of any
+branch by hand; with an `image_tag`, it redeploys an image built earlier
+(a rollback).
+
+## First admin
+
+The API seeds the permission catalogue at boot and gives the Super Admin
+role to the first active user. Create that user once:
+
+```
+cd /opt/dar-el-barka
+docker compose run --rm backend node dist/scripts/createUser.js <email> "<display name>" <password>
+```
+
+## Day to day
+
+- Logs: `docker compose logs -f backend` (JSON lines).
+- Health: `http://<ip>:8081/api/health/ready` reports the database and the
+  deployed commit.
+- Restart: `docker compose up -d`.
