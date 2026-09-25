@@ -280,7 +280,10 @@ export class CustomersService {
         .filter((row): row is NonNullable<typeof row> => row !== undefined);
     } else {
       const where = searchWhere ?? {};
-      [customers, total] = await this.prisma.$transaction([
+      // The page and its count as two parallel reads rather than a batch
+      // transaction: the transaction cost two more round trips (BEGIN and
+      // COMMIT) for a snapshot a paginated directory does not need.
+      [customers, total] = await Promise.all([
         this.prisma.customer.findMany({
           where,
           orderBy: [{ isActive: "desc" }, { name: "asc" }],
@@ -292,10 +295,11 @@ export class CustomersService {
     }
 
     const customerIds = customers.map((customer) => customer.id);
-    // groupBy is typed per call, so these run as parallel reads rather than a
-    // batch transaction; balances are append-only sums, so a snapshot is not
-    // required.
-    const [kindTotals, saleTotals] = await Promise.all([
+    // Every read that only needs the page's customer ids runs in one round:
+    // balances are append-only sums, so a snapshot is not required. The
+    // performance suite measures this read at p95 on a large history; each
+    // sequential round trip is what the budget pays for.
+    const [kindTotals, saleTotals, openOrders] = await Promise.all([
       this.prisma.customerLedgerEntry.groupBy({
         by: ["customerId", "balanceKind"],
         where: { customerId: { in: customerIds } },
@@ -310,29 +314,11 @@ export class CustomersService {
         },
         _sum: { amountTnd: true },
       }),
-    ]);
-    const openSaleTotals = saleTotals.filter((row) =>
-      sumOrZero(row._sum.amountTnd).greaterThan(0),
-    );
-    const [openSales, openOrders] = await Promise.all([
-      this.prisma.sale.findMany({
-        where: {
-          id: { in: openSaleTotals.map((row) => row.saleId as string) },
-          status: SaleStatus.POSTED,
-        },
-        select: {
-          id: true,
-          customerId: true,
-          soldAt: true,
-          paymentState: true,
-        },
-        orderBy: [{ soldAt: "desc" }, { id: "desc" }],
-      }),
       // Orders still awaiting fulfilment, counted by the database per customer.
       this.prisma.customerOrder.groupBy({
         by: ["customerId"],
         where: {
-          customerId: { in: customers.map((customer) => customer.id) },
+          customerId: { in: customerIds },
           status: {
             in: [
               CustomerOrderStatus.DRAFT,
@@ -345,6 +331,25 @@ export class CustomersService {
         _count: { _all: true },
       }),
     ]);
+    const openSaleTotals = saleTotals.filter((row) =>
+      sumOrZero(row._sum.amountTnd).greaterThan(0),
+    );
+    const openSales =
+      openSaleTotals.length === 0
+        ? []
+        : await this.prisma.sale.findMany({
+            where: {
+              id: { in: openSaleTotals.map((row) => row.saleId as string) },
+              status: SaleStatus.POSTED,
+            },
+            select: {
+              id: true,
+              customerId: true,
+              soldAt: true,
+              paymentState: true,
+            },
+            orderBy: [{ soldAt: "desc" }, { id: "desc" }],
+          });
     const openOrderCount = new Map(
       openOrders.map((row) => [row.customerId, row._count._all]),
     );
