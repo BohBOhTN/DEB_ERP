@@ -15,6 +15,7 @@ import { Select } from "../../../components/ui/Select/Select.js";
 import { StatusPill } from "../../../components/ui/StatusPill/StatusPill.js";
 import { useToast } from "../../../components/ui/Toast/useToast.js";
 import { formatMoney } from "../../../i18n/format.js";
+import { mediaUrl } from "../../../lib/api/media.js";
 import { useUrlState } from "../../../lib/hooks/useUrlState.js";
 import { useSessionPermissions } from "../../../app/sessionContext.js";
 import type { Product } from "../catalog.api.js";
@@ -67,6 +68,18 @@ export function ProductsPage() {
       meta: { sortField: "name" },
       cell: ({ row }) => (
         <span className={styles.nameCell}>
+          {row.original.imageUrl ? (
+            <img
+              src={mediaUrl(row.original.imageUrl) ?? ""}
+              alt=""
+              width={32}
+              height={32}
+              loading="lazy"
+              className={styles.thumb}
+            />
+          ) : (
+            <span className={styles.thumbEmpty} aria-hidden="true" />
+          )}
           <span>{row.original.name}</span>
           <Badge tone="neutral">{row.original.category.name}</Badge>
         </span>

@@ -1,9 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateAfter } from "../../../lib/query/invalidation.js";
-import { useEffect } from "react";
+import { ImageOff } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { FormDialog } from "../../../components/patterns/FormDialog/FormDialog.js";
+import { Button } from "../../../components/ui/Button/Button.js";
 import { FormField } from "../../../components/ui/FormField/FormField.js";
 import { MoneyInput } from "../../../components/ui/MoneyInput/MoneyInput.js";
 import { Select } from "../../../components/ui/Select/Select.js";
@@ -12,14 +14,21 @@ import { TextArea } from "../../../components/ui/TextArea/TextArea.js";
 import { TextInput } from "../../../components/ui/TextInput/TextInput.js";
 import { useToast } from "../../../components/ui/Toast/useToast.js";
 import { fr } from "../../../i18n/fr.js";
+import { mediaUrl } from "../../../lib/api/media.js";
 import { useSessionPermissions } from "../../../app/sessionContext.js";
 import type { Product } from "../catalog.api.js";
 import {
   useCategories,
   useCreateProduct,
+  useRemoveProductImage,
+  useSetProductImage,
   useUnits,
   useUpdateProduct,
 } from "../catalog.queries.js";
+
+/// Raw upload ceiling, the same as the API's.
+export const productImageMaxBytes = 5 * 1024 * 1024;
+const acceptedImageTypes = ["image/jpeg", "image/png", "image/webp"];
 import {
   productSchema,
   type ProductFormInput,
@@ -64,6 +73,48 @@ export function ProductFormDialog({
   const units = useUnits();
   const create = useCreateProduct();
   const update = useUpdateProduct(product?.id ?? "");
+  const setImage = useSetProductImage();
+  const removeImage = useRemoveProductImage();
+  // Issue #64: the photo chosen in this dialog, sent after the product is
+  // saved; a removal asked here happens at the same moment.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [removeRequested, setRemoveRequested] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!pendingFile || typeof URL.createObjectURL !== "function") {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(pendingFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [pendingFile]);
+
+  const choosePhoto = (file: File | null) => {
+    setPhotoError(null);
+    if (!file) {
+      setPendingFile(null);
+      return;
+    }
+    if (!acceptedImageTypes.includes(file.type)) {
+      setPhotoError("La photo doit être un fichier JPEG, PNG ou WebP.");
+      return;
+    }
+    if (file.size > productImageMaxBytes) {
+      setPhotoError("La photo dépasse 5 Mo.");
+      return;
+    }
+    setRemoveRequested(false);
+    setPendingFile(file);
+  };
+  const shownPhoto = previewUrl
+    ? previewUrl
+    : removeRequested
+      ? null
+      : mediaUrl(product?.imageUrl);
   const form = useForm<ProductFormInput, unknown, ProductFormOutput>({
     resolver: zodResolver(productSchema),
     defaultValues: defaultsFor(product),
@@ -73,6 +124,10 @@ export function ProductFormDialog({
   useEffect(() => {
     if (open) {
       form.reset(defaultsFor(product));
+      setPendingFile(null);
+      setRemoveRequested(false);
+      setPhotoError(null);
+      if (fileInput.current) fileInput.current.value = "";
     }
   }, [open, product, form]);
 
@@ -93,9 +148,17 @@ export function ProductFormDialog({
         const input = permissions.has("margin.view")
           ? values
           : (({ approximateCostTnd: _cost, ...rest }) => rest)(values);
-        const saved = product
+        let saved = product
           ? await update.mutateAsync({ ...input, version: product.version })
           : await create.mutateAsync(input);
+        if (pendingFile) {
+          saved = await setImage.mutateAsync({
+            productId: saved.id,
+            file: pendingFile,
+          });
+        } else if (removeRequested && product?.imageUrl) {
+          saved = await removeImage.mutateAsync(saved.id);
+        }
         toast.success(product ? "Produit modifié" : "Produit créé", saved.name);
         onSaved?.(saved);
         onOpenChange(false);
@@ -210,6 +273,52 @@ export function ProductFormDialog({
       />
       <FormField label={fr.notes} error={errors.notes?.message}>
         <TextArea {...form.register("notes")} rows={2} />
+      </FormField>
+      <FormField
+        label="Photo"
+        error={photoError ?? undefined}
+        hint="JPEG, PNG ou WebP, 5 Mo au plus ; recadrée en 512 px pour la caisse."
+      >
+        <div className={styles.photoRow}>
+          {shownPhoto ? (
+            <img
+              src={shownPhoto}
+              alt=""
+              width={96}
+              height={96}
+              className={styles.photoPreview}
+            />
+          ) : (
+            <span className={styles.photoPlaceholder} aria-hidden="true">
+              <ImageOff />
+            </span>
+          )}
+          <div className={styles.photoActions}>
+            <input
+              ref={fileInput}
+              type="file"
+              aria-label="Photo"
+              accept={acceptedImageTypes.join(",")}
+              onChange={(event) =>
+                choosePhoto(event.currentTarget.files?.[0] ?? null)
+              }
+            />
+            {shownPhoto ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setPendingFile(null);
+                  setRemoveRequested(true);
+                  if (fileInput.current) fileInput.current.value = "";
+                }}
+              >
+                Retirer la photo
+              </Button>
+            ) : null}
+          </div>
+        </div>
       </FormField>
     </FormDialog>
   );
