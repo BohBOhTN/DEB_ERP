@@ -332,4 +332,99 @@ describe("Produits", () => {
       ).value,
     ).toMatch(/^Pain complet · stock actuel 18.pièce$/);
   });
+  // Issue #64: the photo is chosen in the product dialog and sent once the
+  // product is saved; the list shows it; "Retirer la photo" removes it.
+  it("uploads a photo from the product dialog and removes it again", async () => {
+    const store = makeCatalogStore();
+    server.use(...catalogHandlers(store));
+    renderAt("/produits");
+
+    const table = await screen.findByRole("table", { name: "Produits" });
+    const row = within(table)
+      .getByText("Pain complet")
+      .closest("tr") as HTMLElement;
+    expect(row.querySelector("img")).toBeNull();
+    await userEvent.click(within(row).getByRole("button", { name: "Actions" }));
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Modifier" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Modifier Pain complet",
+    });
+    await userEvent.upload(
+      within(dialog).getByLabelText("Photo"),
+      new File(
+        [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])],
+        "pain.png",
+        {
+          type: "image/png",
+        },
+      ),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Enregistrer" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(store.products[0]).toMatchObject({
+      imageUrl: "/media/products/product-1.webp",
+    });
+    // The test environment points the API at another origin, so the
+    // thumbnail address carries that origin in front of the path.
+    await waitFor(() =>
+      expect(
+        (
+          within(screen.getByRole("table", { name: "Produits" }))
+            .getByText("Pain complet")
+            .closest("tr") as HTMLElement
+        )
+          .querySelector("img")
+          ?.getAttribute("src"),
+      ).toMatch(/\/media\/products\/product-1\.webp$/),
+    );
+
+    const rowWithPhoto = within(screen.getByRole("table", { name: "Produits" }))
+      .getByText("Pain complet")
+      .closest("tr") as HTMLElement;
+    await userEvent.click(
+      within(rowWithPhoto).getByRole("button", { name: "Actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Modifier" }),
+    );
+    const again = await screen.findByRole("dialog", {
+      name: "Modifier Pain complet",
+    });
+    await userEvent.click(
+      within(again).getByRole("button", { name: "Retirer la photo" }),
+    );
+    await userEvent.click(
+      within(again).getByRole("button", { name: "Enregistrer" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(store.products[0]).toMatchObject({ imageUrl: null });
+  });
+
+  it("refuses a photo that is not an image before any request", async () => {
+    renderAt("/produits");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Nouveau produit" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Nouveau produit" });
+    await userEvent.upload(
+      within(dialog).getByLabelText("Photo"),
+      new File(["<svg/>"], "logo.svg", { type: "image/svg+xml" }),
+      // The field's `accept` would filter it in the browser's picker; the
+      // guard behind it is what this test covers.
+      { applyAccept: false },
+    );
+    expect(
+      within(dialog).getByText(
+        "La photo doit être un fichier JPEG, PNG ou WebP.",
+      ),
+    ).toBeInTheDocument();
+  });
 });
