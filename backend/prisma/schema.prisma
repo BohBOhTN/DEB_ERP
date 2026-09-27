@@ -183,6 +183,10 @@ model Product {
   /// Issue 008: what the owner estimates one base unit costs (ingredients
   /// only). Typed by hand, never computed; snapshotted on sale lines.
   approximateCostTnd   Decimal?                    @map("approximate_cost_tnd") @db.Decimal(12, 3)
+  /// Issue #64: the stored photo's file name under MEDIA_ROOT/products, a
+  /// WebP the server produced; null when the product has no photo.
+  imageKey             String?                     @map("image_key")
+  imageUpdatedAt       DateTime?                   @map("image_updated_at")
   isStockable          Boolean                     @default(true) @map("is_stockable")
   isActive             Boolean                     @default(true) @map("is_active")
   notes                String?
