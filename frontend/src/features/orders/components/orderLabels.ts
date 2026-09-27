@@ -1,3 +1,9 @@
+import { formatInTimeZone } from "date-fns-tz";
+import {
+  businessTimeZone,
+  formatDate,
+  formatDateTime,
+} from "../../../i18n/format.js";
 import type { PermissionSet } from "../../../lib/auth/permissions.js";
 import type { Order, OrderStatus } from "../orders.api.js";
 
@@ -70,4 +76,11 @@ export function orderActions(
 /// What the customer still has to pay, as the API states it.
 export function remainingOf(order: Pick<Order, "remainingDueTnd">): string {
   return order.remainingDueTnd;
+}
+
+/// A deposit dated by day is stored at midday Tunis (issue #45), an instant
+/// nobody typed; the list shows that day alone and a real instant in full.
+export function advanceDateLabel(paidAt: string): string {
+  const time = formatInTimeZone(new Date(paidAt), businessTimeZone, "HH:mm:ss");
+  return time === "12:00:00" ? formatDate(paidAt) : formatDateTime(paidAt);
 }

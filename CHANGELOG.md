@@ -6,6 +6,12 @@ All notable project changes are recorded here.
 
 ### Fixed
 
+- Issue #65, Commandes: the order page and every order command now return
+  the same figures as the queue (`Avance`, `Reste`), so "Encaisser un
+  acompte" shows the real remainder instead of 0 and caps the deposit
+  there, and "Terminer" shows what is left after the deposits; the cap's
+  message states the remainder; a deposit dated by day shows its day
+  alone in the list.
 - The application reached over plain HTTP on an address never sent a
   request: correlation ids, idempotency keys and toast ids came from
   `crypto.randomUUID`, which browsers expose in a secure context only. One

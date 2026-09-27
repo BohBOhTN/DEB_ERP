@@ -264,7 +264,8 @@ export class OrdersService {
       });
     }
 
-    return order;
+    // The page reads the same figures as the queue (issue #65).
+    return withOrderFigures(order);
   }
 
   public async createOrder(
@@ -333,7 +334,7 @@ export class OrdersService {
           after: order,
         });
 
-        return { order };
+        return { order: withOrderFigures(order) };
       },
     );
   }
@@ -446,7 +447,7 @@ export class OrdersService {
         after: order,
       });
 
-      return { order };
+      return { order: withOrderFigures(order) };
     }, postingTransactionOptions);
   }
 
@@ -502,7 +503,7 @@ export class OrdersService {
         after: order,
       });
 
-      return { order };
+      return { order: withOrderFigures(order) };
     }, postingTransactionOptions);
   }
 
@@ -549,7 +550,7 @@ export class OrdersService {
           throw new AppError({
             statusCode: 400,
             code: "ORDER_ADVANCE_EXCEEDS_TOTAL",
-            message: "L'avance ne peut pas dépasser le total de la commande.",
+            message: `L'acompte dépasse le reste à verser sur la commande (${totalTnd.minus(advanceBalance).toFixed(3)} TND).`,
           });
         }
 
@@ -610,7 +611,7 @@ export class OrdersService {
           after: { order, advance },
         });
 
-        return { order, advance };
+        return { order: withOrderFigures(order), advance };
       },
     );
   }
@@ -849,7 +850,7 @@ export class OrdersService {
           after: order,
         });
 
-        return { order };
+        return { order: withOrderFigures(order) };
       },
     );
   }
@@ -1019,7 +1020,7 @@ export class OrdersService {
           after: { order, refund },
         });
 
-        return { order };
+        return { order: withOrderFigures(order) };
       },
     );
   }

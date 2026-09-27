@@ -46,6 +46,16 @@ describe("OrdersService", () => {
     );
 
     expect(result.order.advanceBalanceTnd).toBe("10.000");
+    // Issue #65: the command's response and the detail carry the figures
+    // the dialogs read, as the queue does.
+    expect(result.order).toMatchObject({
+      advanceReceivedTnd: "10.000",
+      remainingDueTnd: "30.000",
+    });
+    expect(await service.getOrder(order.id)).toMatchObject({
+      advanceReceivedTnd: "10.000",
+      remainingDueTnd: "30.000",
+    });
     expect(prisma.store.sales).toHaveLength(0);
     expect(prisma.store.inventoryMovements).toHaveLength(0);
     expect(prisma.store.customerOrderAdvances).toEqual([
@@ -615,6 +625,11 @@ class OrdersPrismaDouble {
       ) ?? null,
   };
 
+  /// Reads outside a transaction (`getOrder`) see the committed store.
+  public get customerOrder() {
+    return makeTransactionClient(this.store).customerOrder;
+  }
+
   public async $transaction<TResult>(
     action: (tx: ReturnType<typeof makeTransactionClient>) => Promise<TResult>,
   ): Promise<TResult> {
@@ -734,8 +749,11 @@ function makeTransactionClient(store: OrdersStore) {
       },
     },
     customerOrder: {
-      findUnique: async (args: { where: { id: string } }) =>
-        findOrder(args.where.id) ?? null,
+      // The detail read includes the same relations as the commands.
+      findUnique: async (args: { where: { id: string } }) => {
+        const order = findOrder(args.where.id);
+        return order ? hydrate(order) : null;
+      },
       findUniqueOrThrow: async (args: { where: { id: string } }) => {
         const order = findOrder(args.where.id);
 
