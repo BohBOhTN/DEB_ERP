@@ -7,7 +7,6 @@ import { useSessionContext } from "../../app/sessionContext.js";
 import { useHomeSummary } from "./home.queries.js";
 import { periodDate, type HomePeriod } from "./homePeriod.js";
 import { AlertsCard } from "./widgets/AlertsCard.js";
-import { ExpensesTile } from "./widgets/ExpensesTile.js";
 import { GreetingBand } from "./widgets/GreetingBand.js";
 import { KpiRow } from "./widgets/KpiRow.js";
 import { QuickActionsCard } from "./widgets/QuickActionsCard.js";
@@ -64,14 +63,9 @@ export function AccueilPage() {
               sessionOpen={Boolean(summary?.openSession)}
             />
           </div>
-          <div className={styles.rowThree}>
-            {summary?.recent ? (
-              <RecentActivityCard recent={summary.recent} />
-            ) : null}
-            {summary?.expenses ? (
-              <ExpensesTile expenses={summary.expenses} period={period} />
-            ) : null}
-          </div>
+          {summary?.recent ? (
+            <RecentActivityCard recent={summary.recent} />
+          ) : null}
         </>
       )}
     </div>
