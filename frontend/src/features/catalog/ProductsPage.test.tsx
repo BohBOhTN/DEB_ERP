@@ -9,7 +9,16 @@ import {
   makeCatalogStore,
   catalogHandlers,
 } from "../../test/msw/handlers/catalog";
+import { makeSimulation } from "../../test/factories/simulation";
 import { makeUser } from "../../test/factories/user";
+import {
+  inventoryHandlers,
+  makeInventoryStore,
+} from "../../test/msw/handlers/inventory";
+import {
+  makeSimulationStore,
+  simulationHandlers,
+} from "../../test/msw/handlers/simulation";
 import { apiError, apiV1 } from "../../test/msw/envelope";
 import { authHandlers } from "../../test/msw/handlers/auth";
 import { server } from "../../test/msw/server";
@@ -253,5 +262,74 @@ describe("Produits", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Service indisponible",
     );
+  });
+  // Issue #66: the product page shows the latest simulation whose target
+  // is this product, never another product's, and its adjustment dialog
+  // keeps the page's product fixed and states the impact from the real
+  // balance.
+  it("shows the simulation linked to the product and adjusts it without a picker", async () => {
+    server.use(
+      ...catalogHandlers(makeCatalogStore()),
+      ...inventoryHandlers(makeInventoryStore()),
+      ...simulationHandlers(
+        makeSimulationStore({
+          simulations: [
+            makeSimulation({
+              id: "sim-other",
+              name: "Croissant pur beurre",
+              targetProductId: "product-2",
+              costPerOutputUnitTnd: "0.900",
+              updatedAt: "2026-09-25T08:00:00.000Z",
+            }),
+            makeSimulation({
+              id: "sim-old",
+              name: "Pain complet 2025",
+              targetProductId: "product-1",
+              costPerOutputUnitTnd: "0.500",
+              updatedAt: "2026-09-01T08:00:00.000Z",
+            }),
+            makeSimulation({
+              id: "sim-latest",
+              name: "Pain complet 2026",
+              targetProductId: "product-1",
+              costPerOutputUnitTnd: "0.610",
+              updatedAt: "2026-09-20T08:00:00.000Z",
+            }),
+          ],
+        }),
+      ),
+    );
+    renderAt("/produits/product-1", [
+      ...manager.effectivePermissions,
+      "margin.view",
+      "simulations.view",
+      "inventory.adjust",
+    ]);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Pain complet" }),
+    ).toBeInTheDocument();
+    const hint = await screen.findByRole("link", {
+      name: /Pain complet 2026/,
+    });
+    expect(hint).toHaveAttribute("href", "/simulations/sim-latest");
+    expect(hint).toHaveTextContent("0,610 TND");
+    expect(screen.queryByText(/Croissant pur beurre/)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Ajustement" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Ajustement de stock",
+    });
+    expect(
+      within(dialog).queryByRole("combobox", { name: "Article" }),
+    ).not.toBeInTheDocument();
+    // The quantity formatter joins number and unit with a no-break space.
+    expect(
+      (
+        within(dialog).getByRole("textbox", {
+          name: "Article",
+        }) as HTMLInputElement
+      ).value,
+    ).toMatch(/^Pain complet · stock actuel 18.pièce$/);
   });
 });
