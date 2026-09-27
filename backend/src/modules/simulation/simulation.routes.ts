@@ -48,6 +48,9 @@ export const duplicateSchema = z.object({
 
 export const pageQuerySchema = z.object({
   sort: sortField(["updatedAt", "name"]),
+  /// The simulations whose target is one product (the product page's
+  /// "Dernière simulation", issue #66).
+  targetProductId: z.string().trim().min(1).optional(),
   ...pageFields,
 });
 

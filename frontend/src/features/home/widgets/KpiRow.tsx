@@ -1,5 +1,12 @@
 import Decimal from "decimal.js-light";
-import { Banknote, Receipt, TrendingUp, Users, Wallet } from "lucide-react";
+import {
+  Banknote,
+  Receipt,
+  ReceiptText,
+  TrendingUp,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { Badge } from "../../../components/ui/Badge/Badge.js";
 import { KpiGrid } from "../../../components/patterns/KpiGrid/KpiGrid.js";
 import {
@@ -61,6 +68,31 @@ export function KpiRow({ summary, loading, period }: KpiRowProps) {
             ? "Espèces de la veille à la caisse"
             : "Espèces du jour à la caisse"
         }
+      />,
+    );
+  }
+
+  if (summary.expenses) {
+    const delta = salesDelta(
+      summary.expenses.dayTnd,
+      summary.expenses.previousDayTnd,
+    );
+    tiles.push(
+      <KpiTile
+        key="expenses"
+        label={
+          period === "yesterday" ? fr.expensesOfYesterday : fr.expensesOfDay
+        }
+        value={formatMoney(summary.expenses.dayTnd, { unit: false })}
+        unit="TND"
+        icon={<ReceiptText />}
+        // Spending going up is not good news.
+        delta={delta ? { ...delta, positiveIsGood: false } : undefined}
+        note={plural(
+          summary.expenses.dayCount,
+          "dépense validée",
+          "dépenses validées",
+        )}
       />,
     );
   }
@@ -150,7 +182,13 @@ export function KpiRow({ summary, loading, period }: KpiRowProps) {
   }
 
   return (
-    <KpiGrid columns={tiles.length >= 4 ? 4 : tiles.length === 3 ? 3 : 2}>
+    // Five or six tiles read better as two rows of three than as four
+    // plus a lonely one (issue #66).
+    <KpiGrid
+      columns={
+        tiles.length >= 5 || tiles.length === 3 ? 3 : tiles.length === 4 ? 4 : 2
+      }
+    >
       {tiles}
     </KpiGrid>
   );

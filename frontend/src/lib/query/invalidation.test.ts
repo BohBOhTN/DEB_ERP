@@ -25,6 +25,13 @@ describe("invalidation map", () => {
     expect(has("pos.sale", roots.procurement)).toBe(false);
   });
 
+  // Issue #66: a règlement changes the paid state of the sales it settles.
+  it("refreshes the sales list and the receipt after a customer payment", () => {
+    expect(has("customer.payment", roots.posSales)).toBe(true);
+    expect(has("customer.payment", roots.posSale)).toBe(true);
+    expect(has("customer.payment", roots.inventory)).toBe(false);
+  });
+
   it("keeps a customer rename away from stock and the till", () => {
     expect(has("customer.record", roots.customersList)).toBe(true);
     expect(has("customer.record", roots.inventory)).toBe(false);

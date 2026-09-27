@@ -109,7 +109,11 @@ export function Combobox<TOption extends ComboboxOption = ComboboxOption>({
     );
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    // Modal: the popover installs its own scroll lock, which becomes the
+    // active one and lets its list scroll inside a modal dialog, whose lock
+    // otherwise swallows wheel and touch events on the portaled list
+    // (issue #66).
+    <Popover.Root open={open} onOpenChange={setOpen} modal>
       <div className={cx(styles.root, className)}>
         <Popover.Trigger asChild>
           <button

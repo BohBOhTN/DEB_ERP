@@ -95,8 +95,11 @@ describe("Accueil", () => {
     expect(
       screen.getByRole("list", { name: "Activité récente" }),
     ).toHaveTextContent("Vente en caisse");
+    // Issue #66: the expenses figure sits in the KPI row with the others.
     expect(screen.getByText("Dépenses du jour")).toBeInTheDocument();
-    expect(screen.getByText("85,000 TND")).toBeInTheDocument();
+    expect(screen.getByText("85,000")).toBeInTheDocument();
+    expect(screen.getByText("3 dépenses validées")).toBeInTheDocument();
+    expect(screen.getByText("+113 % vs la veille")).toBeInTheDocument();
     // Issue 008: the margin of the day over the costed lines, with the
     // share of the revenue it covers and the lines that had no cost.
     expect(screen.getByText("Marge approximative")).toBeInTheDocument();
@@ -104,9 +107,6 @@ describe("Accueil", () => {
     expect(screen.getByText("+13 % vs la veille")).toBeInTheDocument();
     expect(
       screen.getByText("sur 80 % du chiffre d'affaires · 2 lignes sans coût"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("3 dépenses validées · La veille : 40,000 TND"),
     ).toBeInTheDocument();
   });
 
@@ -143,12 +143,8 @@ describe("Accueil", () => {
 
     expect(await screen.findByText("Ventes d'hier")).toBeInTheDocument();
     expect(screen.getByText("Dépenses d'hier")).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByText("40,000 TND")).toBeInTheDocument(),
-    );
-    expect(
-      screen.getByText("1 dépense validée · La veille : 12,000 TND"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("1 dépense validée")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("40,000")).toBeInTheDocument());
     expect(
       screen.getByText("Espèces de la veille à la caisse"),
     ).toBeInTheDocument();

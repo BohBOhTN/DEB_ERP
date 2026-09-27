@@ -6,6 +6,12 @@ All notable project changes are recorded here.
 
 ### Fixed
 
+- Issue #66, after the demo: the expenses figure joins the KPI row of
+  Accueil; the product page shows the latest simulation targeting that
+  product (the API's list now filters by `targetProductId`); a règlement
+  refreshes the sales list and the receipt it settles; the pickers scroll
+  inside modal dialogs; the adjustment dialog on a product page keeps the
+  product fixed and states the impact from the real balance.
 - Issue #65, Commandes: the order page and every order command now return
   the same figures as the queue (`Avance`, `Reste`), so "Encaisser un
   acompte" shows the real remainder instead of 0 and caps the deposit

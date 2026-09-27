@@ -24,6 +24,7 @@ import {
   StockTab,
 } from "../components/detailTabs.js";
 import { StockMovementDialog } from "../../inventory/components/StockMovementDialog.js";
+import { useBalances } from "../../inventory/inventory.queries.js";
 import styles from "./CatalogPages.module.css";
 
 /// `/produits/:id` (UI-10): summary, then Stock, Mouvements and Historique.
@@ -35,6 +36,13 @@ export function ProductDetailPage() {
   const [adjusting, setAdjusting] = useState(false);
   const product = query.data;
   const canSeeMargin = permissions.has("margin.view");
+  // The adjustment dialog states the impact from the real balance
+  // (issue #66); read only when the user may adjust.
+  const balances = useBalances(permissions.has("inventory.adjust"));
+  const currentQuantity =
+    balances.data?.find(
+      (row) => row.itemType === "PRODUCT" && row.itemId === productId,
+    )?.quantity ?? "0";
   // Issue 008: the latest saved simulation targeting this product, as a
   // hint next to the typed cost. Simulations stay a planning tool; nothing
   // is copied without the owner typing it (SIM-*).
@@ -210,12 +218,13 @@ export function ProductDetailPage() {
           kind="adjustment"
           open
           onOpenChange={(open) => !open && setAdjusting(false)}
+          lockItem
           item={{
             itemType: "PRODUCT",
             itemId: product.id,
             label: product.name,
             unitSymbol: product.baseUnit.symbol,
-            currentQuantity: "0",
+            currentQuantity,
           }}
         />
       ) : null}
