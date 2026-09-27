@@ -212,6 +212,15 @@ describe("simulation routes", () => {
     expect(simulationService.getSimulation).toHaveBeenCalledWith(
       "simulation-1",
     );
+
+    // Issue #66: the product page asks for the simulations of one product.
+    await request(app)
+      .get("/api/cost-simulations?targetProductId=product-7&pageSize=1")
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(simulationService.listSimulations).toHaveBeenLastCalledWith(
+      expect.objectContaining({ targetProductId: "product-7", pageSize: 1 }),
+    );
   });
 
   it("rejects creating a simulation without simulations.create", async () => {

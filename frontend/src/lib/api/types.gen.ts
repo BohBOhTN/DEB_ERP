@@ -9631,6 +9631,7 @@ export interface operations {
         parameters: {
             query?: {
                 sort?: string;
+                targetProductId?: string;
                 page?: number;
                 pageSize?: number;
             };
