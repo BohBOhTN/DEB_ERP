@@ -40,6 +40,9 @@ const envSchema = z.object({
   /// Commit identifier baked into the deployment so the health endpoint can say
   /// which build is running.
   GIT_SHA: z.string().optional(),
+  /// Folder holding the uploaded product photos (issue #64); `/data/media`
+  /// in the container, a named volume so a redeploy keeps them.
+  MEDIA_ROOT: z.string().min(1).default("media"),
   IDEMPOTENCY_TTL_DAYS: z.coerce.number().int().positive().default(7),
   /// Queries at or above this duration are logged as slow.
   SLOW_QUERY_MS: z.coerce.number().int().positive().default(200),

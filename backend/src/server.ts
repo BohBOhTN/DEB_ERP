@@ -22,6 +22,7 @@ import { ProcurementService } from "./modules/procurement/procurement.service.js
 import { SimulationService } from "./modules/simulation/simulation.service.js";
 import { scheduleCleanup } from "./jobs/cleanup.js";
 import { createLogger } from "./shared/logger.js";
+import { FileMediaStore } from "./shared/media.js";
 import { createPrismaClient } from "./shared/prisma.js";
 
 const require = createRequire(import.meta.url);
@@ -53,7 +54,10 @@ const prisma = createPrismaClient({
 const permissionCache = new PermissionCache(env.PERMISSION_CACHE_TTL_MS);
 const accessService = new AccessService(prisma, permissionCache);
 const auditService = new AuditService(prisma);
-const catalogService = new CatalogService(prisma);
+const catalogService = new CatalogService(
+  prisma,
+  new FileMediaStore(env.MEDIA_ROOT),
+);
 const customersService = new CustomersService(prisma);
 const distributionService = new DistributionService(prisma);
 const expensesService = new ExpensesService(prisma);
@@ -141,6 +145,7 @@ const app = createApp({
     homeService,
   },
   serveOpenApi: env.NODE_ENV !== "production",
+  mediaRoot: env.MEDIA_ROOT,
 });
 
 const stopCleanup = scheduleCleanup(

@@ -73,6 +73,10 @@ export function createApp(params: {
   audit?: {
     auditService: AuditService;
   };
+  /// Folder of the product photos, served under `/media` (issue #64). In
+  /// production nginx serves the same folder first; the API keeps serving
+  /// it so a development frontend on another origin can load the photos.
+  mediaRoot?: string;
   catalog?: {
     catalogService: CatalogService;
   };
@@ -136,6 +140,22 @@ export function createApp(params: {
   }
   app.use(compression());
   app.use(express.json({ limit: "1mb" }));
+  if (params.mediaRoot) {
+    app.use(
+      "/media",
+      express.static(params.mediaRoot, {
+        index: false,
+        redirect: false,
+        maxAge: "30d",
+        immutable: true,
+        setHeaders: (response) => {
+          // Photos are `<img>` sources from any of our origins.
+          response.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+          response.setHeader("X-Content-Type-Options", "nosniff");
+        },
+      }),
+    );
+  }
 
   // Every router is mounted twice: under /api/v1, the contract the new
   // frontend builds against, and under the legacy /api prefix the V1 screens
