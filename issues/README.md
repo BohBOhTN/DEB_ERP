@@ -16,8 +16,11 @@ Workflow: branch `fix/<topic>` or `feat/<topic>` from `dev`, name the issue numb
 | [008](008-produits-cout-approximatif-marge.md)   | Produits: approximate cost per product, approximate margin on Accueil                   | Medium   | 002, 004       |
 | [009](009-lignes-cache-et-saisie-des-prix.md)    | Line editors: cached pickers, editable and total-based prices, direct-sale quick action | Medium   | 008            |
 | [010](010-deploiement-vps-github-actions.md)     | Deployment: build, ship and run the release on the VPS from GitHub Actions              | High     | main promoted  |
+| [011](011-produits-photos-caisse.md)             | Produits: photos on the products, shown on the till tiles                               | High     | 010            |
+| [012](012-commandes-acomptes-et-reste.md)        | Commandes: deposits and the remainder shown in the dialogs                              | High     | —              |
+| [013](013-retouches-apres-demo.md)               | After the demo: Accueil, product page, customers refresh, stock pickers                 | Medium   | —              |
 
-Suggested order: 007 → 003 → 001 → 005 → 004 → 006 → 002 → 008. Issues 003, 005 (PR 1) and 002 are independent and can be picked up any time; 008 was added after the first seven were fixed.
+Suggested order: 007 → 003 → 001 → 005 → 004 → 006 → 002 → 008. After the client demo of 2026-09-26: 012 → 013 → 011. Issues 003, 005 (PR 1) and 002 are independent and can be picked up any time; 008 was added after the first seven were fixed.
 
 Bugs found that the owner did not report, by severity:
 
