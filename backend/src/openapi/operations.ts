@@ -398,6 +398,23 @@ const catalogOperations: ApiOperation[] = [
     body: catalog.activationSchema,
     dataKey: "product",
   }),
+  operation({
+    method: "put",
+    path: "/catalog/products/{productId}/image",
+    operationId: "catalog.products.setImage",
+    summary:
+      "Replace the product's photo (multipart, one `file` field, JPEG, PNG or WebP up to 5 MB; stored re-encoded as WebP)",
+    tag: "catalog",
+    permissions: ["products.update"],
+  }),
+  operation({
+    method: "delete",
+    path: "/catalog/products/{productId}/image",
+    operationId: "catalog.products.removeImage",
+    summary: "Remove the product's photo",
+    tag: "catalog",
+    permissions: ["products.update"],
+  }),
 ];
 
 const customerOperations: ApiOperation[] = [

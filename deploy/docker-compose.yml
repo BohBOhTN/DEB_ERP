@@ -13,6 +13,11 @@ services:
     env_file: backend.env
     environment:
       GIT_SHA: ${IMAGE_TAG}
+      MEDIA_ROOT: /data/media
+    # Product photos (issue #64) live in a named volume, so a redeploy that
+    # replaces the containers keeps them; nginx serves the same folder.
+    volumes:
+      - deb-media:/data/media
     healthcheck:
       test:
         [
@@ -51,8 +56,13 @@ services:
         condition: service_healthy
     ports:
       - "0.0.0.0:${PUBLIC_PORT:-8081}:80"
+    volumes:
+      - deb-media:/usr/share/nginx/media:ro
     networks:
       - app
+
+volumes:
+  deb-media: {}
 
 networks:
   app: {}

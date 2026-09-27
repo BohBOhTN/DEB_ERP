@@ -363,4 +363,38 @@ describe("Caisse", () => {
       expect(screen.queryByRole("progressbar")).not.toBeInTheDocument(),
     );
   });
+  // Issue #64: a product with a photo fills its tile with it, keeps the
+  // price as a badge and drops the category; a product without one keeps
+  // the text tile; both add to the cart the same way.
+  it("shows the photo on a product tile and keeps text tiles beside it", async () => {
+    const store = makePosStore({
+      session: makePosSession(),
+      sessions: [makePosSession()],
+    });
+    server.use(...posHandlers(store));
+    renderAt("/caisse", 1280);
+
+    const photoTile = await screen.findByRole("button", {
+      name: "Ajouter Gâteau au kilo",
+    });
+    const image = photoTile.querySelector("img");
+    expect(image).not.toBeNull();
+    // The test environment points the API at another origin, so the photo
+    // address carries that origin in front of the path.
+    expect(image?.getAttribute("src")).toMatch(
+      /\/media\/products\/gateau\.webp$/,
+    );
+    expect(image).toHaveAttribute("loading", "lazy");
+    expect(photoTile).toHaveTextContent("18,000");
+    expect(photoTile).not.toHaveTextContent("Pâtisserie");
+
+    const textTile = screen.getByRole("button", { name: "Ajouter Croissant" });
+    expect(textTile.querySelector("img")).toBeNull();
+    expect(textTile).toHaveTextContent("Pâtisserie");
+
+    await userEvent.click(photoTile);
+    expect(useCartStore.getState().lines.map((line) => line.name)).toEqual([
+      "Gâteau au kilo",
+    ]);
+  });
 });

@@ -12,6 +12,7 @@ import { StatusPill } from "../../../components/ui/StatusPill/StatusPill.js";
 import { Tabs } from "../../../components/ui/Tabs/Tabs.js";
 import { describeError } from "../../../i18n/errors.js";
 import { formatDate, formatMoney } from "../../../i18n/format.js";
+import { mediaUrl } from "../../../lib/api/media.js";
 import { fr } from "../../../i18n/fr.js";
 import { useSessionPermissions } from "../../../app/sessionContext.js";
 import { useSimulations } from "../../simulation/simulation.queries.js";
@@ -114,6 +115,13 @@ export function ProductDetailPage() {
       <div className={styles.tabBody}>
         <Card>
           <CardHeader as="h2" title="Fiche produit" />
+          {product.imageUrl ? (
+            <img
+              src={mediaUrl(product.imageUrl) ?? ""}
+              alt={`Photo de ${product.name}`}
+              className={styles.photo}
+            />
+          ) : null}
           <KeyValueList
             items={[
               { label: "Catégorie", value: product.category.name },

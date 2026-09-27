@@ -27,6 +27,9 @@ RUN npm ci --workspace backend --omit=dev && npm cache clean --force
 COPY backend/prisma backend/prisma
 RUN npm run prisma:generate --workspace backend
 COPY --from=builder /app/backend/dist backend/dist
+# Product photos; a volume is mounted here in production and takes this
+# ownership on first use.
+RUN mkdir -p /data/media && chown node:node /data/media
 USER node
 WORKDIR /app/backend
 EXPOSE 4000

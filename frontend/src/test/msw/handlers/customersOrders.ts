@@ -40,6 +40,7 @@ const bread = makeProduct({
   name: "Pain complet",
   salePriceTnd: "4.000",
   baseUnit: piece,
+  imageUrl: null,
   baseUnitId: piece.id,
 });
 const croissant = makeProduct({
@@ -47,6 +48,7 @@ const croissant = makeProduct({
   name: "Croissant",
   salePriceTnd: "1.000",
   baseUnit: piece,
+  imageUrl: null,
   baseUnitId: piece.id,
 });
 

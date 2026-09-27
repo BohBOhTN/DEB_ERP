@@ -136,6 +136,31 @@ export function useUpdateProduct(productId: string) {
   });
 }
 
+export function useSetProductImage() {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateAfter("catalog.product");
+  return useMutation({
+    mutationFn: (input: { productId: string; file: File }) =>
+      api.setProductImage(input.productId, input.file),
+    onSuccess: (product) => {
+      primeDetail(queryClient, catalogKeys.product(product.id), product);
+      return invalidate();
+    },
+  });
+}
+
+export function useRemoveProductImage() {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateAfter("catalog.product");
+  return useMutation({
+    mutationFn: (productId: string) => api.removeProductImage(productId),
+    onSuccess: (product) => {
+      primeDetail(queryClient, catalogKeys.product(product.id), product);
+      return invalidate();
+    },
+  });
+}
+
 export function useSetProductActivation() {
   const invalidate = useInvalidateAfter("catalog.product");
   return useMutation({

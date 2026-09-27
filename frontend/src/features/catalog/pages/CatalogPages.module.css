@@ -34,3 +34,24 @@
     align-items: start;
   }
 }
+
+.thumb,
+.thumbEmpty {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  object-fit: cover;
+  background: var(--bg-surface-muted);
+}
+
+.photo {
+  display: block;
+  width: min(100%, 240px);
+  aspect-ratio: 1;
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+  background: var(--bg-surface-muted);
+}

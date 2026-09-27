@@ -34,6 +34,14 @@ hostname with TLS fronts the stack, set it to `true`, put the hostname in
 `CORS_ALLOWED_ORIGINS` and `PUBLIC_URL`, raise `TRUST_PROXY` to `2`, and
 publish the port on `127.0.0.1` in the compose file.
 
+## Product photos
+
+The API writes the photos to `MEDIA_ROOT` (`/data/media` in the container),
+a named volume `deb-media` shared read-only with the frontend container,
+which serves them under `/media/`. The volume survives redeploys; it is the
+second thing to back up after the database. `MEDIA_ROOT` is set in the
+compose file, so `BACKEND_ENV` needs no line for it.
+
 ## Each deploy
 
 A push to `main` runs the CI `quality` job, then waits for the reviewer's

@@ -387,6 +387,22 @@ const errorCopy: Record<string, ErrorCopy> = {
     title: "Client inactif",
     description: "Choisissez un client actif.",
   },
+  PRODUCT_IMAGE_REQUIRED: {
+    title: "Photo manquante",
+    description: "Choisissez une photo à enregistrer.",
+  },
+  PRODUCT_IMAGE_UNSUPPORTED: {
+    title: "Format non pris en charge",
+    description: "La photo doit être un fichier JPEG, PNG ou WebP.",
+  },
+  PRODUCT_IMAGE_INVALID: {
+    title: "Photo illisible",
+    description: "La photo n'a pas pu être lue ; essayez un autre fichier.",
+  },
+  PRODUCT_IMAGE_TOO_LARGE: {
+    title: "Photo trop lourde",
+    description: "La photo dépasse 5 Mo.",
+  },
   CUSTOMER_HAS_BALANCE: {
     title: "Solde en cours",
     description:

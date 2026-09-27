@@ -4,6 +4,16 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Issue #64, Produits: a photo per product, chosen in the product form,
+  re-encoded by the server as a 512 px WebP (JPEG, PNG or WebP accepted by
+  their bytes, 5 MB at most, nothing the client sent is stored), kept in a
+  named Docker volume that survives redeploys and served by nginx under
+  `/media`; shown on the product list and page and on the till tile, where
+  the picture fills the tile with the name over a gradient and the price
+  as a badge, the category left to the chips.
+
 ### Fixed
 
 - Issue #66, after the demo: the expenses figure joins the KPI row of
