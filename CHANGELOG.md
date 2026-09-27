@@ -4,6 +4,12 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-28
+
+The fixes and the feature noted at the client demo of 2026-09-26 (issues
+#64, #65, #66), plus the balances read and performance-suite changes and the
+plain-HTTP fix that followed the first deployment.
+
 ### Added
 
 - Issue #64, Produits: a photo per product, chosen in the product form,
