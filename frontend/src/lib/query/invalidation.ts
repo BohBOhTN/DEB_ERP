@@ -114,8 +114,16 @@ const map: Record<DomainEvent, readonly QueryRoot[]> = {
   ],
   "procurement.payment": [roots.procurement, roots.home],
   "customer.record": [roots.customersList, roots.customersDetail],
-  // Cash taken at the till belongs to the open session's expected cash.
-  "customer.payment": [roots.customers, roots.posSession, roots.home],
+  // Cash taken at the till belongs to the open session's expected cash; a
+  // règlement settles sales, whose paid state shows on the sales list and
+  // the receipt (issue #66).
+  "customer.payment": [
+    roots.customers,
+    roots.posSession,
+    roots.posSales,
+    roots.posSale,
+    roots.home,
+  ],
   // Completion posts a sale and moves stock; advances move cash and the
   // customer ledger.
   order: [
