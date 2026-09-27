@@ -1,4 +1,5 @@
-import { Router, type Response } from "express";
+import { Router, type RequestHandler, type Response } from "express";
+import multer from "multer";
 import { z } from "zod";
 import { requireAuthentication } from "../auth/auth.middleware.js";
 import type { AuthService } from "../auth/auth.service.js";
@@ -13,7 +14,11 @@ import {
 } from "../../shared/listQuery.js";
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
+import { mediaUrlOf } from "../../shared/media.js";
 import type { CatalogService } from "./catalog.service.js";
+
+/// Raw upload ceiling; the stored file is far smaller once re-encoded.
+export const productImageMaxBytes = 5 * 1024 * 1024;
 
 export const listQuerySchema = z.object({
   sort: sortField(["name", "createdAt"]),
@@ -170,6 +175,52 @@ function withoutCostUnlessAllowed<T extends { approximateCostTnd?: unknown }>(
   const rest = { ...product };
   delete rest.approximateCostTnd;
   return rest;
+}
+
+/// What every product read returns: the cost when allowed, and the photo's
+/// public path (issue #64).
+function presentProduct<
+  T extends { approximateCostTnd?: unknown; imageKey?: string | null },
+>(response: Response, product: T) {
+  return {
+    ...withoutCostUnlessAllowed(response, product),
+    imageUrl: mediaUrlOf(product.imageKey),
+  };
+}
+
+/// One file in memory, then the service decides; a Multer refusal becomes
+/// one of the API's own errors instead of a 500.
+function productImageUpload(): RequestHandler {
+  const single = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: productImageMaxBytes, files: 1 },
+  }).single("file");
+
+  return (request, response, next) => {
+    single(request, response, (error: unknown) => {
+      if (!error) {
+        next();
+        return;
+      }
+      if (error instanceof multer.MulterError) {
+        next(
+          new AppError({
+            statusCode: error.code === "LIMIT_FILE_SIZE" ? 413 : 400,
+            code:
+              error.code === "LIMIT_FILE_SIZE"
+                ? "PRODUCT_IMAGE_TOO_LARGE"
+                : "PRODUCT_IMAGE_INVALID",
+            message:
+              error.code === "LIMIT_FILE_SIZE"
+                ? "La photo dépasse 5 Mo."
+                : "La photo n'a pas pu être lue ; essayez un autre fichier.",
+          }),
+        );
+        return;
+      }
+      next(error);
+    });
+  };
 }
 
 export function catalogRouter(params: {
@@ -381,9 +432,7 @@ export function catalogRouter(params: {
           okFor(response, {
             products: {
               ...result,
-              items: result.items.map((item) =>
-                withoutCostUnlessAllowed(response, item),
-              ),
+              items: result.items.map((item) => presentProduct(response, item)),
             },
           }),
         );
@@ -405,7 +454,7 @@ export function catalogRouter(params: {
         );
         response.status(201).json(
           okFor(response, {
-            product: withoutCostUnlessAllowed(response, product),
+            product: presentProduct(response, product),
           }),
         );
       } catch (error) {
@@ -427,7 +476,7 @@ export function catalogRouter(params: {
         );
         response.json(
           okFor(response, {
-            product: withoutCostUnlessAllowed(response, product),
+            product: presentProduct(response, product),
           }),
         );
       } catch (error) {
@@ -449,8 +498,54 @@ export function catalogRouter(params: {
         );
         response.json(
           okFor(response, {
-            product: withoutCostUnlessAllowed(response, product),
+            product: presentProduct(response, product),
           }),
+        );
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.put(
+    "/products/:productId/image",
+    requirePermission("products.update"),
+    productImageUpload(),
+    async (request, response, next) => {
+      try {
+        const file = (request as { file?: { buffer: Buffer } }).file;
+        if (!file) {
+          throw new AppError({
+            statusCode: 400,
+            code: "PRODUCT_IMAGE_REQUIRED",
+            message: "Choisissez une photo à enregistrer.",
+          });
+        }
+        const product = await params.catalogService.setProductImage(
+          parseRouteParam(request.params.productId),
+          file.buffer,
+          actorFromResponse(response),
+        );
+        response.json(
+          okFor(response, { product: presentProduct(response, product) }),
+        );
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.delete(
+    "/products/:productId/image",
+    requirePermission("products.update"),
+    async (request, response, next) => {
+      try {
+        const product = await params.catalogService.removeProductImage(
+          parseRouteParam(request.params.productId),
+          actorFromResponse(response),
+        );
+        response.json(
+          okFor(response, { product: presentProduct(response, product) }),
         );
       } catch (error) {
         next(error);
@@ -468,7 +563,7 @@ export function catalogRouter(params: {
         );
         response.json(
           okFor(response, {
-            product: withoutCostUnlessAllowed(response, product),
+            product: presentProduct(response, product),
           }),
         );
       } catch (error) {

@@ -2,6 +2,7 @@ import { Minus, Plus } from "lucide-react";
 import { IconButton } from "../../../components/ui/IconButton/IconButton.js";
 import { cx } from "../../../lib/cx.js";
 import { formatMoney } from "../../../i18n/format.js";
+import { mediaUrl } from "../../../lib/api/media.js";
 import type { PosProduct } from "../pos.api.js";
 import styles from "./PosComponents.module.css";
 
@@ -30,7 +31,16 @@ export function ProductGrid({
   onIncrement,
 }: ProductGridProps) {
   return (
-    <div className={styles.grid} role="list" aria-label="Produits">
+    // With one photo in the grid every tile takes the same square, so text
+    // tiles and photo tiles line up (issue #64).
+    <div
+      className={cx(
+        styles.grid,
+        products.some((product) => product.imageUrl) && styles.gridWithImages,
+      )}
+      role="list"
+      aria-label="Produits"
+    >
       {products.map((product) => {
         const quantity = quantities.get(product.id);
         const tone = categoryTone(product.category.id);
@@ -48,15 +58,38 @@ export function ProductGrid({
           >
             <button
               type="button"
-              className={styles.tileMain}
+              className={cx(
+                styles.tileMain,
+                product.imageUrl && styles.tileWithImage,
+              )}
               onClick={() => onAdd(product)}
               aria-label={`Ajouter ${product.name}`}
             >
-              <span className={styles.tileName}>{product.name}</span>
-              <span className={styles.tilePrice}>
-                {formatMoney(product.salePriceTnd)} / {product.baseUnit.symbol}{" "}
-                · {product.category.name}
-              </span>
+              {product.imageUrl ? (
+                <>
+                  <img
+                    src={mediaUrl(product.imageUrl) ?? ""}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className={styles.tileImage}
+                  />
+                  <span className={styles.tileBadge}>
+                    {formatMoney(product.salePriceTnd)}
+                  </span>
+                  <span className={styles.tileCaption}>
+                    <span className={styles.tileName}>{product.name}</span>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className={styles.tileName}>{product.name}</span>
+                  <span className={styles.tilePrice}>
+                    {formatMoney(product.salePriceTnd)} /{" "}
+                    {product.baseUnit.symbol} · {product.category.name}
+                  </span>
+                </>
+              )}
             </button>
             {/* The stepper row is always laid out so a tile never grows on tap:
                 a growing tile would shift its neighbours under a fast finger. */}

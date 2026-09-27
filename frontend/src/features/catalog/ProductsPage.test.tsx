@@ -9,7 +9,16 @@ import {
   makeCatalogStore,
   catalogHandlers,
 } from "../../test/msw/handlers/catalog";
+import { makeSimulation } from "../../test/factories/simulation";
 import { makeUser } from "../../test/factories/user";
+import {
+  inventoryHandlers,
+  makeInventoryStore,
+} from "../../test/msw/handlers/inventory";
+import {
+  makeSimulationStore,
+  simulationHandlers,
+} from "../../test/msw/handlers/simulation";
 import { apiError, apiV1 } from "../../test/msw/envelope";
 import { authHandlers } from "../../test/msw/handlers/auth";
 import { server } from "../../test/msw/server";
@@ -253,5 +262,169 @@ describe("Produits", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Service indisponible",
     );
+  });
+  // Issue #66: the product page shows the latest simulation whose target
+  // is this product, never another product's, and its adjustment dialog
+  // keeps the page's product fixed and states the impact from the real
+  // balance.
+  it("shows the simulation linked to the product and adjusts it without a picker", async () => {
+    server.use(
+      ...catalogHandlers(makeCatalogStore()),
+      ...inventoryHandlers(makeInventoryStore()),
+      ...simulationHandlers(
+        makeSimulationStore({
+          simulations: [
+            makeSimulation({
+              id: "sim-other",
+              name: "Croissant pur beurre",
+              targetProductId: "product-2",
+              costPerOutputUnitTnd: "0.900",
+              updatedAt: "2026-09-25T08:00:00.000Z",
+            }),
+            makeSimulation({
+              id: "sim-old",
+              name: "Pain complet 2025",
+              targetProductId: "product-1",
+              costPerOutputUnitTnd: "0.500",
+              updatedAt: "2026-09-01T08:00:00.000Z",
+            }),
+            makeSimulation({
+              id: "sim-latest",
+              name: "Pain complet 2026",
+              targetProductId: "product-1",
+              costPerOutputUnitTnd: "0.610",
+              updatedAt: "2026-09-20T08:00:00.000Z",
+            }),
+          ],
+        }),
+      ),
+    );
+    renderAt("/produits/product-1", [
+      ...manager.effectivePermissions,
+      "margin.view",
+      "simulations.view",
+      "inventory.adjust",
+    ]);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Pain complet" }),
+    ).toBeInTheDocument();
+    const hint = await screen.findByRole("link", {
+      name: /Pain complet 2026/,
+    });
+    expect(hint).toHaveAttribute("href", "/simulations/sim-latest");
+    expect(hint).toHaveTextContent("0,610 TND");
+    expect(screen.queryByText(/Croissant pur beurre/)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Ajustement" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Ajustement de stock",
+    });
+    expect(
+      within(dialog).queryByRole("combobox", { name: "Article" }),
+    ).not.toBeInTheDocument();
+    // The quantity formatter joins number and unit with a no-break space.
+    expect(
+      (
+        within(dialog).getByRole("textbox", {
+          name: "Article",
+        }) as HTMLInputElement
+      ).value,
+    ).toMatch(/^Pain complet · stock actuel 18.pièce$/);
+  });
+  // Issue #64: the photo is chosen in the product dialog and sent once the
+  // product is saved; the list shows it; "Retirer la photo" removes it.
+  it("uploads a photo from the product dialog and removes it again", async () => {
+    const store = makeCatalogStore();
+    server.use(...catalogHandlers(store));
+    renderAt("/produits");
+
+    const table = await screen.findByRole("table", { name: "Produits" });
+    const row = within(table)
+      .getByText("Pain complet")
+      .closest("tr") as HTMLElement;
+    expect(row.querySelector("img")).toBeNull();
+    await userEvent.click(within(row).getByRole("button", { name: "Actions" }));
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Modifier" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Modifier Pain complet",
+    });
+    await userEvent.upload(
+      within(dialog).getByLabelText("Photo"),
+      new File(
+        [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])],
+        "pain.png",
+        {
+          type: "image/png",
+        },
+      ),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Enregistrer" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(store.products[0]).toMatchObject({
+      imageUrl: "/media/products/product-1.webp",
+    });
+    // The test environment points the API at another origin, so the
+    // thumbnail address carries that origin in front of the path.
+    await waitFor(() =>
+      expect(
+        (
+          within(screen.getByRole("table", { name: "Produits" }))
+            .getByText("Pain complet")
+            .closest("tr") as HTMLElement
+        )
+          .querySelector("img")
+          ?.getAttribute("src"),
+      ).toMatch(/\/media\/products\/product-1\.webp$/),
+    );
+
+    const rowWithPhoto = within(screen.getByRole("table", { name: "Produits" }))
+      .getByText("Pain complet")
+      .closest("tr") as HTMLElement;
+    await userEvent.click(
+      within(rowWithPhoto).getByRole("button", { name: "Actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Modifier" }),
+    );
+    const again = await screen.findByRole("dialog", {
+      name: "Modifier Pain complet",
+    });
+    await userEvent.click(
+      within(again).getByRole("button", { name: "Retirer la photo" }),
+    );
+    await userEvent.click(
+      within(again).getByRole("button", { name: "Enregistrer" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(store.products[0]).toMatchObject({ imageUrl: null });
+  });
+
+  it("refuses a photo that is not an image before any request", async () => {
+    renderAt("/produits");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Nouveau produit" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Nouveau produit" });
+    await userEvent.upload(
+      within(dialog).getByLabelText("Photo"),
+      new File(["<svg/>"], "logo.svg", { type: "image/svg+xml" }),
+      // The field's `accept` would filter it in the browser's picker; the
+      // guard behind it is what this test covers.
+      { applyAccept: false },
+    );
+    expect(
+      within(dialog).getByText(
+        "La photo doit être un fichier JPEG, PNG ou WebP.",
+      ),
+    ).toBeInTheDocument();
   });
 });

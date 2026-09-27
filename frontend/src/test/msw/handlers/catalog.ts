@@ -143,6 +143,46 @@ export function catalogHandlers(store: CatalogStore = makeCatalogStore()) {
         return ok({ product });
       },
     ),
+    // Issue #64: the photo routes. The stored path names the product so a
+    // test can tell whose photo is shown.
+    http.put(
+      `${apiV1}/catalog/products/:productId/image`,
+      async ({ params, request }) => {
+        const product = store.products.find(
+          (item) => item.id === params.productId,
+        );
+        if (!product)
+          return apiError(404, "PRODUCT_NOT_FOUND", "Produit introuvable.");
+        // A browser sends multipart; jsdom's FormData is not the one Node's
+        // fetch serialises, so the tests reach here with a plain body. Either
+        // way an empty upload is refused; the real parsing is covered by the
+        // API's route tests.
+        const type = request.headers.get("content-type") ?? "";
+        const empty = type.includes("multipart/form-data")
+          ? !(await request.formData()).get("file")
+          : (await request.text()).length === 0;
+        if (empty)
+          return apiError(
+            400,
+            "PRODUCT_IMAGE_REQUIRED",
+            "Choisissez une photo.",
+          );
+        Object.assign(product, {
+          imageUrl: `/media/products/${product.id}.webp`,
+          version: product.version + 1,
+        });
+        return ok({ product });
+      },
+    ),
+    http.delete(`${apiV1}/catalog/products/:productId/image`, ({ params }) => {
+      const product = store.products.find(
+        (item) => item.id === params.productId,
+      );
+      if (!product)
+        return apiError(404, "PRODUCT_NOT_FOUND", "Produit introuvable.");
+      Object.assign(product, { imageUrl: null, version: product.version + 1 });
+      return ok({ product });
+    }),
     http.patch(
       `${apiV1}/catalog/products/:productId/activation`,
       async ({ params, request }) => {

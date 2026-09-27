@@ -11,10 +11,11 @@ export const inventoryKeys = {
     ["inventory", "movements", query] as const,
 };
 
-export function useBalances() {
+export function useBalances(enabled = true) {
   return useQuery({
     queryKey: inventoryKeys.balances(),
     queryFn: api.listBalances,
+    enabled,
     ...tier("live"),
   });
 }

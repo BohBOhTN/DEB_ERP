@@ -4,8 +4,36 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-28
+
+The fixes and the feature noted at the client demo of 2026-09-26 (issues
+#64, #65, #66), plus the balances read and performance-suite changes and the
+plain-HTTP fix that followed the first deployment.
+
+### Added
+
+- Issue #64, Produits: a photo per product, chosen in the product form,
+  re-encoded by the server as a 512 px WebP (JPEG, PNG or WebP accepted by
+  their bytes, 5 MB at most, nothing the client sent is stored), kept in a
+  named Docker volume that survives redeploys and served by nginx under
+  `/media`; shown on the product list and page and on the till tile, where
+  the picture fills the tile with the name over a gradient and the price
+  as a badge, the category left to the chips.
+
 ### Fixed
 
+- Issue #66, after the demo: the expenses figure joins the KPI row of
+  Accueil; the product page shows the latest simulation targeting that
+  product (the API's list now filters by `targetProductId`); a règlement
+  refreshes the sales list and the receipt it settles; the pickers scroll
+  inside modal dialogs; the adjustment dialog on a product page keeps the
+  product fixed and states the impact from the real balance.
+- Issue #65, Commandes: the order page and every order command now return
+  the same figures as the queue (`Avance`, `Reste`), so "Encaisser un
+  acompte" shows the real remainder instead of 0 and caps the deposit
+  there, and "Terminer" shows what is left after the deposits; the cap's
+  message states the remainder; a deposit dated by day shows its day
+  alone in the list.
 - The application reached over plain HTTP on an address never sent a
   request: correlation ids, idempotency keys and toast ids came from
   `crypto.randomUUID`, which browsers expose in a secure context only. One

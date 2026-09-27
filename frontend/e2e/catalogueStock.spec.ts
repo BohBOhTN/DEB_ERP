@@ -31,12 +31,37 @@ test("creates a product, sets opening stock and adjusts it with a reason", async
     page.getByRole("main").getByText("Pain complet", { exact: true }).first(),
   ).toBeVisible();
 
+  // Issue #66: enough products for the picker list to overflow, so the
+  // scroll inside the modal dialog can be asserted.
+  const first = state.products[0] as (typeof state.products)[number];
+  for (let index = 1; index <= 10; index += 1) {
+    state.products.push({
+      ...first,
+      id: `filler-${index}`,
+      name: `Produit de remplissage ${index}`,
+    });
+  }
+
   await page.goto("/stock");
   await page.getByRole("button", { name: "Stock d'ouverture" }).click();
   const opening = page.getByRole("dialog", { name: "Stock d'ouverture" });
   await opening.getByRole("combobox", { name: "Article" }).click();
+  const list = page.getByRole("listbox").first();
+  await expect(list.getByRole("option").first()).toBeVisible();
+  await expect
+    .poll(() =>
+      list.evaluate((element) => element.scrollHeight > element.clientHeight),
+    )
+    .toBe(true);
+  await list.hover();
+  await page.mouse.wheel(0, 200);
+  await expect
+    .poll(() => list.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
   await page.getByPlaceholder("Nom de l'article").fill("pain");
-  await page.getByText(/stock actuel 0/).click();
+  await page
+    .getByRole("option", { name: /^Pain complet.*stock actuel 0/ })
+    .click();
   await opening.getByRole("textbox", { name: "Quantité" }).fill("20");
   await opening.getByLabel(/Motif/).fill("Inventaire initial");
   await opening.getByRole("button", { name: "Suivant" }).click();

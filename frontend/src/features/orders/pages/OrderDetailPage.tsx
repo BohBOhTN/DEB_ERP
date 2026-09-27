@@ -30,6 +30,7 @@ import {
   orderActions,
   orderStatusLabels,
   remainingOf,
+  advanceDateLabel,
 } from "../components/orderLabels.js";
 import { dueLabel } from "./OrdersPage.js";
 import styles from "./OrderPages.module.css";
@@ -273,7 +274,7 @@ export function OrderDetailPage() {
             ) : (
               <KeyValueList
                 items={(order.advances ?? []).map((row) => ({
-                  label: `${row.movement === "REFUND" ? "Remboursement" : "Acompte"} du ${formatDateTime(row.paidAt)}`,
+                  label: `${row.movement === "REFUND" ? "Remboursement" : "Acompte"} du ${advanceDateLabel(row.paidAt)}`,
                   value: `${row.movement === "REFUND" ? "−" : ""}${formatMoney(row.amountTnd)}`,
                   numeric: true,
                 }))}

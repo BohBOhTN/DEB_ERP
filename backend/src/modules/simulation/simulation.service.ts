@@ -47,9 +47,14 @@ export class SimulationService {
     page: number;
     pageSize: number;
     sort?: SortSpec<"updatedAt" | "name">;
+    targetProductId?: string;
   }) {
+    const where = params.targetProductId
+      ? { targetProductId: params.targetProductId }
+      : {};
     const [items, total] = await this.prisma.$transaction([
       this.prisma.costSimulation.findMany({
+        where,
         include: simulationInclude,
         orderBy: orderByFor<
           "updatedAt" | "name",
@@ -66,7 +71,7 @@ export class SimulationService {
         skip: (params.page - 1) * params.pageSize,
         take: params.pageSize,
       }),
-      this.prisma.costSimulation.count(),
+      this.prisma.costSimulation.count({ where }),
     ]);
 
     return paginated(items, total, params);

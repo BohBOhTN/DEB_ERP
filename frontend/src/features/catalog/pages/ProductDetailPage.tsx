@@ -12,6 +12,7 @@ import { StatusPill } from "../../../components/ui/StatusPill/StatusPill.js";
 import { Tabs } from "../../../components/ui/Tabs/Tabs.js";
 import { describeError } from "../../../i18n/errors.js";
 import { formatDate, formatMoney } from "../../../i18n/format.js";
+import { mediaUrl } from "../../../lib/api/media.js";
 import { fr } from "../../../i18n/fr.js";
 import { useSessionPermissions } from "../../../app/sessionContext.js";
 import { useSimulations } from "../../simulation/simulation.queries.js";
@@ -24,6 +25,7 @@ import {
   StockTab,
 } from "../components/detailTabs.js";
 import { StockMovementDialog } from "../../inventory/components/StockMovementDialog.js";
+import { useBalances } from "../../inventory/inventory.queries.js";
 import styles from "./CatalogPages.module.css";
 
 /// `/produits/:id` (UI-10): summary, then Stock, Mouvements and Historique.
@@ -35,6 +37,13 @@ export function ProductDetailPage() {
   const [adjusting, setAdjusting] = useState(false);
   const product = query.data;
   const canSeeMargin = permissions.has("margin.view");
+  // The adjustment dialog states the impact from the real balance
+  // (issue #66); read only when the user may adjust.
+  const balances = useBalances(permissions.has("inventory.adjust"));
+  const currentQuantity =
+    balances.data?.find(
+      (row) => row.itemType === "PRODUCT" && row.itemId === productId,
+    )?.quantity ?? "0";
   // Issue 008: the latest saved simulation targeting this product, as a
   // hint next to the typed cost. Simulations stay a planning tool; nothing
   // is copied without the owner typing it (SIM-*).
@@ -106,6 +115,13 @@ export function ProductDetailPage() {
       <div className={styles.tabBody}>
         <Card>
           <CardHeader as="h2" title="Fiche produit" />
+          {product.imageUrl ? (
+            <img
+              src={mediaUrl(product.imageUrl) ?? ""}
+              alt={`Photo de ${product.name}`}
+              className={styles.photo}
+            />
+          ) : null}
           <KeyValueList
             items={[
               { label: "Catégorie", value: product.category.name },
@@ -210,12 +226,13 @@ export function ProductDetailPage() {
           kind="adjustment"
           open
           onOpenChange={(open) => !open && setAdjusting(false)}
+          lockItem
           item={{
             itemType: "PRODUCT",
             itemId: product.id,
             label: product.name,
             unitSymbol: product.baseUnit.symbol,
-            currentQuantity: "0",
+            currentQuantity,
           }}
         />
       ) : null}

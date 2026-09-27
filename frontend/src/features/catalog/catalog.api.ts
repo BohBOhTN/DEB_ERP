@@ -32,6 +32,8 @@ export interface Product {
   /// Issue 008: the owner's approximate cost per base unit; absent from the
   /// response without `margin.view`.
   approximateCostTnd?: string | null;
+  /// Issue #64: the photo's path under `/media`, null without one.
+  imageUrl: string | null;
   isStockable: boolean;
   isActive: boolean;
   notes: string | null;
@@ -114,6 +116,29 @@ export async function updateProduct(
     await apiClient.patch<{ product: Product }>(
       `/catalog/products/${productId}`,
       input,
+    )
+  ).product;
+}
+
+/// Issue #64: the file travels as multipart; the server re-encodes it.
+export async function setProductImage(
+  productId: string,
+  file: File,
+): Promise<Product> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  return (
+    await apiClient.put<{ product: Product }>(
+      `/catalog/products/${productId}/image`,
+      form,
+    )
+  ).product;
+}
+
+export async function removeProductImage(productId: string): Promise<Product> {
+  return (
+    await apiClient.delete<{ product: Product }>(
+      `/catalog/products/${productId}/image`,
     )
   ).product;
 }

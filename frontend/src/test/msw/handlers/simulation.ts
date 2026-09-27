@@ -92,9 +92,16 @@ export function simulationHandlers(
   store: SimulationStore = makeSimulationStore(),
 ) {
   return [
-    http.get(`${apiV1}/cost-simulations`, () =>
-      ok(makePage(store.simulations)),
-    ),
+    http.get(`${apiV1}/cost-simulations`, ({ request }) => {
+      const url = new URL(request.url);
+      const targetProductId = url.searchParams.get("targetProductId");
+      const rows = store.simulations
+        .filter(
+          (row) => !targetProductId || row.targetProductId === targetProductId,
+        )
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      return ok(makePage(rows));
+    }),
     http.post(`${apiV1}/cost-simulations`, async ({ request }) => {
       const body = (await request.json()) as SimulationInput;
       if (!body.ingredients?.length)

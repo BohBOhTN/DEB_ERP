@@ -3,6 +3,12 @@ import { Prisma } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
 import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { normalizeName } from "../../shared/text.js";
+import {
+  MemoryMediaStore,
+  newProductImageKey,
+  processProductImage,
+  type MediaStore,
+} from "../../shared/media.js";
 
 // Re-exported so existing importers and tests keep working.
 export { normalizeName };
@@ -43,7 +49,82 @@ const defaultUnits = [
 ] as const;
 
 export class CatalogService {
-  public constructor(private readonly prisma: PrismaClient) {}
+  public constructor(
+    private readonly prisma: PrismaClient,
+    /// Where product photos are written (issue #64); memory when absent.
+    private readonly media: MediaStore = new MemoryMediaStore(),
+  ) {}
+
+  /// Issue #64: stores the re-encoded photo under a new key, points the
+  /// product at it, then drops the previous file. The product's version
+  /// moves, so a stale form cannot overwrite the change unknowingly.
+  public async setProductImage(
+    productId: string,
+    upload: Buffer,
+    actor: CatalogActor,
+  ) {
+    const existing = await this.findProductOrThrow(productId);
+    const bytes = await processProductImage(upload);
+    const imageKey = newProductImageKey();
+    await this.media.write(imageKey, bytes);
+
+    const product = await this.prisma.product.update({
+      where: { id: productId },
+      data: {
+        imageKey,
+        imageUpdatedAt: new Date(),
+        version: { increment: 1 },
+        updatedByUserId: actor.actorUserId,
+      },
+      include: { category: true, baseUnit: true },
+    });
+
+    if (existing.imageKey && existing.imageKey !== imageKey) {
+      await this.media.remove(existing.imageKey);
+    }
+
+    await this.audit({
+      actor,
+      action: "product.image",
+      entity: "product",
+      targetId: product.id,
+      before: { imageKey: existing.imageKey },
+      after: { imageKey, bytes: bytes.length },
+    });
+
+    return product;
+  }
+
+  public async removeProductImage(productId: string, actor: CatalogActor) {
+    const existing = await this.findProductOrThrow(productId);
+
+    if (!existing.imageKey) {
+      return existing;
+    }
+
+    const product = await this.prisma.product.update({
+      where: { id: productId },
+      data: {
+        imageKey: null,
+        imageUpdatedAt: null,
+        version: { increment: 1 },
+        updatedByUserId: actor.actorUserId,
+      },
+      include: { category: true, baseUnit: true },
+    });
+    await this.media.remove(existing.imageKey);
+
+    await this.audit({
+      actor,
+      action: "product.image_remove",
+      entity: "product",
+      targetId: product.id,
+      before: { imageKey: existing.imageKey },
+      after: { imageKey: null },
+    });
+
+    return product;
+  }
 
   public async bootstrapCatalogData(): Promise<void> {
     for (const unit of defaultUnits) {

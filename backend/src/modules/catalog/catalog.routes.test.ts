@@ -116,6 +116,16 @@ async function createTestApp(permissionKeys: string[]) {
       isActive: true,
     }),
     createProduct: vi.fn(),
+    setProductImage: vi.fn().mockResolvedValue({
+      id: "product-1",
+      name: "Baguette",
+      imageKey: "products/abc.webp",
+    }),
+    removeProductImage: vi.fn().mockResolvedValue({
+      id: "product-1",
+      name: "Baguette",
+      imageKey: null,
+    }),
     listProducts: vi.fn().mockResolvedValue({
       items: [
         {
@@ -365,5 +375,77 @@ describe("catalog routes", () => {
         actorUserId: "user-1",
       }),
     );
+  });
+  // Issue #64: the photo route takes one multipart file under products.update,
+  // hands its bytes to the service, refuses a missing file and an oversized
+  // one with the API's own errors, and answers with the photo's public path.
+  it("replaces and removes a product photo with products.update", async () => {
+    const { app, cookie, catalogService } = await createTestApp([
+      "products.view",
+      "products.update",
+    ]);
+    const bytes = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3,
+    ]);
+
+    const replaced = await request(app)
+      .put("/api/catalog/products/product-1/image")
+      .set("Cookie", cookie)
+      .attach("file", bytes, "photo.png")
+      .expect(200);
+    expect(catalogService.setProductImage).toHaveBeenCalledWith(
+      "product-1",
+      expect.any(Buffer),
+      expect.anything(),
+    );
+    expect(
+      (catalogService.setProductImage.mock.calls[0]?.[1] as Buffer).equals(
+        bytes,
+      ),
+    ).toBe(true);
+    expect(replaced.body.data.product).toMatchObject({
+      imageUrl: "/media/products/abc.webp",
+    });
+
+    const missing = await request(app)
+      .put("/api/catalog/products/product-1/image")
+      .set("Cookie", cookie)
+      .expect(400);
+    expect(missing.body.error.code).toBe("PRODUCT_IMAGE_REQUIRED");
+
+    const huge = await request(app)
+      .put("/api/catalog/products/product-1/image")
+      .set("Cookie", cookie)
+      .attach("file", Buffer.alloc(5 * 1024 * 1024 + 1, 1), "huge.png")
+      .expect(413);
+    expect(huge.body.error.code).toBe("PRODUCT_IMAGE_TOO_LARGE");
+
+    const removed = await request(app)
+      .delete("/api/catalog/products/product-1/image")
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(catalogService.removeProductImage).toHaveBeenCalledWith(
+      "product-1",
+      expect.anything(),
+    );
+    expect(removed.body.data.product).toMatchObject({ imageUrl: null });
+  });
+
+  it("refuses the photo routes without products.update", async () => {
+    const { app, cookie, catalogService } = await createTestApp([
+      "products.view",
+    ]);
+
+    await request(app)
+      .put("/api/catalog/products/product-1/image")
+      .set("Cookie", cookie)
+      .attach("file", Buffer.from("x"), "photo.png")
+      .expect(403);
+    await request(app)
+      .delete("/api/catalog/products/product-1/image")
+      .set("Cookie", cookie)
+      .expect(403);
+    expect(catalogService.setProductImage).not.toHaveBeenCalled();
+    expect(catalogService.removeProductImage).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,5 @@
 import { PosSessionStatus, SalePaymentState, SaleStatus } from "@prisma/client";
+import { mediaUrlOf } from "../../shared/media.js";
 import { Router, type Response } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { z } from "zod";
@@ -115,7 +116,17 @@ export function posRouter(params: {
       try {
         const query = withSearch(listQuerySchema.parse(request.query));
         const products = await params.posService.listProducts(query);
-        response.json(okFor(response, { products }));
+        response.json(
+          okFor(response, {
+            products: {
+              ...products,
+              items: products.items.map((item) => ({
+                ...item,
+                imageUrl: mediaUrlOf(item.imageKey),
+              })),
+            },
+          }),
+        );
       } catch (error) {
         next(error);
       }

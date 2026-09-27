@@ -24,6 +24,8 @@ const actionLabels: Record<string, string> = {
   "product.update": "Modification d'un produit",
   "product.activate": "Activation d'un produit",
   "product.deactivate": "Désactivation d'un produit",
+  "product.image": "Photo d'un produit",
+  "product.image_remove": "Retrait de la photo d'un produit",
   "raw_material.create": "Création d'une matière première",
   "raw_material.update": "Modification d'une matière première",
   "raw_material.assign_conversions": "Modification des conversions",
