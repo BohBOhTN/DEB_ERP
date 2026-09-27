@@ -8,6 +8,7 @@ import { FormField } from "../../../components/ui/FormField/FormField.js";
 import { QuantityInput } from "../../../components/ui/QuantityInput/QuantityInput.js";
 import { SegmentedControl } from "../../../components/ui/SegmentedControl/SegmentedControl.js";
 import { TextArea } from "../../../components/ui/TextArea/TextArea.js";
+import { TextInput } from "../../../components/ui/TextInput/TextInput.js";
 import { useToast } from "../../../components/ui/Toast/useToast.js";
 import { formatQuantity } from "../../../i18n/format.js";
 import { fr } from "../../../i18n/fr.js";
@@ -30,6 +31,9 @@ export interface StockMovementDialogProps {
   onOpenChange: (open: boolean) => void;
   /// Preselected item when opened from a detail page.
   item?: PickedItem | null;
+  /// From a detail page the item is the page's: shown, not picked
+  /// (issue #66).
+  lockItem?: boolean;
 }
 
 interface Pending {
@@ -46,6 +50,7 @@ export function StockMovementDialog({
   open,
   onOpenChange,
   item = null,
+  lockItem = false,
 }: StockMovementDialogProps) {
   const toast = useToast();
   const openingStock = usePostOpeningStock();
@@ -106,19 +111,28 @@ export function StockMovementDialog({
         onSubmit={submit}
         submitLabel={fr.next}
       >
-        <FormField label="Article" error={errors.item?.message} required>
-          <Controller
-            control={form.control}
-            name="item"
-            render={({ field }) => (
-              <ItemCombobox
-                value={field.value ?? null}
-                onChange={field.onChange}
-                invalid={Boolean(errors.item)}
-              />
-            )}
-          />
-        </FormField>
+        {lockItem && item ? (
+          <FormField label="Article" required>
+            <TextInput
+              value={`${item.label} · stock actuel ${formatQuantity(item.currentQuantity, item.unitSymbol)}`}
+              readOnly
+            />
+          </FormField>
+        ) : (
+          <FormField label="Article" error={errors.item?.message} required>
+            <Controller
+              control={form.control}
+              name="item"
+              render={({ field }) => (
+                <ItemCombobox
+                  value={field.value ?? null}
+                  onChange={field.onChange}
+                  invalid={Boolean(errors.item)}
+                />
+              )}
+            />
+          </FormField>
+        )}
         {!isOpening ? (
           <FormField
             label="Sens"
