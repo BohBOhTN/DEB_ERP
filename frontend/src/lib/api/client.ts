@@ -107,7 +107,9 @@ export class ApiClient {
       "X-Correlation-Id": correlationId,
     };
 
-    if (body !== undefined) {
+    // A FormData body sets its own multipart boundary; anything else is JSON.
+    const isForm = typeof FormData !== "undefined" && body instanceof FormData;
+    if (body !== undefined && !isForm) {
       headers["Content-Type"] = "application/json";
     }
 
@@ -119,7 +121,12 @@ export class ApiClient {
       method,
       headers,
       credentials: "include",
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body:
+        body === undefined
+          ? undefined
+          : isForm
+            ? (body as FormData)
+            : JSON.stringify(body),
       // Only set when given: an undefined key is enough for Node's fetch to
       // run its realm check against jsdom's AbortSignal in tests.
       ...(options.signal ? { signal: options.signal } : {}),
