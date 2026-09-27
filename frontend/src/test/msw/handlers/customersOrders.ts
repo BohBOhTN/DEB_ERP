@@ -747,7 +747,7 @@ export function customersOrdersHandlers(
         lines,
       });
       store.orders.unshift(order);
-      return ok({ order }, 201);
+      return ok({ order: withFigures(order) }, 201);
     }),
     http.get(`${apiV1}/orders/:id`, ({ params }) => {
       const order = store.orders.find((row) => row.id === params.id);
@@ -773,7 +773,7 @@ export function customersOrdersHandlers(
         status: body.status,
         version: order.version + 1,
       });
-      return ok({ order });
+      return ok({ order: withFigures(order) });
     }),
     http.post(`${apiV1}/orders/:id/advances`, async ({ params, request }) => {
       if (!request.headers.get("Idempotency-Key"))
@@ -819,7 +819,7 @@ export function customersOrdersHandlers(
         .plus(advance.amountTnd)
         .toFixed(3);
       order.version += 1;
-      return ok({ order, advance }, 201);
+      return ok({ order: withFigures(order), advance }, 201);
     }),
     http.post(`${apiV1}/orders/:id/complete`, async ({ params, request }) => {
       if (!request.headers.get("Idempotency-Key"))
@@ -895,7 +895,7 @@ export function customersOrdersHandlers(
           })),
         },
       });
-      return ok({ order }, 201);
+      return ok({ order: withFigures(order) }, 201);
     }),
     http.post(`${apiV1}/orders/:id/cancel`, async ({ params, request }) => {
       if (!request.headers.get("Idempotency-Key"))
@@ -931,7 +931,7 @@ export function customersOrdersHandlers(
         advanceDisposition: body.advanceDisposition ?? null,
         version: order.version + 1,
       });
-      return ok({ order });
+      return ok({ order: withFigures(order) });
     }),
   ];
 }
