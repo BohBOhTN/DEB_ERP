@@ -21,7 +21,12 @@ export default defineConfig({
     // Against a real backend (the seeded demo run, Lighthouse), the browser
     // talks to the same origin and the dev server forwards `/api`.
     ...(process.env.API_PROXY_TARGET
-      ? { proxy: { "/api": { target: process.env.API_PROXY_TARGET } } }
+      ? {
+          proxy: {
+            "/api": { target: process.env.API_PROXY_TARGET },
+            "/media": { target: process.env.API_PROXY_TARGET },
+          },
+        }
       : {}),
   },
   preview: {
