@@ -59,6 +59,8 @@ export interface PosProduct {
   barcode: string | null;
   name: string;
   salePriceTnd: string;
+  /// Issue #64: the photo's path under `/media`, null without one.
+  imageUrl: string | null;
   isStockable: boolean;
   isActive: boolean;
   baseUnit: Unit;
