@@ -239,6 +239,7 @@ jobs:
         env:
           REGISTRY_OWNER: ${{ steps.prep.outputs.owner }}
           PUBLIC_PORT: ${{ secrets.PUBLIC_PORT }}
+          PUBLIC_BIND: ${{ secrets.PUBLIC_BIND }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BACKEND_ENV: ${{ secrets.BACKEND_ENV }}
@@ -247,7 +248,7 @@ jobs:
           username: ${{ secrets.VPS_SSH_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
-          envs: IMAGE_TAG,REGISTRY_OWNER,PUBLIC_PORT,GHCR_USER,GHCR_TOKEN,BACKEND_ENV
+          envs: IMAGE_TAG,REGISTRY_OWNER,PUBLIC_PORT,PUBLIC_BIND,GHCR_USER,GHCR_TOKEN,BACKEND_ENV
           script: |
             set -e
             chmod +x /opt/dar-el-barka/remote-deploy.sh

@@ -54,8 +54,11 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    # Reached through the VPS nginx, which terminates TLS for the domain and
+    # forwards to this port on the loopback; nothing listens on the public
+    # interface any more.
     ports:
-      - "0.0.0.0:${PUBLIC_PORT:-8081}:80"
+      - "${PUBLIC_BIND:-127.0.0.1}:${PUBLIC_PORT:-8081}:80"
     volumes:
       - deb-media:/usr/share/nginx/media:ro
     networks:
