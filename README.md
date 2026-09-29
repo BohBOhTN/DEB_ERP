@@ -236,6 +236,12 @@ remote script under `deploy/`, and a `deploy` job in `.github/workflows/ci.yml`
 behind the `production` environment's approval. Setup, secrets, the first
 admin and day-to-day operations are in `deploy/README.md`.
 
+## Recette
+
+The client-facing acceptance material, in French, lives in `docs/recette/`:
+what the automated suites check before every release, and the manual
+scenarios to run, tick and sign.
+
 ## Branches
 
 - `main`: protected release baseline
