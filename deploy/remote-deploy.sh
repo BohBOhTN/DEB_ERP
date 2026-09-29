@@ -18,8 +18,8 @@ cd "$STACK_DIR"
 # inside this script, and readable by the deploy user only.
 umask 077
 printf '%s\n' "$BACKEND_ENV" > backend.env
-printf 'REGISTRY_OWNER=%s\nIMAGE_TAG=%s\nPUBLIC_PORT=%s\n' \
-  "$REGISTRY_OWNER" "$IMAGE_TAG" "${PUBLIC_PORT:-8081}" > .env
+printf 'REGISTRY_OWNER=%s\nIMAGE_TAG=%s\nPUBLIC_PORT=%s\nPUBLIC_BIND=%s\n' \
+  "$REGISTRY_OWNER" "$IMAGE_TAG" "${PUBLIC_PORT:-8081}" "${PUBLIC_BIND:-127.0.0.1}" > .env
 umask 022
 
 if ! docker network inspect pg-network > /dev/null 2>&1; then
