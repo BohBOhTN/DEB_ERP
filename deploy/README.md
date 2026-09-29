@@ -29,10 +29,49 @@ frontend container forwards `/api` to the API container.
 | `PUBLIC_URL`   | `http://<ip>:8081`, used by the smoke step                                                                                                                                                                                                                                                                                                          |
 | `BACKEND_ENV`  | The API's `.env`: `NODE_ENV=production`, `PORT=4000`, `DATABASE_URL=postgresql://dar_el_baraka_user:<password>@postgres-prod:5432/dar_el_baraka?schema=public&connection_limit=10&pool_timeout=10`, `CORS_ALLOWED_ORIGINS=http://<ip>:8081`, `TRUST_PROXY=1`, `SESSION_COOKIE_SECURE=false`, `LOG_PRETTY=false`, the rest as `backend/.env.example` |
 
-`SESSION_COOKIE_SECURE=false` is what plain HTTP on an address needs. Once a
-hostname with TLS fronts the stack, set it to `true`, put the hostname in
-`CORS_ALLOWED_ORIGINS` and `PUBLIC_URL`, raise `TRUST_PROXY` to `2`, and
-publish the port on `127.0.0.1` in the compose file.
+## Behind the VPS nginx with a domain
+
+The VPS nginx terminates TLS for the domain and forwards to the stack on
+the loopback; the stack publishes `127.0.0.1:${PUBLIC_PORT}` by default
+(`PUBLIC_BIND=0.0.0.0` in the secrets puts it back on the address for a
+deployment without a domain). Two hops then sit in front of the API, the
+VPS nginx and the frontend container's nginx, so the API's settings are:
+
+| Where         | Setting                                 |
+| ------------- | --------------------------------------- |
+| `BACKEND_ENV` | `SESSION_COOKIE_SECURE=true`            |
+| `BACKEND_ENV` | `TRUST_PROXY=2`                         |
+| `BACKEND_ENV` | `CORS_ALLOWED_ORIGINS=https://<domain>` |
+| `PUBLIC_URL`  | `https://<domain>`                      |
+
+The host site, `/etc/nginx/sites-available/<domain>`, forwards everything
+to the container and passes the client address and scheme on:
+
+```
+server {
+    server_name <domain>;
+
+    client_max_body_size 6m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 40s;
+    }
+
+    listen 80;
+}
+```
+
+Enable it, then let certbot add the certificate and the redirect:
+`sudo ln -s /etc/nginx/sites-available/<domain> /etc/nginx/sites-enabled/`,
+`sudo nginx -t && sudo systemctl reload nginx`,
+`sudo certbot --nginx -d <domain>`. The 6 MB body limit is what a 5 MB
+photo upload needs once the multipart envelope is counted.
 
 ## Product photos
 
