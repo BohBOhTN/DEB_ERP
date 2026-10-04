@@ -1,5 +1,6 @@
 import Decimal from "decimal.js-light";
 import { z } from "zod";
+import { toBusinessDate } from "../../i18n/format.js";
 import {
   decimalString,
   isoDate,
@@ -31,7 +32,7 @@ export const purchaseLineSchema = z.object({
     .refine((item) => item !== null, "Choisissez une matière première."),
   quantity: decimalString(6, { positive: true }),
   unitId: z.string().nullable().optional(),
-  unitPriceTnd: tnd(),
+  unitPriceTnd: tnd({ positive: true }),
   /// Factor of the chosen unit to the base unit, kept on the line so the
   /// schema can total without the catalogue.
   factorToBase: z.string().default("1"),
@@ -55,6 +56,38 @@ export const purchaseSchema = z
     lines: z.array(purchaseLineSchema).min(1, "Ajoutez au moins une ligne."),
   })
   .superRefine((values, context) => {
+    // Issue 016: the rules the server enforces, said on the field before
+    // any request.
+    if (values.purchaseDate > toBusinessDate(new Date())) {
+      context.addIssue({
+        code: "custom",
+        path: ["purchaseDate"],
+        message: "La date d'achat ne peut pas être dans le futur.",
+      });
+    }
+
+    const firstLineOf = new Map<string, number>();
+    values.lines.forEach((line, index) => {
+      const material = line.item?.value;
+      if (material && firstLineOf.has(material)) {
+        context.addIssue({
+          code: "custom",
+          path: ["lines", index, "item"],
+          message: "Cette matière première est déjà sur une autre ligne.",
+        });
+      } else if (material) {
+        firstLineOf.set(material, index);
+      }
+
+      if (!purchaseLineTotal(line).greaterThan(0)) {
+        context.addIssue({
+          code: "custom",
+          path: ["lines", index, "unitPriceTnd"],
+          message: "Le total de la ligne doit être supérieur à zéro.",
+        });
+      }
+    });
+
     const total = purchaseTotal(values.lines);
     const paid =
       values.paymentTerms === "PAID"
@@ -87,6 +120,15 @@ export const purchaseSchema = z
         code: "custom",
         path: ["dueDate"],
         message: "Indiquez l'échéance du reste à payer.",
+      });
+    } else if (
+      /^\d{4}-\d{2}-\d{2}$/.test(values.dueDate) &&
+      values.dueDate < values.purchaseDate
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["dueDate"],
+        message: "L'échéance ne peut pas précéder la date d'achat.",
       });
     }
   });
