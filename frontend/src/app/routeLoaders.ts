@@ -72,11 +72,14 @@ export const loadAuditPage = () =>
 export const loadSettingsPage = () =>
   import("../features/settings/pages/SettingsPage.js");
 export const loadAccueilPage = () => import("../features/home/AccueilPage.js");
+export const loadAnalyticsPage = () =>
+  import("../features/analytics/AnalyticsPage.js");
 
 /// Page chunks by navigation path, preloaded when the pointer rests on a
 /// nav link (UI-23) so the click lands on a ready page.
 const routeLoaders: Record<string, () => Promise<unknown>> = {
   "/": loadAccueilPage,
+  "/analyses": loadAnalyticsPage,
   "/produits": loadProductsPage,
   "/matieres-premieres": loadRawMaterialsPage,
   "/catalogue/parametres": loadCatalogSettingsPage,
@@ -89,6 +92,7 @@ const routeLoaders: Record<string, () => Promise<unknown>> = {
   "/commandes": loadOrdersPage,
   "/caisse": loadPos,
   "/caisse/ventes": loadPos,
+  "/caisse/sessions": loadPos,
   "/distributeurs": loadDistributorsPage,
   "/distribution/depot-vente": loadCustodyPage,
   "/distribution/reglements": loadDistributorPaymentsPage,

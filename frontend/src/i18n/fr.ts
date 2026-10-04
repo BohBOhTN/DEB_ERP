@@ -21,6 +21,8 @@ export const fr = {
   pos: "Caisse",
   sales: "Ventes",
   posSessions: "Sessions",
+  posSessionHistory: "Sessions de caisse",
+  analytics: "Analyses",
   directSale: "Vente directe",
   customerOrder: "Commande client",
   orders: "Commandes",

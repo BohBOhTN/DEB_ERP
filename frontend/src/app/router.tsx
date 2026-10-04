@@ -44,6 +44,7 @@ import {
   loadAuditPage,
   loadSettingsPage,
   loadAccueilPage,
+  loadAnalyticsPage,
 } from "./routeLoaders.js";
 import { AccessDeniedPage } from "../features/shell/AccessDeniedPage.js";
 import { NotFoundPage } from "../features/shell/NotFoundPage.js";
@@ -182,6 +183,9 @@ const SettingsPage = lazy(() =>
 const AccueilPage = lazy(() =>
   loadAccueilPage().then((m) => ({ default: m.AccueilPage })),
 );
+const AnalyticsPage = lazy(() =>
+  loadAnalyticsPage().then((m) => ({ default: m.AnalyticsPage })),
+);
 
 function PageFallback() {
   return <Skeleton variant="table" rows={6} />;
@@ -230,6 +234,15 @@ export const routes: RouteObject[] = [
               </Suspense>
             ),
             handle: { title: "Accueil" },
+          },
+          {
+            path: "/analyses",
+            element: (
+              <Guarded anyOf={["analytics.view"]}>
+                <AnalyticsPage />
+              </Guarded>
+            ),
+            handle: { title: "Analyses" },
           },
           {
             path: "/produits",
