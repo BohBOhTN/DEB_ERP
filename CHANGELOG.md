@@ -4,6 +4,19 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Issue 015, Commandes: the queue opened on the orders not yet due, today
+  only, and its other periods looked backwards, so orders for tomorrow or
+  past their hour were hidden and every figure read 0. `À traiter` is now
+  every open order, late ones flagged, over every date by default; open
+  tabs offer `Demain` and `7 jours`; a `Toutes` tab lists every state.
+
+### Added
+
+- Issue 015, Commandes: `Modifier` on a draft or confirmed order, from its
+  row or its page: pickup time, notes and lines.
+
 ## [2.2.0] - 2026-10-04
 
 The analytics module the owner asked for after the release of 2.1.0 (issue
