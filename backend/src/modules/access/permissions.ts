@@ -212,6 +212,7 @@ export const permissionCatalog = [
   permission("simulations.delete", "Simulations", "Supprimer les simulations"),
   permission("audit.view", "Audit", "Voir le journal d'audit"),
   permission("margin.view", "Marge", "Voir la marge approximative"),
+  permission("analytics.view", "Analyses", "Voir les analyses"),
 ] as const;
 
 export type PermissionKey = (typeof permissionCatalog)[number]["key"];
