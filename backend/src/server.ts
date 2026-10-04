@@ -14,6 +14,7 @@ import {
   createHealthCheck,
   createLivenessCheck,
 } from "./modules/health/health.service.js";
+import { AnalyticsService } from "./modules/analytics/analytics.service.js";
 import { HomeService } from "./modules/home/home.service.js";
 import { InventoryService } from "./modules/inventory/inventory.service.js";
 import { OrdersService } from "./modules/orders/orders.service.js";
@@ -61,6 +62,7 @@ const catalogService = new CatalogService(
 const customersService = new CustomersService(prisma);
 const distributionService = new DistributionService(prisma);
 const expensesService = new ExpensesService(prisma);
+const analyticsService = new AnalyticsService(prisma);
 const homeService = new HomeService(prisma);
 const inventoryService = new InventoryService(prisma);
 const ordersService = new OrdersService(prisma);
@@ -143,6 +145,9 @@ const app = createApp({
   },
   home: {
     homeService,
+  },
+  analytics: {
+    analyticsService,
   },
   serveOpenApi: env.NODE_ENV !== "production",
   mediaRoot: env.MEDIA_ROOT,

@@ -1,4 +1,5 @@
 import * as access from "../modules/access/access.routes.js";
+import * as analytics from "../modules/analytics/analytics.routes.js";
 import * as audit from "../modules/audit/audit.routes.js";
 import * as auth from "../modules/auth/auth.routes.js";
 import * as catalog from "../modules/catalog/catalog.routes.js";
@@ -840,6 +841,50 @@ const homeOperations: ApiOperation[] = [
   }),
 ];
 
+const analyticsOperations: ApiOperation[] = [
+  operation({
+    method: "get",
+    path: "/analytics/overview",
+    operationId: "analytics.overview",
+    summary: "Revenue, sales, expenses and margin of a period, with the trend",
+    tag: "analytics",
+    permissions: ["analytics.view"],
+    query: analytics.periodQuerySchema,
+    dataKey: "overview",
+  }),
+  operation({
+    method: "get",
+    path: "/analytics/frequency",
+    operationId: "analytics.frequency",
+    summary: "Sales and order pickups by weekday and hour",
+    tag: "analytics",
+    permissions: ["analytics.view"],
+    query: analytics.periodQuerySchema,
+    dataKey: "frequency",
+  }),
+  operation({
+    method: "get",
+    path: "/analytics/products",
+    operationId: "analytics.products",
+    summary: "Products sold over a period, categories and unsold products",
+    tag: "analytics",
+    permissions: ["analytics.view"],
+    query: analytics.periodQuerySchema,
+    dataKey: "products",
+  }),
+  operation({
+    method: "get",
+    path: "/analytics/customers",
+    operationId: "analytics.customers",
+    summary:
+      "Customer segments, best customers and customers to win back (also needs customers.view)",
+    tag: "analytics",
+    permissions: ["analytics.view"],
+    query: analytics.periodQuerySchema,
+    dataKey: "customers",
+  }),
+];
+
 const inventoryOperations: ApiOperation[] = [
   operation({
     method: "get",
@@ -1349,6 +1394,7 @@ export const apiOperations: readonly ApiOperation[] = [
   ...healthOperations,
   ...authOperations,
   ...homeOperations,
+  ...analyticsOperations,
   ...accessOperations,
   ...auditOperations,
   ...catalogOperations,
