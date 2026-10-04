@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider } from "react-router-dom";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AppProviders, createQueryClient } from "../../app/providers";
 import { createTestRouter } from "../../app/router";
 import { makeUser } from "../../test/factories/user";
@@ -40,6 +40,10 @@ describe("Expenses", () => {
       import("./pages/ExpensesPage"),
       import("./pages/ExpenseCategoriesPage"),
     ]);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   // AS-017 and AS-V2-21: cancelling a posted expense needs a reason, keeps
@@ -109,6 +113,10 @@ describe("Expenses", () => {
   // Issue #41: one period control on every list. "Ce mois" is the report's
   // default; "Hier" empties it; a custom range narrows it to the days typed.
   it("drives the report and the list from the shared period control", async () => {
+    // Pinned in September 2026, the month of the fixtures, so "Ce mois"
+    // holds them whatever the month the suite runs in.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-23T10:00:00.000Z"));
     const store = makeExpensesStore();
     server.use(...expensesHandlers(store));
     renderAt("/depenses");
