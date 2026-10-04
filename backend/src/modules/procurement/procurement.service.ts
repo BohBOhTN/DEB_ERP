@@ -14,6 +14,7 @@ import { planPaymentAllocations } from "../../shared/paymentAllocation.js";
 import { documentPaymentProjection } from "../../shared/paymentState.js";
 import { nextPurchaseReference } from "../../shared/references.js";
 import {
+  appliedPaymentEntries,
   balanceOf,
   balancesByKey,
   pageWithCursor,
@@ -105,6 +106,12 @@ export interface ProcurementTransactionHooks {
     context: { scope?: string; purchaseId?: string },
   ) => Promise<void> | void;
 }
+
+/// The two entry types that say what a payment settles (issue 016).
+const paymentEntryTypes: SupplierLedgerEntryType[] = [
+  SupplierLedgerEntryType.PAYMENT,
+  SupplierLedgerEntryType.PAYMENT_REVERSAL,
+];
 
 export class ProcurementService {
   public constructor(
@@ -754,31 +761,79 @@ export class ProcurementService {
           },
         });
 
-        // Every payment applied to the purchase comes back, the one taken at
-        // posting and any later règlement allocated to it, each against its
-        // own payment so the supplier statement still adds up.
-        const appliedPayments = await tx.supplierLedgerEntry.findMany({
-          where: {
-            purchaseId: purchase.id,
-            entryType: SupplierLedgerEntryType.PAYMENT,
-          },
-        });
+        // Every payment still applied to the purchase comes back, the one
+        // taken at posting and any later règlement allocated to it, each
+        // against its own payment so the supplier statement still adds up.
+        // "Still applied" is the net of payments and reversals (issue
+        // 016): a payment cancelled before the purchase is not given back
+        // a second time.
+        const applied = appliedPaymentEntries(
+          await tx.supplierLedgerEntry.findMany({
+            where: {
+              purchaseId: purchase.id,
+              entryType: { in: paymentEntryTypes },
+            },
+          }),
+          (entry) => entry.paymentId ?? "",
+        );
 
-        if (appliedPayments.length > 0) {
+        if (applied.length > 0) {
           await tx.supplierLedgerEntry.createMany({
-            data: appliedPayments.map((entry) => ({
+            data: applied.map(({ entry, appliedTnd }) => ({
               supplierId: purchase.supplierId,
               purchaseId: purchase.id,
               paymentId: entry.paymentId,
               entryType: SupplierLedgerEntryType.PAYMENT_REVERSAL,
-              amountTnd: new Prisma.Decimal(entry.amountTnd)
-                .negated()
-                .toFixed(3),
+              amountTnd: appliedTnd.toFixed(3),
               occurredAt: cancelledAt,
               actorUserId: actor.actorUserId,
               correlationId: actor.correlationId,
             })),
           });
+        }
+
+        // A payment with nothing left applied anywhere has been taken back
+        // whole by this cancellation: it is marked reversed, so the
+        // payments page shows it as cancelled and offers no second
+        // reversal. One spread over other purchases keeps its other shares.
+        const paymentIds = [
+          ...new Set(
+            applied
+              .map(({ entry }) => entry.paymentId)
+              .filter((id): id is string => Boolean(id)),
+          ),
+        ];
+
+        if (paymentIds.length > 0) {
+          const stillSettling = new Set(
+            appliedPaymentEntries(
+              await tx.supplierLedgerEntry.findMany({
+                where: {
+                  paymentId: { in: paymentIds },
+                  entryType: { in: paymentEntryTypes },
+                },
+              }),
+              (entry) => entry.paymentId ?? "",
+            ).map(({ entry }) => entry.paymentId),
+          );
+          const takenBack = paymentIds.filter((id) => !stillSettling.has(id));
+
+          if (takenBack.length > 0) {
+            await tx.supplierPayment.updateMany({
+              where: { id: { in: takenBack }, reversedAt: null },
+              data: {
+                reversedAt: cancelledAt,
+                reversedByUserId: actor.actorUserId,
+                reversalReason: `${[
+                  "Achat",
+                  updatedPurchase.reference,
+                  "annulé",
+                ]
+                  .filter(Boolean)
+                  .join(" ")} : ${reason}`,
+              },
+            });
+          }
         }
 
         await this.auditWithClient(tx, {
@@ -1251,17 +1306,32 @@ export class ProcurementService {
 
         await lockSupplier(tx, payment.supplierId);
         const reversedAt = new Date();
-        const paymentEntries = payment.ledgerEntries.filter(
-          (entry) => entry.entryType === SupplierLedgerEntryType.PAYMENT,
+        // Only what the payment still settles comes back (issue 016): the
+        // share of a purchase cancelled since has already been returned by
+        // that cancellation.
+        const applied = appliedPaymentEntries(
+          payment.ledgerEntries.filter((entry) =>
+            paymentEntryTypes.includes(entry.entryType),
+          ),
+          (entry) => entry.purchaseId ?? "",
         );
 
+        if (applied.length === 0) {
+          throw new AppError({
+            statusCode: 409,
+            code: "PAYMENT_DOCUMENT_CANCELLED",
+            message:
+              "Ce paiement est lié à un achat annulé : il a déjà été repris par l'annulation.",
+          });
+        }
+
         await tx.supplierLedgerEntry.createMany({
-          data: paymentEntries.map((entry) => ({
+          data: applied.map(({ entry, appliedTnd }) => ({
             supplierId: payment.supplierId,
             purchaseId: entry.purchaseId,
             paymentId: payment.id,
             entryType: SupplierLedgerEntryType.PAYMENT_REVERSAL,
-            amountTnd: new Prisma.Decimal(entry.amountTnd).negated().toFixed(3),
+            amountTnd: appliedTnd.toFixed(3),
             occurredAt: reversedAt,
             actorUserId: actor.actorUserId,
             correlationId: actor.correlationId,
@@ -1280,8 +1350,8 @@ export class ProcurementService {
         await this.refreshPurchaseProjections(
           tx,
           payment.supplierId,
-          paymentEntries
-            .map((entry) => entry.purchaseId)
+          applied
+            .map(({ entry }) => entry.purchaseId)
             .filter((id): id is string => Boolean(id)),
         );
 

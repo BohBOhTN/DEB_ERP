@@ -16,6 +16,7 @@ import {
 import { planPaymentAllocations } from "../../shared/paymentAllocation.js";
 import { documentPaymentProjection } from "../../shared/paymentState.js";
 import {
+  appliedPaymentEntries,
   balanceOf,
   balancesByKey,
   money,
@@ -747,18 +748,34 @@ export class CustomersService {
         const reversedInSessionId = payment.sessionId
           ? (await requireOpenPosSession(tx)).id
           : null;
-        const paymentEntries = payment.ledgerEntries.filter(
-          (entry) => entry.entryType === CustomerLedgerEntryType.PAYMENT,
+        // What the règlement still settles, per sale (issue 016): the net
+        // of its payments and reversals, so nothing comes back twice.
+        const applied = appliedPaymentEntries(
+          payment.ledgerEntries.filter(
+            (entry) =>
+              entry.entryType === CustomerLedgerEntryType.PAYMENT ||
+              entry.entryType === CustomerLedgerEntryType.PAYMENT_REVERSAL,
+          ),
+          (entry) => `${entry.saleId ?? ""}|${entry.balanceKind}`,
         );
 
+        if (applied.length === 0) {
+          throw new AppError({
+            statusCode: 409,
+            code: "PAYMENT_DOCUMENT_CANCELLED",
+            message:
+              "Ce règlement est lié à une vente annulée : il a déjà été repris par l'annulation.",
+          });
+        }
+
         await tx.customerLedgerEntry.createMany({
-          data: paymentEntries.map((entry) => ({
+          data: applied.map(({ entry, appliedTnd }) => ({
             customerId: payment.customerId,
             saleId: entry.saleId,
             paymentId: payment.id,
             balanceKind: entry.balanceKind,
             entryType: CustomerLedgerEntryType.PAYMENT_REVERSAL,
-            amountTnd: new Prisma.Decimal(entry.amountTnd).negated().toFixed(3),
+            amountTnd: appliedTnd.toFixed(3),
             occurredAt: reversedAt,
             actorUserId: actor.actorUserId,
             correlationId: actor.correlationId,
@@ -778,8 +795,8 @@ export class CustomersService {
         await this.refreshSaleProjections(
           tx,
           payment.customerId,
-          paymentEntries
-            .map((entry) => entry.saleId)
+          applied
+            .map(({ entry }) => entry.saleId)
             .filter((id): id is string => Boolean(id)),
         );
 

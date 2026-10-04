@@ -18,6 +18,7 @@ import {
 } from "../../shared/paymentState.js";
 import { unitCostSnapshot } from "../../shared/costSnapshot.js";
 import {
+  appliedPaymentEntries,
   balanceOf,
   balancesByKey,
   pageWithCursor,
@@ -1254,18 +1255,34 @@ export class DistributionService {
 
         await lockDistributor(tx, payment.distributorId);
         const reversedAt = new Date();
-        const paymentEntries = payment.ledgerEntries.filter(
-          (entry) => entry.entryType === DistributorLedgerEntryType.PAYMENT,
+        // What the payment still settles, per document (issue 016): the
+        // net of its payments and reversals, so nothing comes back twice.
+        const applied = appliedPaymentEntries(
+          payment.ledgerEntries.filter(
+            (entry) =>
+              entry.entryType === DistributorLedgerEntryType.PAYMENT ||
+              entry.entryType === DistributorLedgerEntryType.PAYMENT_REVERSAL,
+          ),
+          (entry) => `${entry.saleId ?? ""}|${entry.settlementId ?? ""}`,
         );
 
+        if (applied.length === 0) {
+          throw new AppError({
+            statusCode: 409,
+            code: "PAYMENT_DOCUMENT_CANCELLED",
+            message:
+              "Ce paiement est lié à un document annulé : il a déjà été repris par l'annulation.",
+          });
+        }
+
         await tx.distributorLedgerEntry.createMany({
-          data: paymentEntries.map((entry) => ({
+          data: applied.map(({ entry, appliedTnd }) => ({
             distributorId: payment.distributorId,
             saleId: entry.saleId,
             settlementId: entry.settlementId,
             paymentId: payment.id,
             entryType: DistributorLedgerEntryType.PAYMENT_REVERSAL,
-            amountTnd: new Prisma.Decimal(entry.amountTnd).negated().toFixed(3),
+            amountTnd: appliedTnd.toFixed(3),
             occurredAt: reversedAt,
             actorUserId: actor.actorUserId,
             correlationId: actor.correlationId,
@@ -1284,7 +1301,7 @@ export class DistributionService {
         await refreshDistributorDocumentProjections(
           tx,
           payment.distributorId,
-          paymentEntries.map((entry) => ({
+          applied.map(({ entry }) => ({
             saleId: entry.saleId ?? undefined,
             settlementId: entry.settlementId ?? undefined,
           })),
