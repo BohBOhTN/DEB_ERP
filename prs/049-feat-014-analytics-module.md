@@ -140,6 +140,17 @@ Fixed on the way, unrelated to the feature: `ExpensesPage.test.tsx`
 expected its September fixtures under "Ce mois" and has failed since
 1 October; its clock is now pinned like the other dated tests.
 
+Fixed after the first look at the page: the vertical `BarChart` drew its
+bars only under the pointer. Its bar had a width in the `:hover` rule
+alone, a defect of the kit since Sprint 18 that no page had met because
+none used the vertical variant. The bar now takes its column's width; a
+line under the columns reads the highest bar, then the one hovered,
+focused or tapped (a finger has no hover); a phone prints every second
+label when there are many columns; a horizontal row stacks its track
+under its label and value below 600 px. `e2e/analytics.spec.ts` now
+measures the bars without any hover at the three widths, which is what
+would have caught it.
+
 ## Database and Migration Impact
 
 No migration. One permission row, `analytics.view`, inserted by the
