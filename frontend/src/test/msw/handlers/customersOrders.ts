@@ -665,6 +665,7 @@ export function customersOrdersHandlers(
       const customerId = url.searchParams.get("customerId");
       const q = url.searchParams.get("q");
       const dueState = url.searchParams.get("dueState");
+      const open = url.searchParams.get("open") === "true";
       const dueAfter = url.searchParams.get("dueAfter");
       const dueBefore = url.searchParams.get("dueBefore");
       const now = Date.now();
@@ -672,6 +673,8 @@ export function customersOrdersHandlers(
         .filter(
           (order) =>
             (!status || order.status === status) &&
+            // Issue 015: every order awaiting fulfilment, late or not.
+            (!open || openStatuses.has(order.status)) &&
             matchesScope(order, customerId, q),
         )
         .filter(
@@ -756,6 +759,73 @@ export function customersOrdersHandlers(
       return order
         ? ok({ order: withFigures(order) })
         : apiError(404, "ORDER_NOT_FOUND", "Commande introuvable.");
+    }),
+    // Issue 015: editing a draft or confirmed order. Lines sent are priced
+    // again from the catalogue, as the server does.
+    http.patch(`${apiV1}/orders/:id`, async ({ params, request }) => {
+      const body = (await request.json()) as {
+        version: number;
+        requestedFulfillmentAt?: string;
+        notes?: string;
+        lines?: Array<{ productId: string; quantity: string }>;
+      };
+      const order = store.orders.find((row) => row.id === params.id);
+      if (!order)
+        return apiError(404, "ORDER_NOT_FOUND", "Commande introuvable.");
+      if (body.version !== order.version)
+        return apiError(
+          409,
+          "VERSION_CONFLICT",
+          "Cette commande a été modifiée. Rechargez puis réessayez.",
+        );
+      if (!["DRAFT", "CONFIRMED"].includes(order.status))
+        return apiError(
+          409,
+          "ORDER_NOT_EDITABLE",
+          "Cette commande ne peut plus être modifiée.",
+        );
+      const lines = body.lines?.map((line, index) => {
+        const product =
+          [bread, croissant].find(
+            (candidate) => candidate.id === line.productId,
+          ) ?? bread;
+        return {
+          id: `oline-edit-${order.id}-${index}`,
+          productId: product.id,
+          unitId: product.baseUnitId,
+          quantity: new Decimal(line.quantity).toFixed(6),
+          unitPriceTnd: product.salePriceTnd,
+          lineTotalTnd: new Decimal(line.quantity)
+            .times(product.salePriceTnd)
+            .toFixed(3),
+          productNameSnapshot: product.name,
+          unitNameSnapshot: product.baseUnit.name,
+        };
+      });
+      Object.assign(order, {
+        ...(body.requestedFulfillmentAt
+          ? {
+              requestedFulfillmentAt: new Date(
+                body.requestedFulfillmentAt,
+              ).toISOString(),
+            }
+          : {}),
+        ...(body.notes !== undefined ? { notes: body.notes || null } : {}),
+        ...(lines
+          ? {
+              lines,
+              _count: { lines: lines.length },
+              totalTnd: lines
+                .reduce(
+                  (sum, line) => sum.plus(line.lineTotalTnd),
+                  new Decimal(0),
+                )
+                .toFixed(3),
+            }
+          : {}),
+        version: order.version + 1,
+      });
+      return ok({ order: withFigures(order) });
     }),
     http.post(`${apiV1}/orders/:id/status`, async ({ params, request }) => {
       const body = (await request.json()) as {

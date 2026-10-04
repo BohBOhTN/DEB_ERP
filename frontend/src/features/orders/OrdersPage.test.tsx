@@ -1,11 +1,13 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http } from "msw";
 import { RouterProvider } from "react-router-dom";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AppProviders, createQueryClient } from "../../app/providers";
 import { createTestRouter } from "../../app/router";
 import { makeOrder } from "../../test/factories/customers";
 import { makeUser } from "../../test/factories/user";
+import { apiV1 } from "../../test/msw/envelope";
 import { authHandlers } from "../../test/msw/handlers/auth";
 import {
   customersOrdersHandlers,
@@ -13,6 +15,7 @@ import {
 } from "../../test/msw/handlers/customersOrders";
 import { server } from "../../test/msw/server";
 import { mockViewport } from "../../test/viewport";
+import { boardQuery, isLate, presetsFor } from "./ordersBoard";
 
 const clerk = makeUser({
   effectivePermissions: [
@@ -52,6 +55,7 @@ describe("Orders", () => {
       import("./pages/OrdersPage"),
       import("./pages/OrderEditorPage"),
       import("./pages/OrderDetailPage"),
+      import("./pages/OrderEditPage"),
     ]);
   });
 
@@ -365,5 +369,242 @@ describe("Orders", () => {
     expect(
       screen.queryByRole("button", { name: "Annuler" }),
     ).not.toBeInTheDocument();
+  });
+
+  // Issue 015: the client read the page as broken because it opened on
+  // "not yet due, today": orders for tomorrow and orders past their hour
+  // were both hidden and every figure read 0.
+  describe("the queue by default (issue 015)", () => {
+    function queue() {
+      // 10:00 in Tunis on Wednesday 23 September 2026.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-23T09:00:00.000Z"));
+      return makeCustomersOrdersStore({
+        orders: [
+          makeOrder({
+            id: "order-1",
+            reference: "CMD-000001",
+            requestedFulfillmentAt: "2026-09-24T08:00:00.000Z",
+          }),
+          makeOrder({
+            id: "order-2",
+            reference: "CMD-000002",
+            status: "DRAFT",
+            requestedFulfillmentAt: "2026-09-29T15:00:00.000Z",
+          }),
+          makeOrder({
+            id: "order-3",
+            reference: "CMD-000003",
+            requestedFulfillmentAt: "2026-09-23T08:00:00.000Z",
+          }),
+          makeOrder({
+            id: "order-4",
+            reference: "CMD-000004",
+            status: "COMPLETED",
+            requestedFulfillmentAt: "2026-09-22T09:00:00.000Z",
+            completedAt: "2026-09-22T09:10:00.000Z",
+          }),
+        ],
+      });
+    }
+
+    function captureListRequests() {
+      const requests: URLSearchParams[] = [];
+      server.use(
+        http.get(`${apiV1}/orders`, ({ request }) => {
+          requests.push(new URL(request.url).searchParams);
+          // Fall through to the store's handler.
+          return undefined;
+        }),
+      );
+      return requests;
+    }
+
+    const references = (table: HTMLElement) =>
+      within(table)
+        .getAllByText(/^CMD-\d{6}$/)
+        .map((cell) => cell.textContent);
+
+    it("opens on every open order, late or not, with real figures", async () => {
+      server.use(...customersOrdersHandlers(queue()));
+      const requests = captureListRequests();
+      renderAt("/commandes", 1280);
+
+      const table = await screen.findByRole("table", { name: "Commandes" });
+      // Soonest first: the late one, tomorrow's, next week's. Not the
+      // completed one.
+      expect(references(table)).toEqual([
+        "CMD-000003",
+        "CMD-000001",
+        "CMD-000002",
+      ]);
+      expect(requests[0]?.get("open")).toBe("true");
+      expect(requests[0]?.get("dueAfter")).toBeNull();
+      expect(requests[0]?.get("dueState")).toBeNull();
+      expect(screen.getByRole("radio", { name: "Toutes" })).toBeChecked();
+      expect(screen.getByText("Toutes les dates")).toBeInTheDocument();
+
+      expect(
+        screen.getByText("Commandes ouvertes").parentElement?.parentElement,
+      ).toHaveTextContent("3");
+      const late = within(table).getByText("CMD-000003").closest("tr");
+      expect(late).toHaveTextContent("En retard · il y a 1 h");
+      expect(
+        within(table).getByText("CMD-000001").closest("tr"),
+      ).not.toHaveTextContent("En retard");
+    });
+
+    it("narrows the queue to tomorrow, then to the next seven days", async () => {
+      server.use(...customersOrdersHandlers(queue()));
+      const requests = captureListRequests();
+      renderAt("/commandes", 1280);
+      const table = await screen.findByRole("table", { name: "Commandes" });
+
+      await userEvent.click(screen.getByRole("radio", { name: "Demain" }));
+      await waitFor(() => expect(references(table)).toEqual(["CMD-000001"]));
+      // Thursday 24 September, a whole day in Tunis.
+      expect(requests.at(-1)?.get("dueAfter")).toBe("2026-09-23T23:00:00.000Z");
+      expect(requests.at(-1)?.get("dueBefore")).toBe(
+        "2026-09-24T22:59:59.999Z",
+      );
+
+      await userEvent.click(screen.getByRole("radio", { name: "7 jours" }));
+      await waitFor(() =>
+        expect(references(table)).toEqual([
+          "CMD-000003",
+          "CMD-000001",
+          "CMD-000002",
+        ]),
+      );
+      expect(requests.at(-1)?.get("dueBefore")).toBe(
+        "2026-09-29T22:59:59.999Z",
+      );
+    });
+
+    it("offers backward windows on a closed tab and lists everything under Toutes", async () => {
+      server.use(...customersOrdersHandlers(queue()));
+      renderAt("/commandes?period=tomorrow", 1280);
+      const table = await screen.findByRole("table", { name: "Commandes" });
+      expect(screen.getByRole("radio", { name: "Demain" })).toBeChecked();
+
+      await userEvent.click(screen.getByRole("tab", { name: "Terminées" }));
+      // "Demain" is not a window of the past: the tab falls back to every
+      // date instead of filtering by something it does not show.
+      expect(
+        screen.getAllByRole("radio").map((radio) => radio.textContent),
+      ).toEqual([
+        "Toutes",
+        "Aujourd'hui",
+        "Cette semaine",
+        "Ce mois",
+        "Personnalisée",
+      ]);
+      expect(screen.getByRole("radio", { name: "Toutes" })).toBeChecked();
+      await waitFor(() => expect(references(table)).toEqual(["CMD-000004"]));
+
+      await userEvent.click(screen.getByRole("tab", { name: "Toutes" }));
+      await waitFor(() => expect(references(table)).toHaveLength(4));
+    });
+
+    it("keeps the rules of the board in one place", () => {
+      const window = { from: "2026-09-24", to: "2026-09-24" };
+      expect(boardQuery("todo", { from: "", to: "" })).toEqual({ open: true });
+      expect(boardQuery("todo", window)).toEqual({
+        open: true,
+        dueAfter: "2026-09-23T23:00:00.000Z",
+        dueBefore: "2026-09-24T22:59:59.999Z",
+      });
+      // Overdue is dated by definition: the window does not apply.
+      expect(boardQuery("overdue", window)).toEqual({ dueState: "OVERDUE" });
+      expect(boardQuery("all", { from: "", to: "" })).toEqual({});
+      expect(presetsFor("ready")).toContain("next7");
+      expect(presetsFor("cancelled")).not.toContain("tomorrow");
+
+      const now = new Date("2026-09-23T09:00:00.000Z");
+      const due = "2026-09-23T08:00:00.000Z";
+      expect(
+        isLate({ status: "READY", requestedFulfillmentAt: due }, now),
+      ).toBe(true);
+      expect(
+        isLate({ status: "COMPLETED", requestedFulfillmentAt: due }, now),
+      ).toBe(false);
+    });
+
+    it("edits a confirmed order from its row and sends its lines only when they change", async () => {
+      const store = queue();
+      server.use(...customersOrdersHandlers(store));
+      const bodies: Array<Record<string, unknown>> = [];
+      server.use(
+        http.patch(`${apiV1}/orders/:id`, async ({ request }) => {
+          bodies.push(
+            (await request.clone().json()) as Record<string, unknown>,
+          );
+          return undefined;
+        }),
+      );
+      renderAt("/commandes", 1280);
+      const table = await screen.findByRole("table", { name: "Commandes" });
+
+      // A draft and a confirmed order can be edited; a completed one cannot.
+      const row = within(table).getByText("CMD-000001").closest("tr");
+      await userEvent.click(
+        within(row as HTMLElement).getByRole("button", { name: "Actions" }),
+      );
+      await userEvent.click(
+        await screen.findByRole("menuitem", { name: "Modifier" }),
+      );
+
+      expect(
+        await screen.findByRole("heading", {
+          level: 1,
+          name: "Modifier CMD-000001",
+        }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Amel Trabelsi")).toBeInTheDocument();
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Notes" }),
+        "Sans sésame",
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Enregistrer les modifications" }),
+      );
+
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "CMD-000001" }),
+      ).toBeInTheDocument();
+      expect(bodies[0]).toMatchObject({ version: 1, notes: "Sans sésame" });
+      // Same products, same quantities: the agreed prices are left alone.
+      expect(bodies[0]).not.toHaveProperty("lines");
+      expect(
+        store.orders.find((order) => order.id === "order-1"),
+      ).toMatchObject({ notes: "Sans sésame", version: 2 });
+
+      await userEvent.click(screen.getByRole("button", { name: "Modifier" }));
+      const quantity = await screen.findByRole("textbox", {
+        name: "Quantité 1",
+      });
+      await userEvent.clear(quantity);
+      await userEvent.type(quantity, "12");
+      await userEvent.click(
+        screen.getByRole("button", { name: "Enregistrer les modifications" }),
+      );
+
+      await waitFor(() => expect(bodies).toHaveLength(2));
+      expect(bodies[1]).toMatchObject({
+        version: 2,
+        lines: [{ productId: "product-1", quantity: "12" }],
+      });
+    });
+
+    it("refuses to edit an order that is being prepared", async () => {
+      const store = queue();
+      store.orders[0]!.status = "PREPARING";
+      server.use(...customersOrdersHandlers(store));
+      renderAt("/commandes/order-1/modifier", 1280);
+
+      expect(
+        await screen.findByText("Commande non modifiable"),
+      ).toBeInTheDocument();
+    });
   });
 });
