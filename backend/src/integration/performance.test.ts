@@ -1,5 +1,7 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { AnalyticsService } from "../modules/analytics/analytics.service.js";
+import { resolvePeriod } from "../modules/analytics/period.js";
 import { CustomersService } from "../modules/customers/customers.service.js";
 import { DistributionService } from "../modules/distribution/distribution.service.js";
 import { ExpensesService } from "../modules/expenses/expenses.service.js";
@@ -54,6 +56,7 @@ suite("query performance on a large history", () => {
   let distribution: DistributionService;
   let expenses: ExpensesService;
   let pos: PosService;
+  let analytics: AnalyticsService;
 
   beforeAll(async () => {
     prisma = new PrismaClient({
@@ -66,6 +69,7 @@ suite("query performance on a large history", () => {
     distribution = new DistributionService(prisma);
     expenses = new ExpensesService(prisma);
     pos = new PosService(prisma);
+    analytics = new AnalyticsService(prisma);
   }, 300_000);
 
   afterAll(async () => {
@@ -142,6 +146,22 @@ suite("query performance on a large history", () => {
 
   it("keeps the busiest reads within the latency budget", async () => {
     console.info("[performance] measuring");
+    const today = new Date().toISOString().slice(0, 10);
+    const analysis = {
+      period: resolvePeriod({
+        from: new Date(Date.now() - 89 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 10),
+        to: today,
+      }),
+      permissions: new Set([
+        "analytics.view",
+        "expenses.view",
+        "margin.view",
+        "orders.view",
+        "customers.view",
+      ]),
+    };
     const timings = {
       customerBalances: await p95(() =>
         customers.listCustomerBalances({ page: 1, pageSize: 25 }),
@@ -173,6 +193,11 @@ suite("query performance on a large history", () => {
       productSearch: await p95(() =>
         pos.listProducts({ search: "the", page: 1, pageSize: 25 }),
       ),
+      // Issue 014: the analyses over the last ninety days of the history.
+      analyticsOverview: await p95(() => analytics.getOverview(analysis)),
+      analyticsFrequency: await p95(() => analytics.getFrequency(analysis)),
+      analyticsProducts: await p95(() => analytics.getProducts(analysis)),
+      analyticsCustomers: await p95(() => analytics.getCustomers(analysis)),
     };
 
     // Reported in the CI log as evidence for the sprint brief.

@@ -1,6 +1,11 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 import { cx } from "../../../lib/cx.js";
+import { useIsPhone } from "../../../lib/hooks/useBreakpoint.js";
 import styles from "./BarChart.module.css";
+
+/// Column labels that fit under a vertical chart without touching: a phone
+/// has room for about eight, wider screens for every hour of a day.
+const maxColumnLabels = { phone: 8, wide: 24 };
 
 export interface BarDatum {
   label: string;
@@ -21,9 +26,11 @@ export interface BarChartProps {
   className?: string;
 }
 
-/// Accessible SVG bars, tokens only (05 section 3.2). Each bar is a
-/// focusable element with its own label, so keyboard and screen-reader
-/// users read the same figures as everyone else.
+/// Accessible bars, tokens only (05 section 3.2). Each bar is a focusable
+/// element with its own label, so keyboard and screen-reader users read
+/// the same figures as everyone else. A vertical chart also writes the bar
+/// that is hovered, focused or tapped in a line under the columns (the
+/// highest one until then), because a finger has no hover and no tooltip.
 export function BarChart({
   title,
   data,
@@ -33,6 +40,8 @@ export function BarChart({
   className,
 }: BarChartProps) {
   const titleId = useId();
+  const isPhone = useIsPhone();
+  const [active, setActive] = useState<number | null>(null);
   const max = Math.max(1, ...data.map((item) => item.value));
   const highlighted =
     highlightIndex ??
@@ -78,7 +87,12 @@ export function BarChart({
     );
   }
 
-  const barWidth = 100 / Math.max(1, data.length);
+  // With many columns only every second or third label is printed; every
+  // bar keeps its own accessible label and its line in the readout.
+  const labelStep = Math.ceil(
+    data.length / (isPhone ? maxColumnLabels.phone : maxColumnLabels.wide),
+  );
+  const shown = data[active ?? highlighted];
 
   return (
     <div
@@ -89,29 +103,45 @@ export function BarChart({
       <p className="visually-hidden" id={titleId}>
         {title}
       </p>
-      <div className={styles.vertical} style={{ height }}>
+      <div
+        className={cx(styles.vertical, data.length > 12 && styles.dense)}
+        style={{ height }}
+      >
         {data.map((item, index) => (
           <button
             key={`${item.label}-${index}`}
             type="button"
             className={cx(
               styles.column,
-              index === highlighted && styles.highlight,
+              index === highlighted && item.value > 0 && styles.highlight,
+              index === active && styles.active,
             )}
-            style={{ width: `${barWidth}%` }}
             aria-label={`${item.label} : ${item.formatted}`}
-            title={`${item.label} : ${item.formatted}`}
+            onMouseEnter={() => setActive(index)}
+            onFocus={() => setActive(index)}
+            onClick={() => setActive(index)}
           >
             <span
-              className={styles.columnBar}
-              style={{ height: `${(item.value / max) * 100}%` }}
+              className={cx(
+                styles.columnBar,
+                item.value <= 0 && styles.columnEmpty,
+              )}
+              style={{ height: `${(Math.max(0, item.value) / max) * 100}%` }}
             />
-            <span className={styles.columnLabel} aria-hidden="true">
-              {item.label}
-            </span>
+            {index % labelStep === 0 ? (
+              <span className={styles.columnLabel} aria-hidden="true">
+                {item.label}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
+      {shown ? (
+        <p className={styles.readout} aria-live="polite">
+          <strong>{shown.label}</strong>
+          {` : ${shown.formatted}`}
+        </p>
+      ) : null}
     </div>
   );
 }

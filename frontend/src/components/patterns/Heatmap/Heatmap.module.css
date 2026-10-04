@@ -1,0 +1,119 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+}
+
+/* A wide grid scrolls inside its card, never the page. */
+.scroller {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 3px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: max-content repeat(
+      var(--heatmap-columns),
+      minmax(22px, 1fr)
+    );
+  gap: 3px;
+  align-items: center;
+}
+
+.row {
+  display: contents;
+}
+
+.columnLabel,
+.rowLabel {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.columnLabel {
+  text-align: center;
+}
+
+.rowLabel {
+  padding-right: var(--space-2);
+}
+
+.cell {
+  height: 28px;
+  background: var(--heat-0);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.cell:hover {
+  outline: 2px solid var(--border-strong);
+}
+
+.cell:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.cell[data-level="1"],
+.swatch[data-level="1"] {
+  background: var(--heat-1);
+}
+
+.cell[data-level="2"],
+.swatch[data-level="2"] {
+  background: var(--heat-2);
+}
+
+.cell[data-level="3"],
+.swatch[data-level="3"] {
+  background: var(--heat-3);
+}
+
+.cell[data-level="4"],
+.swatch[data-level="4"] {
+  background: var(--heat-4);
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.readout {
+  min-height: var(--leading-sm);
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--text-primary);
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  background: var(--heat-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cell {
+    transition: none;
+  }
+}

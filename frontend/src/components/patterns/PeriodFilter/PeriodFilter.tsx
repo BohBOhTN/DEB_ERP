@@ -17,6 +17,9 @@ export interface PeriodFilterProps {
   value: PeriodValue;
   onChange: (value: PeriodValue) => void;
   label?: string;
+  /// The presets offered; the list presets by default, the analysis ones
+  /// (`analysisPeriodPresets`) on a page that reads a trend.
+  presets?: PeriodPreset[];
   className?: string;
 }
 
@@ -29,6 +32,7 @@ export function PeriodFilter({
   value,
   onChange,
   label = "Période",
+  presets = periodPresets,
   className,
 }: PeriodFilterProps) {
   const isPhone = useIsPhone();
@@ -55,7 +59,7 @@ export function PeriodFilter({
                 : { preset, from: "", to: "" },
             )
           }
-          options={periodPresets.map((preset) => ({
+          options={presets.map((preset) => ({
             value: preset,
             label: periodLabels[preset],
           }))}

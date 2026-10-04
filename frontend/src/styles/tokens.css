@@ -64,6 +64,14 @@
   --chart-4: var(--brand-olive);
   --chart-track: var(--brand-navy-100);
 
+  /* Heat scale (3.2 `Heatmap`): five steps of navy, from nothing to the
+     busiest cell. */
+  --heat-0: var(--bg-surface-muted);
+  --heat-1: #cad7e6;
+  --heat-2: #93abc8;
+  --heat-3: #5278a4;
+  --heat-4: var(--brand-navy);
+
   /* 2.2 Typography */
   --font-sans: "Inter", system-ui, sans-serif;
   --font-display: "Fraunces", "Georgia", serif;

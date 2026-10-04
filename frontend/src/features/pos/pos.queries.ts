@@ -12,6 +12,8 @@ export const posKeys = {
   sale: (id: string) => ["pos", "sale", id] as const,
   sessions: (query: api.SessionListQuery) =>
     ["pos", "sessions", query] as const,
+  sessionsSummary: (query: api.SessionFilterQuery) =>
+    ["pos", "sessions", "summary", query] as const,
   sessionDetail: (id: string) => ["pos", "sessionDetail", id] as const,
   products: (q: string) => ["pos", "products", q] as const,
 };
@@ -70,6 +72,15 @@ export function useSessions(query: api.SessionListQuery) {
   return useQuery({
     queryKey: posKeys.sessions(query),
     queryFn: () => api.listSessions(query),
+    placeholderData: (previous) => previous,
+    ...tier("list"),
+  });
+}
+
+export function useSessionsSummary(query: api.SessionFilterQuery) {
+  return useQuery({
+    queryKey: posKeys.sessionsSummary(query),
+    queryFn: () => api.getSessionsSummary(query),
     placeholderData: (previous) => previous,
     ...tier("list"),
   });

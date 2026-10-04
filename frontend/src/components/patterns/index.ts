@@ -23,6 +23,7 @@ export {
 export { DetailPanel } from "./DetailPanel/DetailPanel.js";
 export { FilterBar } from "./FilterBar/FilterBar.js";
 export { FormDialog } from "./FormDialog/FormDialog.js";
+export { Heatmap, type HeatmapCell } from "./Heatmap/Heatmap.js";
 export {
   KeyValueList,
   type KeyValueItem,
@@ -54,3 +55,4 @@ export {
 export { StockBadge } from "./StockBadge/StockBadge.js";
 export { Timeline, type TimelineEvent } from "./Timeline/Timeline.js";
 export { TotalsCard } from "./TotalsCard/TotalsCard.js";
+export { TrendChart, type TrendPoint } from "./TrendChart/TrendChart.js";

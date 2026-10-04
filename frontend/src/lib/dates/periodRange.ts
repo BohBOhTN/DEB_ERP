@@ -1,10 +1,20 @@
 import { formatInTimeZone } from "date-fns-tz";
 import { businessTimeZone, toBusinessDate } from "../../i18n/format.js";
 
-/// The five presets every list with a date dimension offers (issue #41).
-/// `custom` is a single day or a range typed by the user.
-export type PeriodPreset = "today" | "yesterday" | "week" | "month" | "custom";
+/// `custom` is a single day or a range typed by the user. The `last30`,
+/// `last90` and `year` windows belong to the analyses (issue 014), where a
+/// day is too short to show a trend.
+export type PeriodPreset =
+  | "today"
+  | "yesterday"
+  | "week"
+  | "month"
+  | "last30"
+  | "last90"
+  | "year"
+  | "custom";
 
+/// The five presets every list with a date dimension offers (issue #41).
 export const periodPresets: PeriodPreset[] = [
   "today",
   "yesterday",
@@ -13,11 +23,23 @@ export const periodPresets: PeriodPreset[] = [
   "custom",
 ];
 
+/// The five presets of an analysis: windows long enough for a trend.
+export const analysisPeriodPresets: PeriodPreset[] = [
+  "month",
+  "last30",
+  "last90",
+  "year",
+  "custom",
+];
+
 export const periodLabels: Record<PeriodPreset, string> = {
   today: "Aujourd'hui",
   yesterday: "Hier",
   week: "Cette semaine",
   month: "Ce mois",
+  last30: "30 jours",
+  last90: "90 jours",
+  year: "Cette année",
   custom: "Personnalisée",
 };
 
@@ -34,7 +56,7 @@ export interface PeriodRange {
 }
 
 export function isPeriodPreset(value: string): value is PeriodPreset {
-  return (periodPresets as string[]).includes(value);
+  return Object.hasOwn(periodLabels, value);
 }
 
 /// Moves a `YYYY-MM-DD` business date by whole days without touching time
@@ -51,7 +73,8 @@ export function shiftBusinessDate(date: string, days: number): string {
 }
 
 /// The business-day range a period resolves to, in `Africa/Tunis`: today,
-/// yesterday, Monday to today, the 1st to today, or what the user typed. A
+/// yesterday, Monday to today, the 1st to today, the last thirty or ninety
+/// days, 1 January to today, or what the user typed. A
 /// custom period with one date is that single day; with none it is every
 /// date (no filter).
 export function periodRange(value: PeriodValue, now = new Date()): PeriodRange {
@@ -71,6 +94,12 @@ export function periodRange(value: PeriodValue, now = new Date()): PeriodRange {
     }
     case "month":
       return { from: `${today.slice(0, 8)}01`, to: today };
+    case "last30":
+      return { from: shiftBusinessDate(today, -29), to: today };
+    case "last90":
+      return { from: shiftBusinessDate(today, -89), to: today };
+    case "year":
+      return { from: `${today.slice(0, 4)}-01-01`, to: today };
     case "custom": {
       const from = value.from || value.to;
       const to = value.to || value.from;

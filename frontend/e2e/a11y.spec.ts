@@ -8,6 +8,10 @@ import { mockApi, ownerPermissions } from "./mockApi";
 const routes = [
   "/connexion",
   "/",
+  "/analyses",
+  "/analyses?tab=frequency",
+  "/analyses?tab=products",
+  "/analyses?tab=customers",
   "/produits",
   "/matieres-premieres",
   "/catalogue/parametres",

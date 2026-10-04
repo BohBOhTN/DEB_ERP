@@ -35,6 +35,9 @@ export interface PosSession {
 export interface SessionTotals {
   salesCount: number;
   salesTotalTnd: string;
+  /// What is still due today on the session's sales: the name dates from
+  /// before règlements settled sales (issue 007), the screen says "Reste à
+  /// encaisser".
   creditGrantedTnd: string;
   cashCollectedTnd: string;
   advancesReceivedTnd: string;
@@ -48,9 +51,40 @@ export interface SessionTotals {
   saleRefundsTnd: string;
 }
 
+/// What a session looked like (issue 014): its posted sales by hour in
+/// Tunis and its best products.
+export interface SessionInsights {
+  /// `null` for a session without a sale.
+  averageBasketTnd: string | null;
+  cancelledSalesCount: number;
+  hourly: Array<{ hour: number; count: number; totalTnd: string }>;
+  topProducts: Array<{
+    productId: string;
+    name: string;
+    unitName: string;
+    quantity: string;
+    revenueTnd: string;
+  }>;
+}
+
 export interface SessionDetail {
   session: PosSession;
   totals: SessionTotals;
+  insights: SessionInsights;
+}
+
+/// The totals above the session history, for the list's filters.
+export interface SessionsSummary {
+  count: number;
+  openCount: number;
+  closedCount: number;
+  salesCount: number;
+  salesTotalTnd: string;
+  /// Shortages and surpluses of the closed sessions, and their sum.
+  differenceTnd: string;
+  shortageTnd: string;
+  surplusTnd: string;
+  withDifferenceCount: number;
 }
 
 export interface PosProduct {
@@ -264,13 +298,16 @@ export async function getSale(saleId: string): Promise<Sale> {
   return (await apiClient.get<{ sale: Sale }>(`/pos/sales/${saleId}`)).sale;
 }
 
-export interface SessionListQuery {
-  page: number;
-  pageSize: number;
-  sort?: SortSpec;
+export interface SessionFilterQuery {
   from?: string;
   to?: string;
   status?: "OPEN" | "CLOSED";
+}
+
+export interface SessionListQuery extends SessionFilterQuery {
+  page: number;
+  pageSize: number;
+  sort?: SortSpec;
 }
 
 export function listSessions(
@@ -279,6 +316,20 @@ export function listSessions(
   return apiClient.list<PosSession>("/pos/sessions", {
     query: toSearchParams({ ...query }),
   });
+}
+
+export async function getSessionsSummary(
+  query: SessionFilterQuery,
+): Promise<SessionsSummary> {
+  return (
+    await apiClient.get<{ summary: SessionsSummary }>("/pos/sessions/summary", {
+      query: {
+        ...(query.from ? { from: query.from } : {}),
+        ...(query.to ? { to: query.to } : {}),
+        ...(query.status ? { status: query.status } : {}),
+      },
+    })
+  ).summary;
 }
 
 export function getSession(sessionId: string): Promise<SessionDetail> {

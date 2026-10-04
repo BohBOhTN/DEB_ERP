@@ -63,6 +63,7 @@ export const roots = {
   access: ["access"],
   session: ["auth", "me"],
   home: ["home"],
+  analytics: ["analytics"],
   audit: ["audit"],
 } as const satisfies Record<string, readonly string[]>;
 
@@ -77,6 +78,7 @@ const map: Record<DomainEvent, readonly QueryRoot[]> = {
     roots.posProducts,
     roots.inventory,
     roots.catalogRelated,
+    roots.analytics,
   ],
   "catalog.rawMaterial": [
     roots.catalogRawMaterials,
@@ -113,7 +115,11 @@ const map: Record<DomainEvent, readonly QueryRoot[]> = {
     roots.home,
   ],
   "procurement.payment": [roots.procurement, roots.home],
-  "customer.record": [roots.customersList, roots.customersDetail],
+  "customer.record": [
+    roots.customersList,
+    roots.customersDetail,
+    roots.analytics,
+  ],
   // Cash taken at the till belongs to the open session's expected cash; a
   // règlement settles sales, whose paid state shows on the sales list and
   // the receipt (issue #66).
@@ -123,6 +129,7 @@ const map: Record<DomainEvent, readonly QueryRoot[]> = {
     roots.posSales,
     roots.posSale,
     roots.home,
+    roots.analytics,
   ],
   // Completion posts a sale and moves stock; advances move cash and the
   // customer ledger.
@@ -132,7 +139,9 @@ const map: Record<DomainEvent, readonly QueryRoot[]> = {
     roots.inventory,
     roots.posSession,
     roots.posSales,
+    roots.posSessions,
     roots.home,
+    roots.analytics,
   ],
   "pos.session": [
     roots.posSession,
@@ -140,26 +149,40 @@ const map: Record<DomainEvent, readonly QueryRoot[]> = {
     roots.posSessionDetail,
     roots.home,
   ],
+  // The session history prints each session's sales count and total, and
+  // every analysis reads posted sales (issue 014).
   "pos.sale": [
     roots.posSession,
     roots.posSales,
     roots.posSale,
+    roots.posSessions,
     roots.posSessionDetail,
     roots.inventory,
     roots.customers,
     roots.orders,
     roots.home,
+    roots.analytics,
   ],
   "distribution.distributor": [
     roots.distributionDistributors,
     roots.distributionDistributor,
   ],
   // A direct sale moves stock and the distributor's ledger at once.
-  "distribution.sale": [roots.distribution, roots.inventory, roots.home],
+  "distribution.sale": [
+    roots.distribution,
+    roots.inventory,
+    roots.home,
+    roots.analytics,
+  ],
   "distribution.dispatch": [roots.distribution, roots.inventory, roots.home],
-  "distribution.settlement": [roots.distribution, roots.inventory, roots.home],
+  "distribution.settlement": [
+    roots.distribution,
+    roots.inventory,
+    roots.home,
+    roots.analytics,
+  ],
   "distribution.payment": [roots.distribution, roots.home],
-  expense: [roots.expenses, roots.home],
+  expense: [roots.expenses, roots.home, roots.analytics],
   // Category names are printed on every expense row.
   "expense.category": [roots.expensesCategories, roots.expensesList],
   simulation: [roots.simulations],

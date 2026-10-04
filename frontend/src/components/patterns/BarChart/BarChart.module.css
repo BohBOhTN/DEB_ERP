@@ -36,11 +36,6 @@
   transition: width var(--motion-slow) var(--ease-out);
 }
 
-.columnBar {
-  background: var(--chart-1);
-}
-
-.highlight .columnBar,
 .bar.highlight {
   background: var(--chart-1);
 }
@@ -57,14 +52,22 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* More than a dozen columns: thinner gaps so each bar keeps some width on
+   a phone. */
+.dense {
+  gap: 2px;
+}
+
 .column {
   position: relative;
   display: flex;
+  flex: 1 1 0;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
+  min-width: 0;
   height: 100%;
-  padding: 0 2px;
+  padding: 0 1px;
   border-radius: var(--radius-sm);
 }
 
@@ -73,12 +76,36 @@
   box-shadow: var(--focus-ring);
 }
 
-.column:hover .columnBar {
+/* The bar itself: as wide as its column, gold like the horizontal bars,
+   navy for the highest one. A bar of zero keeps a thin stub in the track
+   colour so the column still reads as "nothing here". */
+.columnBar {
   width: 100%;
+  max-width: 48px;
   min-height: 2px;
   background: var(--chart-2);
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  transition: height var(--motion-slow) var(--ease-out);
+  transition:
+    height var(--motion-slow) var(--ease-out),
+    background-color var(--motion-fast) var(--ease-out);
+}
+
+.highlight .columnBar {
+  background: var(--chart-1);
+}
+
+.columnEmpty {
+  background: var(--chart-track);
+}
+
+.column:hover .columnBar,
+.column.active .columnBar {
+  background: var(--primary-hover);
+}
+
+.column:hover .columnEmpty,
+.column.active .columnEmpty {
+  background: var(--border-strong);
 }
 
 .columnLabel {
@@ -87,4 +114,39 @@
   font-size: var(--text-xs);
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+.readout {
+  min-height: var(--leading-sm);
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--text-secondary);
+}
+
+.readout strong {
+  color: var(--text-primary);
+  font-weight: var(--weight-title);
+}
+
+/* Phones: a horizontal row puts its label and value on one line and the
+   track under them at full width, instead of squeezing the track between
+   the two. */
+@media (max-width: 599px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-1) var(--space-3);
+  }
+
+  .track {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar,
+  .columnBar {
+    transition: none;
+  }
 }
