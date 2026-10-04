@@ -73,6 +73,8 @@ export interface OrderFilterQuery {
   dueBefore?: string;
   dueAfter?: string;
   dueState?: "OVERDUE" | "UPCOMING";
+  /// Every order awaiting fulfilment, late or not (issue 015).
+  open?: boolean;
   /// Reference or customer name.
   q?: string;
 }
@@ -134,6 +136,24 @@ export async function createOrder(
       idempotencyKey,
     })
   ).order;
+}
+
+/// Editing a draft or confirmed order (ORD-002): the pickup time, the notes
+/// and, when sent, the whole set of lines, priced again from the catalogue
+/// by the server. The version refuses a stale edit.
+export interface OrderUpdateInput {
+  version: number;
+  requestedFulfillmentAt?: string;
+  notes?: string;
+  lines?: Array<{ productId: string; quantity: string }>;
+}
+
+export async function updateOrder(
+  orderId: string,
+  input: OrderUpdateInput,
+): Promise<Order> {
+  return (await apiClient.patch<{ order: Order }>(`/orders/${orderId}`, input))
+    .order;
 }
 
 export async function changeOrderStatus(

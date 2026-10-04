@@ -55,6 +55,15 @@ export function useCreateOrder() {
   });
 }
 
+export function useUpdateOrder() {
+  const invalidate = useInvalidateAfter("order");
+  return useMutation({
+    mutationFn: (input: { orderId: string; body: api.OrderUpdateInput }) =>
+      api.updateOrder(input.orderId, input.body),
+    onSuccess: invalidate,
+  });
+}
+
 export function useChangeOrderStatus() {
   const invalidate = useInvalidateAfter("order");
   return useMutation({
