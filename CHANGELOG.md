@@ -4,6 +4,12 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-04
+
+The analytics module the owner asked for after the release of 2.1.0 (issue
+014, `DEC-V2-006`) and the till session history made findable. No
+migration; one new permission, `analytics.view`.
+
 ### Added
 
 - Issue 014, Analyses: a read-only analytics module on the history the
