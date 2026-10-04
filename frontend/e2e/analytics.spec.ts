@@ -60,6 +60,38 @@ test("reads the month: figures, trend, channels, then each tab", async ({
   await expectNoPageOverflow(page, "Clients");
 });
 
+// The bars once had a width only under the pointer: they must be drawn
+// without any hover, on a phone as on a desktop, and a tap reads a bar.
+test("draws the weekday and hour bars without a hover and reads a tapped bar", async ({
+  page,
+}) => {
+  await page.goto("/analyses?tab=frequency");
+  const weekdays = page.getByRole("figure", {
+    name: "Moyenne par jour de la semaine",
+  });
+  const hours = page.getByRole("figure", { name: "Total par heure" });
+  await expect(weekdays).toBeVisible();
+
+  const barOf = (figure: typeof weekdays, name: RegExp) =>
+    figure.getByRole("button", { name }).locator("span").first();
+  const saturday = await barOf(weekdays, /^Sam/).boundingBox();
+  const monday = await barOf(weekdays, /^Lun/).boundingBox();
+  const eight = await barOf(hours, /^8h/).boundingBox();
+  expect(saturday?.width ?? 0).toBeGreaterThan(8);
+  expect(saturday?.height ?? 0).toBeGreaterThan(100);
+  // Monday sells about a third of Saturday: a shorter bar, not a missing one.
+  expect(monday?.height ?? 0).toBeGreaterThan(20);
+  expect(monday?.height ?? 0).toBeLessThan(saturday?.height ?? 0);
+  expect(eight?.width ?? 0).toBeGreaterThan(8);
+  expect(eight?.height ?? 0).toBeGreaterThan(100);
+
+  // The highest bar is read first; a tap moves the line to that bar.
+  await expect(weekdays.getByText(/^Sam : en moyenne 22 ventes/)).toBeVisible();
+  await weekdays.getByRole("button", { name: /^Lun/ }).click();
+  await expect(weekdays.getByText(/^Lun : en moyenne 8 ventes/)).toBeVisible();
+  await expectNoPageOverflow(page, "Fréquence, barres");
+});
+
 test("keeps the period and the tab in the address", async ({ page }) => {
   await page.goto("/analyses?tab=frequency&period=last90&source=orders");
 
