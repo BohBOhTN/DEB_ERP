@@ -22,6 +22,7 @@ Workflow: branch `fix/<topic>` or `feat/<topic>` from `dev`, name the issue numb
 | [014](014-analyses-et-sessions.md)               | Analyses: an analytics module on the collected data, till sessions made findable        | High     | 008, 001       |
 | [015](015-commandes-file-visible.md)             | Commandes: the queue hidden by its default filters, forward-looking periods             | High     | 005, 001       |
 | [016](016-achats-validation-et-annulations.md)   | Achats: form validation, one line per material, payments of a cancelled purchase        | Highest  | 007            |
+| [017](017-environnement-de-test-staging.md)      | Staging: `testing.darelbarka.work` from a `staging` branch, seeded from production      | High     | 010            |
 
 Suggested order: 007 → 003 → 001 → 005 → 004 → 006 → 002 → 008. After the client demo of 2026-09-26: 012 → 013 → 011. Requested on 2026-10-04: 014 (the first feature that lifts a deferred scope, see `DEC-V2-006`). Issues 003, 005 (PR 1) and 002 are independent and can be picked up any time; 008 was added after the first seven were fixed.
 
