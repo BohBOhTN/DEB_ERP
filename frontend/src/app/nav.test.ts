@@ -12,11 +12,25 @@ describe("navigation manifest", () => {
       "home",
       "pos",
       "sales",
+      "sessions",
       "orders",
     ]);
     expect(visibleNavItems(toPermissionSet([])).map((item) => item.id)).toEqual(
       ["home"],
     );
+  });
+
+  it("shows Analyses only with analytics.view, right under Accueil", () => {
+    expect(
+      visibleNavItems(toPermissionSet(["pos.access"])).some(
+        (item) => item.id === "analytics",
+      ),
+    ).toBe(false);
+    expect(
+      visibleNavItems(toPermissionSet(["analytics.view", "pos.access"])).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["home", "analytics", "pos", "sales", "sessions"]);
   });
 
   it("shows Catégories et unités with either of its permissions", () => {
@@ -35,7 +49,9 @@ describe("navigation manifest", () => {
 
   it("resolves the active item by the longest matching path", () => {
     expect(activeNavItem("/caisse/ventes")?.id).toBe("sales");
-    expect(activeNavItem("/caisse/sessions")?.id).toBe("pos");
+    expect(activeNavItem("/caisse/sessions")?.id).toBe("sessions");
+    expect(activeNavItem("/caisse/sessions/abc")?.id).toBe("sessions");
+    expect(activeNavItem("/analyses")?.id).toBe("analytics");
     expect(activeNavItem("/distribution/reglements")?.id).toBe("settlements");
     expect(activeNavItem("/")?.id).toBe("home");
     expect(activeNavItem("/inconnu")).toBeUndefined();
