@@ -10926,6 +10926,17 @@
             }
           },
           {
+            "name": "open",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
             "name": "q",
             "in": "query",
             "schema": {
@@ -11241,6 +11252,17 @@
               "enum": [
                 "OVERDUE",
                 "UPCOMING"
+              ]
+            }
+          },
+          {
+            "name": "open",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
               ]
             }
           },

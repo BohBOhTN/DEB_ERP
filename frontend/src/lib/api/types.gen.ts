@@ -7661,6 +7661,7 @@ export interface operations {
                 dueBefore?: string;
                 dueAfter?: string;
                 dueState?: "OVERDUE" | "UPCOMING";
+                open?: "true" | "false";
                 q?: string;
                 search?: string;
                 page?: number;
@@ -7802,6 +7803,7 @@ export interface operations {
                 dueBefore?: string;
                 dueAfter?: string;
                 dueState?: "OVERDUE" | "UPCOMING";
+                open?: "true" | "false";
                 q?: string;
                 search?: string;
             };
