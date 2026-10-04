@@ -16,12 +16,17 @@ import { StatusPill } from "../../../components/ui/StatusPill/StatusPill.js";
 import { cx } from "../../../lib/cx.js";
 import { formatDateTime, formatMoney } from "../../../i18n/format.js";
 import { useUrlState } from "../../../lib/hooks/useUrlState.js";
+import { SessionsKpis } from "../components/SessionsKpis.js";
 import type { PosSession } from "../pos.api.js";
-import { useSessions } from "../pos.queries.js";
+import { useSessions, useSessionsSummary } from "../pos.queries.js";
+import { differenceClass, sessionDuration } from "../sessionFormat.js";
 import styles from "./PosPages.module.css";
 
+/// A history opens on the month: "today" is one row on a normal day and
+/// none before the till opens (issue 014).
+const defaultPeriod = "month";
 const defaults = {
-  period: "today",
+  period: defaultPeriod,
   from: "",
   to: "",
   status: "",
@@ -29,32 +34,25 @@ const defaults = {
   pageSize: 25,
 };
 
-export function differenceClass(
-  value: string | null | undefined,
-): string | undefined {
-  const number = Number(value ?? 0);
-  return number === 0
-    ? undefined
-    : number > 0
-      ? styles.positive
-      : styles.negative;
-}
-
 /// `/caisse/sessions` (UI-15): the session history with the drawer figures
-/// and the difference in colour.
+/// and the difference in colour, under the totals of the period.
 export function SessionsPage() {
   const navigate = useNavigate();
   const [state, setState] = useUrlState(defaults);
-  const period = periodFromParams(state, "today");
+  const period = periodFromParams(state, defaultPeriod);
   const range = periodRange(period);
-  const query = useSessions({
-    page: state.page,
-    pageSize: state.pageSize,
+  const filters = {
     from: range.from || undefined,
     to: range.to || undefined,
     status: (state.status || undefined) as "OPEN" | "CLOSED" | undefined,
+  };
+  const query = useSessions({
+    ...filters,
+    page: state.page,
+    pageSize: state.pageSize,
     sort: { field: "openedAt", direction: "desc" },
   });
+  const summary = useSessionsSummary(filters);
 
   const columns: DataTableColumn<PosSession>[] = [
     {
@@ -66,6 +64,11 @@ export function SessionsPage() {
       id: "closed",
       header: "Fermée le",
       accessorFn: (row) => (row.closedAt ? formatDateTime(row.closedAt) : "—"),
+    },
+    {
+      id: "duration",
+      header: "Durée",
+      accessorFn: (row) => sessionDuration(row),
     },
     {
       id: "cashier",
@@ -139,13 +142,14 @@ export function SessionsPage() {
         value={period}
         onChange={(next) => setState({ ...periodToParams(next), page: 1 })}
       />
+      <SessionsKpis summary={summary.data} />
       <FilterBar
         activeCount={
-          (state.status ? 1 : 0) + (period.preset !== "today" ? 1 : 0)
+          (state.status ? 1 : 0) + (period.preset !== defaultPeriod ? 1 : 0)
         }
         onReset={() =>
           setState({
-            period: "today",
+            period: defaultPeriod,
             from: "",
             to: "",
             status: "",

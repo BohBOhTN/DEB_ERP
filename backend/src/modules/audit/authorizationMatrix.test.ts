@@ -101,6 +101,7 @@ describe("authorization matrix", () => {
       "expenses",
       "simulations",
       "audit",
+      "analytics",
     ]) {
       expect(guardedModules).toContain(expected);
     }
@@ -127,6 +128,7 @@ function buildApp(): Express {
       rateLimit: { maxAttempts: 100, windowMs: 60_000 },
     },
     access: { accessService: stub },
+    analytics: { analyticsService: stub },
     audit: { auditService: stub },
     catalog: { catalogService: stub },
     customers: { customersService: stub },

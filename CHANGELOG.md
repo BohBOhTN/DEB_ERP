@@ -4,6 +4,43 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-04
+
+The analytics module the owner asked for after the release of 2.1.0 (issue
+014, `DEC-V2-006`) and the till session history made findable. No
+migration; one new permission, `analytics.view`.
+
+### Added
+
+- Issue 014, Analyses: a read-only analytics module on the history the
+  application already records (`DEC-V2-006`), behind the new permission
+  `analytics.view`. `Vue d'ensemble`: revenue by channel (comptoir,
+  commandes, distributeurs), till sales, average basket, expenses,
+  approximate margin and what is still due, each against the previous
+  period of equal length, with a trend chart and the best day.
+  `Fréquence`: sales and order pickups by weekday and hour in Tunis as a
+  heat map, with the busiest slot, the strongest weekday and the rush
+  hour. `Produits`: what sells over every channel, how often, its share
+  and approximate margin, and the active products that did not sell.
+  `Clients`: active, new and returning customers, the best ones and the
+  ones to win back. Every figure is a SQL aggregate over posted
+  documents; expenses, margin, orders and customers stay behind their own
+  permissions.
+- Issue 014, Sessions de caisse: a navigation item for the session
+  history, which opens on the month with the totals of the period
+  (sessions, sales, average per session, shortages and surpluses), and a
+  session page that tells its duration, average basket, activity by hour
+  and best products.
+- Two chart patterns, `Heatmap` and `TrendChart`, and thirty-day,
+  ninety-day and yearly windows on the period filter.
+
+### Changed
+
+- A session page says "Reste à encaisser" where it said "Crédit accordé":
+  the figure is what is still due today on the session's sales and
+  shrinks with every later règlement.
+- The session history is refreshed after a sale or an order completion.
+
 ## [2.1.0] - 2026-09-28
 
 The fixes and the feature noted at the client demo of 2026-09-26 (issues

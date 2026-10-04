@@ -167,6 +167,88 @@ function totalsOf(state: CaisseState, sessionId: string) {
   };
 }
 
+/// Issue 014: what the session looked like, as the server computes it: its
+/// sales by Tunis hour (UTC+1) and its products by revenue.
+function insightsOf(state: CaisseState, sessionId: string) {
+  const sales = state.sales.filter((sale) => sale.sessionId === sessionId);
+  const hours = new Map<number, { count: number; total: number }>();
+  const products = new Map<
+    string,
+    { name: string; unitName: string; quantity: number; revenue: number }
+  >();
+
+  for (const sale of sales) {
+    const hour = (new Date(sale.soldAt).getUTCHours() + 1) % 24;
+    const slot = hours.get(hour) ?? { count: 0, total: 0 };
+    hours.set(hour, {
+      count: slot.count + 1,
+      total: slot.total + Number(sale.totalTnd),
+    });
+
+    for (const line of sale.lines) {
+      const row = products.get(line.productId) ?? {
+        name: line.productNameSnapshot,
+        unitName: line.unitNameSnapshot,
+        quantity: 0,
+        revenue: 0,
+      };
+      products.set(line.productId, {
+        ...row,
+        quantity: row.quantity + Number(line.quantity),
+        revenue: row.revenue + Number(line.lineTotalTnd),
+      });
+    }
+  }
+
+  const total = sales.reduce((sum, sale) => sum + Number(sale.totalTnd), 0);
+
+  return {
+    averageBasketTnd: sales.length === 0 ? null : money(total / sales.length),
+    cancelledSalesCount: 0,
+    hourly: [...hours.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([hour, slot]) => ({
+        hour,
+        count: slot.count,
+        totalTnd: money(slot.total),
+      })),
+    topProducts: [...products.entries()]
+      .sort(([, left], [, right]) => right.revenue - left.revenue)
+      .slice(0, 5)
+      .map(([productId, row]) => ({
+        productId,
+        name: row.name,
+        unitName: row.unitName,
+        quantity: row.quantity.toFixed(6),
+        revenueTnd: money(row.revenue),
+      })),
+  };
+}
+
+function sessionsSummaryOf(state: CaisseState) {
+  const differences = state.sessions.map((session) =>
+    Number(session.cashDifferenceTnd ?? 0),
+  );
+  const sum = (values: number[]) =>
+    values.reduce((total, value) => total + value, 0);
+  const shortage = sum(differences.filter((value) => value < 0));
+  const surplus = sum(differences.filter((value) => value > 0));
+
+  return {
+    count: state.sessions.length,
+    openCount: state.sessions.filter((session) => session.status === "OPEN")
+      .length,
+    closedCount: state.sessions.filter((session) => session.status === "CLOSED")
+      .length,
+    salesCount: state.sales.length,
+    salesTotalTnd: money(sum(state.sales.map((sale) => Number(sale.totalTnd)))),
+    differenceTnd: money(shortage + surplus),
+    shortageTnd: money(shortage),
+    surplusTnd: money(surplus),
+    withDifferenceCount: differences.filter((value) => value !== 0).length,
+  };
+}
+
 export async function handleCaisse(
   route: Route,
   state: CaisseState,
@@ -449,13 +531,23 @@ export async function handleCaisse(
       ),
       true
     );
+  // Ahead of the session route, which would take "summary" for an id.
+  if (path === "/pos/sessions/summary")
+    return (
+      route.fulfill(envelope({ summary: sessionsSummaryOf(state) })),
+      true
+    );
   const sessionMatch = /^\/pos\/sessions\/([^/]+)$/.exec(path);
   if (sessionMatch) {
     const session = state.sessions.find((row) => row.id === sessionMatch[1]);
     return (
       route.fulfill(
         session
-          ? envelope({ session, totals: totalsOf(state, session.id) })
+          ? envelope({
+              session,
+              totals: totalsOf(state, session.id),
+              insights: insightsOf(state, session.id),
+            })
           : failure(
               404,
               "POS_SESSION_NOT_FOUND",

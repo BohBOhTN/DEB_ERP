@@ -6,7 +6,9 @@ import { mockApi, ownerPermissions } from "./mockApi";
 /// Since Sprint 26 every module is rebuilt and shows its own heading; the
 /// "Ancienne interface" badge no longer exists (ADR-V2-003 closed).
 const modules = [
+  ["Analyses", "/analyses"],
   ["Caisse", "/caisse"],
+  ["Sessions de caisse", "/caisse/sessions"],
   ["Commandes", "/commandes"],
   ["Clients", "/clients"],
   ["Distributeurs", "/distributeurs"],
@@ -127,6 +129,10 @@ test("a cashier on a phone sees only what the role allows", async ({
   ]);
   await bottom.getByRole("button", { name: "Plus" }).click();
   const more = page.getByRole("dialog", { name: "Plus" });
-  await expect(more.getByRole("link")).toHaveText(["Ventes"]);
+  // The session history is part of the till (issue 014).
+  await expect(more.getByRole("link")).toHaveText([
+    "Ventes",
+    "Sessions de caisse",
+  ]);
   await expect(more.getByRole("link", { name: "Fournisseurs" })).toHaveCount(0);
 });

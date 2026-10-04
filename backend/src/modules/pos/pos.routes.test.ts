@@ -140,6 +140,8 @@ async function createTestApp(permissionKeys: string[]) {
       },
     }),
     summarizeSales: vi.fn().mockResolvedValue({ count: 0 }),
+    summarizeSessions: vi.fn().mockResolvedValue({ count: 2 }),
+    getSession: vi.fn().mockResolvedValue({ session: { id: "session-1" } }),
     cancelSale: vi
       .fn()
       .mockResolvedValue({ sale: { id: "sale-1", status: "CANCELLED" } }),
@@ -509,5 +511,38 @@ describe("pos routes", () => {
         expect.objectContaining({ search: "amel" }),
       );
     });
+  });
+});
+
+describe("pos session history (issue 014)", () => {
+  it("serves the session totals with the list's filters, ahead of the :sessionId route", async () => {
+    const { app, cookie, posService } = await createTestApp(["pos.access"]);
+
+    const response = await request(app)
+      .get(
+        "/api/v1/pos/sessions/summary?from=2026-09-01&to=2026-09-30&status=CLOSED",
+      )
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(response.body.data.summary).toEqual({ count: 2 });
+    expect(posService.summarizeSessions).toHaveBeenCalledWith({
+      // Whole business days in Tunis (UTC+1).
+      from: new Date("2026-08-31T23:00:00.000Z"),
+      to: new Date("2026-09-30T22:59:59.999Z"),
+      status: "CLOSED",
+    });
+    expect(posService.getSession).not.toHaveBeenCalled();
+  });
+
+  it("refuses the session totals without pos.access", async () => {
+    const { app, cookie, posService } = await createTestApp(["orders.view"]);
+
+    await request(app)
+      .get("/api/v1/pos/sessions/summary")
+      .set("Cookie", cookie)
+      .expect(403);
+
+    expect(posService.summarizeSessions).not.toHaveBeenCalled();
   });
 });

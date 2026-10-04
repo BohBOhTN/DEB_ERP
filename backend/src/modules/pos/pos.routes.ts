@@ -69,6 +69,13 @@ export const sessionListQuerySchema = z.object({
   sort: sortField(["openedAt"]),
 });
 
+/// The KPI row above the session history: the list's filters, no paging.
+export const sessionSummaryQuerySchema = z.object({
+  ...dateRangeFields,
+  status: z.nativeEnum(PosSessionStatus).optional(),
+  cashierUserId: z.string().trim().min(1).optional(),
+});
+
 export const openSessionSchema = z.object({
   openingCashTnd: moneyTnd,
   openedAt: z.coerce.date().default(() => new Date()),
@@ -290,8 +297,8 @@ export function posRouter(params: {
     },
   );
 
-  // Registered after /sessions/current and /sessions/open so those literal
-  // paths win over the parameter.
+  // Registered after /sessions/current and /sessions/open, and the summary
+  // before the parameter, so the literal paths win over it.
   router.get(
     "/sessions",
     requirePermission("pos.access"),
@@ -300,6 +307,20 @@ export function posRouter(params: {
         const query = sessionListQuerySchema.parse(request.query);
         const sessions = await params.posService.listSessions(query);
         response.json(okFor(response, { sessions }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/sessions/summary",
+    requirePermission("pos.access"),
+    async (request, response, next) => {
+      try {
+        const query = sessionSummaryQuerySchema.parse(request.query);
+        const summary = await params.posService.summarizeSessions(query);
+        response.json(okFor(response, { summary }));
       } catch (error) {
         next(error);
       }

@@ -102,6 +102,34 @@ function salePaymentsByMovement(
   };
 }
 
+export interface SessionFilterParams {
+  from?: Date;
+  to?: Date;
+  status?: PosSessionStatus;
+  cashierUserId?: string;
+}
+
+/// One filter for the session history and its KPI row, so the totals always
+/// describe the rows under them. A session belongs to the day it opened.
+function sessionListWhere(
+  params: SessionFilterParams,
+): Prisma.PosSessionWhereInput {
+  return {
+    ...(params.status ? { status: params.status } : {}),
+    ...(params.cashierUserId ? { openedByUserId: params.cashierUserId } : {}),
+    ...(params.from || params.to
+      ? {
+          openedAt: {
+            ...(params.from ? { gte: params.from } : {}),
+            ...(params.to ? { lte: params.to } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+const sessionTopProducts = 5;
+
 export interface PosProductListParams {
   sort?: SortSpec<"name">;
   search?: string;
@@ -1056,27 +1084,14 @@ export class PosService {
   }
 
   /// Session history for the Z-report screen.
-  public async listSessions(params: {
-    from?: Date;
-    to?: Date;
-    status?: PosSessionStatus;
-    cashierUserId?: string;
-    sort?: SortSpec<"openedAt">;
-    page: number;
-    pageSize: number;
-  }) {
-    const where = {
-      ...(params.status ? { status: params.status } : {}),
-      ...(params.cashierUserId ? { openedByUserId: params.cashierUserId } : {}),
-      ...(params.from || params.to
-        ? {
-            openedAt: {
-              ...(params.from ? { gte: params.from } : {}),
-              ...(params.to ? { lte: params.to } : {}),
-            },
-          }
-        : {}),
-    };
+  public async listSessions(
+    params: SessionFilterParams & {
+      sort?: SortSpec<"openedAt">;
+      page: number;
+      pageSize: number;
+    },
+  ) {
+    const where = sessionListWhere(params);
     const [items, total] = await this.prisma.$transaction([
       this.prisma.posSession.findMany({
         where,
@@ -1133,9 +1148,57 @@ export class PosService {
     );
   }
 
+  /// The KPI row of the session history (issue 014): the list's filters, no
+  /// paging. Sessions by state, what they sold, and the cash differences of
+  /// the closed ones, shortages and surpluses apart so they never cancel
+  /// each other out of sight.
+  public async summarizeSessions(params: SessionFilterParams) {
+    const where = sessionListWhere(params);
+    const [byStatus, sales, shortage, surplus] = await Promise.all([
+      this.prisma.posSession.groupBy({
+        by: ["status"],
+        where,
+        _count: { _all: true },
+      }),
+      this.prisma.sale.aggregate({
+        where: { session: where, status: SaleStatus.POSTED },
+        _count: { _all: true },
+        _sum: { totalTnd: true },
+      }),
+      this.prisma.posSession.aggregate({
+        where: { ...where, cashDifferenceTnd: { lt: 0 } },
+        _count: { _all: true },
+        _sum: { cashDifferenceTnd: true },
+      }),
+      this.prisma.posSession.aggregate({
+        where: { ...where, cashDifferenceTnd: { gt: 0 } },
+        _count: { _all: true },
+        _sum: { cashDifferenceTnd: true },
+      }),
+    ]);
+    const countOf = (status: PosSessionStatus) =>
+      byStatus.find((row) => row.status === status)?._count._all ?? 0;
+    const shortageTnd = sumOrZero(shortage._sum.cashDifferenceTnd);
+    const surplusTnd = sumOrZero(surplus._sum.cashDifferenceTnd);
+
+    return {
+      count: byStatus.reduce((sum, row) => sum + row._count._all, 0),
+      openCount: countOf(PosSessionStatus.OPEN),
+      closedCount: countOf(PosSessionStatus.CLOSED),
+      salesCount: sales._count._all,
+      salesTotalTnd: sumOrZero(sales._sum.totalTnd).toFixed(3),
+      differenceTnd: shortageTnd.plus(surplusTnd).toFixed(3),
+      shortageTnd: shortageTnd.toFixed(3),
+      surplusTnd: surplusTnd.toFixed(3),
+      withDifferenceCount: shortage._count._all + surplus._count._all,
+    };
+  }
+
   /// A session with its drawer totals, summed by the database: sales, cash
-  /// taken at the till, credit granted, order advances in and out, and
-  /// customer payments collected at the till.
+  /// taken at the till, what is still due on them, order advances in and
+  /// out, and customer payments collected at the till; plus what the
+  /// session looked like (issue 014): average basket, cancelled sales, the
+  /// sales per hour in Tunis and the best products.
   public async getSession(sessionId: string) {
     const session = await this.prisma.posSession.findUnique({
       where: { id: sessionId },
@@ -1156,6 +1219,9 @@ export class PosService {
       advances,
       customerPayments,
       customerPaymentReversals,
+      cancelledSalesCount,
+      hourly,
+      topLines,
     ] = await Promise.all([
       this.prisma.sale.aggregate({
         where: { sessionId, status: SaleStatus.POSTED },
@@ -1180,7 +1246,37 @@ export class PosService {
         where: { reversedInSessionId: sessionId },
         _sum: { amountTnd: true },
       }),
+      this.prisma.sale.count({
+        where: { sessionId, status: SaleStatus.CANCELLED },
+      }),
+      this.prisma.$queryRaw<
+        Array<{ hour: number; count: number; total: string }>
+      >`
+        SELECT
+          EXTRACT(HOUR FROM (s."sold_at" AT TIME ZONE 'UTC') AT TIME ZONE 'Africa/Tunis')::int AS hour,
+          COUNT(*)::int AS count,
+          SUM(s."total_tnd")::text AS total
+        FROM "sales" s
+        WHERE s."session_id" = ${sessionId} AND s."status" = 'POSTED'
+        GROUP BY 1
+        ORDER BY 1
+      `,
+      this.prisma.saleLine.groupBy({
+        by: ["productId"],
+        where: { sale: { sessionId, status: SaleStatus.POSTED } },
+        _sum: { quantity: true, lineTotalTnd: true },
+        orderBy: [{ _sum: { lineTotalTnd: "desc" } }, { productId: "asc" }],
+        take: sessionTopProducts,
+      }),
     ]);
+    const topProducts = await this.prisma.product.findMany({
+      where: { id: { in: topLines.map((row) => row.productId) } },
+      select: { id: true, name: true, baseUnit: { select: { name: true } } },
+    });
+    const productOf = new Map(
+      topProducts.map((product) => [product.id, product]),
+    );
+    const salesTotal = sumOrZero(sales._sum.totalTnd);
     const saleCash = salePaymentsByMovement(salePayments);
     const advanceOf = (movement: CustomerOrderAdvanceMovement) =>
       sumOrZero(
@@ -1217,6 +1313,25 @@ export class PosService {
         customerPaymentReversalsTnd: sumOrZero(
           customerPaymentReversals._sum.amountTnd,
         ).toFixed(3),
+      },
+      insights: {
+        averageBasketTnd:
+          sales._count._all === 0
+            ? null
+            : salesTotal.dividedBy(sales._count._all).toFixed(3),
+        cancelledSalesCount,
+        hourly: hourly.map((row) => ({
+          hour: row.hour,
+          count: row.count,
+          totalTnd: new Prisma.Decimal(row.total).toFixed(3),
+        })),
+        topProducts: topLines.map((row) => ({
+          productId: row.productId,
+          name: productOf.get(row.productId)?.name ?? "",
+          unitName: productOf.get(row.productId)?.baseUnit.name ?? "",
+          quantity: sumOrZero(row._sum.quantity).toFixed(6),
+          revenueTnd: sumOrZero(row._sum.lineTotalTnd).toFixed(3),
+        })),
       },
     };
   }

@@ -1,4 +1,5 @@
 import type { Page, Route } from "@playwright/test";
+import { analyticsResponse, emptySessionsSummary } from "./analytics";
 
 /// The API as the shell needs it, mocked in the browser so the smoke runs
 /// without a backend. Shapes mirror the msw fixtures used by the unit tests.
@@ -76,6 +77,7 @@ export const ownerPermissions = [
   "roles.activate",
   "roles.assign_permissions",
   "audit.view",
+  "analytics.view",
 ];
 
 export interface MockState {
@@ -235,6 +237,14 @@ export async function mockApi(
           },
         }),
       );
+    }
+
+    const analytics = analyticsResponse(path);
+    if (analytics) {
+      return route.fulfill(envelope(analytics));
+    }
+    if (path === "/pos/sessions/summary") {
+      return route.fulfill(envelope({ summary: emptySessionsSummary }));
     }
 
     // Administration screens read a catalogue, roles and the build identity

@@ -24,6 +24,8 @@ import type {
   HealthCheck,
   LivenessCheck,
 } from "./modules/health/health.service.js";
+import { analyticsRouter } from "./modules/analytics/analytics.routes.js";
+import type { AnalyticsService } from "./modules/analytics/analytics.service.js";
 import { homeRouter } from "./modules/home/home.routes.js";
 import { buildOpenApiDocument } from "./openapi/document.js";
 import type { HomeService } from "./modules/home/home.service.js";
@@ -106,6 +108,9 @@ export function createApp(params: {
   };
   home?: {
     homeService: HomeService;
+  };
+  analytics?: {
+    analyticsService: AnalyticsService;
   };
   /// Serves the generated contract at `/api/v1/openapi.json`; off in
   /// production, where the committed file is the reference.
@@ -311,6 +316,19 @@ export function createApp(params: {
         authService: params.auth.authService,
         cookie: params.auth.cookie,
         homeService: params.home.homeService,
+      }),
+    );
+  }
+
+  // The analyses (DEC-V2-006) are new in V2 as well: `/api/v1` only.
+  if (params.auth && params.analytics) {
+    app.use(
+      "/api/v1/analytics",
+      markApiVersion(1),
+      analyticsRouter({
+        authService: params.auth.authService,
+        cookie: params.auth.cookie,
+        analyticsService: params.analytics.analyticsService,
       }),
     );
   }

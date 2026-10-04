@@ -30,6 +30,27 @@ describe("periodRange", () => {
     });
   });
 
+  it("resolves the analysis windows: thirty days, ninety days, the year", () => {
+    expect(periodRange({ preset: "last30", from: "", to: "" }, now)).toEqual({
+      from: "2026-08-26",
+      to: "2026-09-24",
+    });
+    expect(periodRange({ preset: "last90", from: "", to: "" }, now)).toEqual({
+      from: "2026-06-27",
+      to: "2026-09-24",
+    });
+    expect(periodRange({ preset: "year", from: "", to: "" }, now)).toEqual({
+      from: "2026-01-01",
+      to: "2026-09-24",
+    });
+    expect(
+      periodFromParams({ period: "last90", from: "", to: "" }, "today").preset,
+    ).toBe("last90");
+    expect(
+      periodFromParams({ period: "decade", from: "", to: "" }, "last30").preset,
+    ).toBe("last30");
+  });
+
   it("keeps a week and a month inside their calendar boundaries", () => {
     // Monday 5 October: the week is that single day so far.
     const monday = new Date("2026-10-05T08:00:00.000Z");

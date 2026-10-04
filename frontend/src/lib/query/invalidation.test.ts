@@ -32,6 +32,29 @@ describe("invalidation map", () => {
     expect(has("customer.payment", roots.inventory)).toBe(false);
   });
 
+  // Issue 014: the analyses read posted sales, distributor documents and
+  // expenses; the session history prints each session's sales.
+  it("refreshes the analyses and the session history after what changes their figures", () => {
+    for (const event of [
+      "pos.sale",
+      "order",
+      "customer.payment",
+      "distribution.sale",
+      "distribution.settlement",
+      "expense",
+      "catalog.product",
+      "customer.record",
+    ] as const) {
+      expect(has(event, roots.analytics)).toBe(true);
+    }
+    expect(has("pos.sale", roots.posSessions)).toBe(true);
+    expect(has("order", roots.posSessions)).toBe(true);
+    // A purchase or a stock movement changes no analysed figure.
+    expect(has("procurement.purchase", roots.analytics)).toBe(false);
+    expect(has("inventory.movement", roots.analytics)).toBe(false);
+    expect(has("distribution.dispatch", roots.analytics)).toBe(false);
+  });
+
   it("keeps a customer rename away from stock and the till", () => {
     expect(has("customer.record", roots.customersList)).toBe(true);
     expect(has("customer.record", roots.inventory)).toBe(false);
