@@ -22,6 +22,7 @@ import {
   useReverseSupplierPayment,
   useSupplierPayments,
 } from "../procurement.queries.js";
+import { paymentLock } from "../components/procurementLabels.js";
 import { SupplierCombobox } from "../components/SupplierCombobox.js";
 import { SupplierPaymentDialog } from "../components/SupplierPaymentDialog.js";
 import styles from "./ProcurementPages.module.css";
@@ -92,8 +93,10 @@ export function SupplierPaymentsPage() {
       id: "state",
       header: "État",
       cell: ({ row }) =>
-        row.original.reversedAt ? (
+        paymentLock(row.original) === "reversed" ? (
           <StatusPill status="CANCELLED" label="Annulé" />
+        ) : paymentLock(row.original) === "purchaseCancelled" ? (
+          <StatusPill status="CANCELLED" label="Achat annulé" />
         ) : (
           <StatusPill status="POSTED" label="Réglé" />
         ),
@@ -174,7 +177,11 @@ export function SupplierPaymentsPage() {
               <span className="tabular-nums">{formatMoney(row.amountTnd)}</span>
             </span>
             <span className={styles.muted}>
-              {row.reversedAt ? "Annulé · " : ""}
+              {paymentLock(row) === "reversed"
+                ? "Annulé · "
+                : paymentLock(row) === "purchaseCancelled"
+                  ? "Achat annulé · "
+                  : ""}
               {formatDate(row.paidAt)} · {row.allocations.length} affectation
               {row.allocations.length > 1 ? "s" : ""}
               {row.reference ? ` · ${row.reference}` : ""}
@@ -182,7 +189,9 @@ export function SupplierPaymentsPage() {
           </>
         )}
         rowActions={(row) =>
-          row.reversedAt ||
+          // Nothing to cancel on a payment already taken back, by hand or
+          // by the cancellation of its purchase (issue 016).
+          paymentLock(row) !== null ||
           !permissions.has("supplier_payments.create") ? null : (
             <DropdownMenu
               label="Actions de la ligne"

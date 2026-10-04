@@ -184,6 +184,11 @@ const errorCopy: Record<string, ErrorCopy> = {
     title: "Déjà annulé",
     description: "Ce paiement a déjà été annulé.",
   },
+  PAYMENT_DOCUMENT_CANCELLED: {
+    title: "Paiement déjà repris",
+    description:
+      "Le document de ce paiement a été annulé : son montant a déjà été repris par l'annulation.",
+  },
 
   // Procurement
   SUPPLIER_NOT_FOUND: {

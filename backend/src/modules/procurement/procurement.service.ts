@@ -1096,6 +1096,10 @@ export class ProcurementService {
         where,
         include: {
           supplier: true,
+          // The purchase a payment taken at posting belongs to: the screen
+          // offers no cancellation once that purchase is cancelled (issue
+          // 016).
+          purchase: { select: { id: true, reference: true, status: true } },
           allocations: {
             include: {
               purchase: true,
