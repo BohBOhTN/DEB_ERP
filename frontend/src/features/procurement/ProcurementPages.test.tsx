@@ -1,11 +1,19 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http } from "msw";
 import { RouterProvider } from "react-router-dom";
 import { beforeAll, describe, expect, it } from "vitest";
 import { AppProviders, createQueryClient } from "../../app/providers";
 import { createTestRouter } from "../../app/router";
 import { makePurchase, makeSupplier } from "../../test/factories/procurement";
 import { makeUser } from "../../test/factories/user";
+import { apiError, apiV1 } from "../../test/msw/envelope";
 import { authHandlers } from "../../test/msw/handlers/auth";
 import {
   makeProcurementStore,
@@ -145,7 +153,10 @@ describe("Procurement", () => {
     await userEvent.click(
       await screen.findByRole("option", { name: "Sac de 50 kg" }),
     );
-    expect(screen.getByText(/= 200 kg · prix par kg/)).toBeInTheDocument();
+    // Issue 016: with a unit other than the base one, the quantity says
+    // what it amounts to and the price says which unit it is for.
+    expect(screen.getByText("= 200 kg")).toBeInTheDocument();
+    expect(screen.getByText("par kg")).toBeInTheDocument();
     // Issue 009: the total typed for 4 sacs (200 kg) gives the price per
     // kg, and the picker of a second line reads the session cache.
     await userEvent.clear(
@@ -166,9 +177,11 @@ describe("Procurement", () => {
     await userEvent.click(
       screen.getByRole("combobox", { name: "Matière première 2" }),
     );
-    expect(
-      await screen.findByRole("option", { name: /Farine T55/ }),
-    ).toBeInTheDocument();
+    // Issue 016: the second line reads the session cache and leaves out
+    // the material the first line already holds.
+    // The catalogue holds that one material: nothing is left to pick.
+    expect(await screen.findByText("Aucun résultat")).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Farine T55/ })).toBeNull();
     expect(requests.of("/catalog/raw-materials")).toBe(before);
     await userEvent.keyboard("{Escape}");
     await userEvent.click(
@@ -412,5 +425,200 @@ describe("Procurement", () => {
       2,
     );
     expect(table.textContent).not.toMatch(/purchase-|supplier-/);
+  });
+
+  // Issue 016: the form refuses what the server would refuse, on the field
+  // concerned, with a summary the user cannot miss.
+  describe("purchase form validation (issue 016)", () => {
+    async function pickFlour(line: number) {
+      await userEvent.click(
+        screen.getByRole("combobox", { name: `Matière première ${line}` }),
+      );
+      await userEvent.click(await screen.findByText("Farine T55"));
+    }
+
+    it("flags every missing field and sums them up", async () => {
+      const store = makeProcurementStore();
+      server.use(...procurementHandlers(store));
+      renderAt("/achats/nouveau");
+      await screen.findByRole("heading", { level: 1, name: "Nouvel achat" });
+      const before = store.purchases.length;
+
+      await userEvent.click(
+        screen.getByRole("button", { name: "Enregistrer le brouillon" }),
+      );
+
+      const summary = await screen.findByRole("alert");
+      expect(summary).toHaveTextContent("Le formulaire contient des erreurs.");
+      // Supplier, material, quantity and unit price; the rules between
+      // fields (the due date of an unpaid purchase) come once these hold.
+      expect(summary).toHaveTextContent("Corrigez les 4 champs signalés.");
+      expect(
+        screen.getByText("Choisissez un fournisseur."),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Choisissez une matière première."),
+      ).toBeInTheDocument();
+      expect(screen.getAllByText("Ce champ est obligatoire.")).toHaveLength(2);
+      expect(store.purchases).toHaveLength(before);
+    });
+
+    it("shows no text under the quantity for the base unit and refuses a zero price", async () => {
+      server.use(...procurementHandlers(makeProcurementStore()));
+      renderAt("/achats/nouveau");
+      await screen.findByRole("heading", { level: 1, name: "Nouvel achat" });
+
+      await pickFlour(1);
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Quantité 1" }),
+        "10",
+      );
+      // The client's report: "Prix par kg" appeared under the quantity.
+      expect(screen.queryByText(/prix par/i)).toBeNull();
+      expect(screen.queryByText("par kg")).toBeNull();
+
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Prix unitaire 1" }),
+        "0",
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Enregistrer le brouillon" }),
+      );
+
+      expect(
+        await screen.findByText("La valeur doit être supérieure à zéro."),
+      ).toBeInTheDocument();
+    });
+
+    it("refuses a purchase dated in the future and a due date before the purchase", async () => {
+      server.use(...procurementHandlers(makeProcurementStore()));
+      renderAt("/achats/nouveau");
+      await screen.findByRole("heading", { level: 1, name: "Nouvel achat" });
+
+      const date = screen.getByLabelText(/Date d'achat/);
+      await userEvent.clear(date);
+      await userEvent.type(date, "2099-01-01");
+      await userEvent.type(screen.getByLabelText(/Échéance/), "2026-01-01");
+      await userEvent.click(
+        screen.getByRole("button", { name: "Enregistrer le brouillon" }),
+      );
+
+      expect(
+        await screen.findByText(
+          "La date d'achat ne peut pas être dans le futur.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("L'échéance ne peut pas précéder la date d'achat."),
+      ).toBeInTheDocument();
+    });
+
+    it("puts a refusal of the server on the line it concerns", async () => {
+      const store = makeProcurementStore();
+      server.use(...procurementHandlers(store));
+      server.use(
+        http.post(`${apiV1}/procurement/purchases`, () =>
+          apiError(
+            400,
+            "VALIDATION_ERROR",
+            "Les données saisies sont invalides.",
+            {
+              "lines.0.rawMaterialId":
+                "Cette matière première est déjà sur une autre ligne.",
+              "lines.0.enteredQuantity":
+                "La quantité doit être supérieure à zéro.",
+            },
+          ),
+        ),
+      );
+      renderAt("/achats/nouveau");
+      await screen.findByRole("heading", { level: 1, name: "Nouvel achat" });
+      await userEvent.click(
+        screen.getByRole("combobox", { name: "Fournisseur" }),
+      );
+      await userEvent.click(await screen.findByText(/Solde dû 150,000/));
+      await pickFlour(1);
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Quantité 1" }),
+        "10",
+      );
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Prix unitaire 1" }),
+        "1,2",
+      );
+      await userEvent.click(screen.getByRole("radio", { name: "Payé" }));
+      await userEvent.click(
+        screen.getByRole("button", { name: "Enregistrer le brouillon" }),
+      );
+
+      // The API names the field `rawMaterialId`; the form shows it under
+      // the picker of that line.
+      expect(
+        await screen.findByText(
+          "Cette matière première est déjà sur une autre ligne.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("La quantité doit être supérieure à zéro."),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Corrigez les 2 champs signalés.",
+      );
+    });
+  });
+
+  // Issue 016, the client's case: a purchase is cancelled, which takes its
+  // payment back; that payment then reads as cancelled and cannot be
+  // cancelled a second time.
+  describe("a payment of a cancelled purchase (issue 016)", () => {
+    it("reads as cancelled, with no action, once its purchase is cancelled", async () => {
+      const store = makeProcurementStore();
+      server.use(...procurementHandlers(store));
+      renderAt("/achats/purchase-1");
+      await screen.findByRole("heading", { level: 1, name: "AC-000001" });
+      await userEvent.click(screen.getByRole("button", { name: "Annuler" }));
+      const dialog = await screen.findByRole("alertdialog", {
+        name: "Annuler AC-000001",
+      });
+      await userEvent.type(
+        within(dialog).getByLabelText(/Motif/),
+        "Livraison refusée",
+      );
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Annuler l'achat" }),
+      );
+      expect(await screen.findByText("Achat annulé")).toBeInTheDocument();
+      expect(store.payments[0]?.reversedAt).toBeTruthy();
+
+      // On the payments page the payment reads as cancelled and offers
+      // nothing to cancel.
+      cleanup();
+      renderAt("/paiements-fournisseurs");
+      const table = await screen.findByRole("table", {
+        name: "Paiements fournisseurs",
+      });
+      expect(await within(table).findByText("Annulé")).toBeInTheDocument();
+      expect(
+        within(table).queryByRole("button", { name: "Actions" }),
+      ).toBeNull();
+    });
+
+    it("offers no cancellation on a payment whose purchase is cancelled, even an older one", async () => {
+      const store = makeProcurementStore();
+      // Cancelled before the rule existed: the payment row was left as is.
+      Object.assign(store.purchases[0] ?? {}, { status: "CANCELLED" });
+      server.use(...procurementHandlers(store));
+      renderAt("/paiements-fournisseurs");
+
+      const table = await screen.findByRole("table", {
+        name: "Paiements fournisseurs",
+      });
+      expect(
+        await within(table).findByText("Achat annulé"),
+      ).toBeInTheDocument();
+      expect(
+        within(table).queryByRole("button", { name: "Actions" }),
+      ).toBeNull();
+    });
   });
 });
