@@ -16,6 +16,9 @@
 set -euo pipefail
 
 PG_CONTAINER="${PG_CONTAINER:-postgres-prod}"
+# The server's admin role is whatever POSTGRES_USER the container was
+# created with, not always "postgres": read it from the container.
+PG_SUPERUSER="${PG_SUPERUSER:-$(docker exec "$PG_CONTAINER" printenv POSTGRES_USER 2> /dev/null || true)}"
 PG_SUPERUSER="${PG_SUPERUSER:-postgres}"
 PROD_DB="${PROD_DB:-dar_el_baraka}"
 STAGING_DB="${STAGING_DB:-dar_el_baraka_staging}"
@@ -41,6 +44,13 @@ fi
 psql_admin() {
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$PG_SUPERUSER" "$@"
 }
+
+# Fail on the connection before anything else, and say so: a wrong admin
+# role must not read as "the staging role is missing".
+if ! psql_admin -d postgres -tAc "SELECT 1" > /dev/null; then
+  echo "Cannot connect to ${PG_CONTAINER} as ${PG_SUPERUSER}. Set PG_SUPERUSER to the server's admin role (docker exec ${PG_CONTAINER} printenv POSTGRES_USER)." >&2
+  exit 1
+fi
 
 if ! psql_admin -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = '${STAGING_ROLE}'" | grep -q 1; then
   echo "The role ${STAGING_ROLE} does not exist. Create it once (see deploy/README.md), then run this again." >&2

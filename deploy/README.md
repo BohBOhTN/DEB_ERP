@@ -95,10 +95,13 @@ reviewer.
    `sudo mkdir -p /opt/dar-el-barka-staging /opt/dar-el-barka-backups`,
    `sudo chown <deploy-user>: /opt/dar-el-barka-staging /opt/dar-el-barka-backups`.
 3. **The staging role** in `postgres-prod`, with a password of its own
-   (the database itself is created by the copy in step 6):
+   (the database itself is created by the copy in step 6). The server's
+   admin role is the `POSTGRES_USER` the container was created with, which
+   the first command prints; it is not always `postgres`:
 
    ```
-   docker exec -it postgres-prod psql -U postgres -c "CREATE ROLE dar_el_baraka_staging_user LOGIN PASSWORD '<password>'"
+   docker exec postgres-prod printenv POSTGRES_USER
+   docker exec -it postgres-prod psql -U <admin-role> -d postgres -c "CREATE ROLE dar_el_baraka_staging_user LOGIN PASSWORD '<password>'"
    ```
 
 4. **GitHub**: an environment named `staging`, without a required
