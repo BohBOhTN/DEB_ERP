@@ -30,6 +30,14 @@ All notable project changes are recorded here.
 
 ### Added
 
+- Issue 017, staging: a second stack on the VPS for
+  `testing.darelbarka.work`, deployed by a push to the `staging` branch
+  without an approval step, with its own containers, network, media
+  volume, port and database. `deploy/refresh-staging-db.sh` dumps
+  production to a dated backup and rebuilds the staging database (and
+  photos) from it. The deploy refuses a staging stack that names the
+  production database. A manual run now chooses its stack, staging by
+  default.
 - Issue 015, Commandes: `Modifier` on a draft or confirmed order, from its
   row or its page: pickup time, notes and lines.
 
