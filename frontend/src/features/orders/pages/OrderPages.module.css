@@ -110,3 +110,13 @@
     top: var(--space-4);
   }
 }
+
+/* The form-level summary after a refused save: an error, not a note. */
+.formError {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+}

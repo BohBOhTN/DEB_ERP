@@ -68,6 +68,19 @@ export const orderSchema = z
 export type OrderFormInput = z.input<typeof orderSchema>;
 export type OrderFormOutput = z.output<typeof orderSchema>;
 
+/// Editing an order (issue 015): no customer and no deposit here, and no
+/// "in the future" rule, since a late order may still need its notes or
+/// its lines corrected.
+export const orderEditSchema = z.object({
+  requestedFulfillmentAt: z
+    .string()
+    .regex(localDateTime, "Indiquez la date et l'heure de retrait."),
+  notes: optionalString(500),
+  lines: z.array(orderLineSchema).min(1, "Ajoutez au moins une ligne."),
+});
+export type OrderEditInput = z.input<typeof orderEditSchema>;
+export type OrderEditOutput = z.output<typeof orderEditSchema>;
+
 export function orderTotal(
   lines: Array<{ quantity: string; unitPriceTnd: string }>,
 ): Decimal {

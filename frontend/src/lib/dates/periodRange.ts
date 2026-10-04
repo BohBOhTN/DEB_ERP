@@ -3,7 +3,9 @@ import { businessTimeZone, toBusinessDate } from "../../i18n/format.js";
 
 /// `custom` is a single day or a range typed by the user. The `last30`,
 /// `last90` and `year` windows belong to the analyses (issue 014), where a
-/// day is too short to show a trend.
+/// day is too short to show a trend. `all`, `tomorrow` and `next7` belong
+/// to dates that lie ahead, such as the pickup of an order (issue 015):
+/// "this week" and "this month" stop at today and never reach them.
 export type PeriodPreset =
   | "today"
   | "yesterday"
@@ -12,6 +14,9 @@ export type PeriodPreset =
   | "last30"
   | "last90"
   | "year"
+  | "all"
+  | "tomorrow"
+  | "next7"
   | "custom";
 
 /// The five presets every list with a date dimension offers (issue #41).
@@ -40,6 +45,9 @@ export const periodLabels: Record<PeriodPreset, string> = {
   last30: "30 jours",
   last90: "90 jours",
   year: "Cette année",
+  all: "Toutes",
+  tomorrow: "Demain",
+  next7: "7 jours",
   custom: "Personnalisée",
 };
 
@@ -100,6 +108,14 @@ export function periodRange(value: PeriodValue, now = new Date()): PeriodRange {
       return { from: shiftBusinessDate(today, -89), to: today };
     case "year":
       return { from: `${today.slice(0, 4)}-01-01`, to: today };
+    case "all":
+      return { from: "", to: "" };
+    case "tomorrow": {
+      const tomorrow = shiftBusinessDate(today, 1);
+      return { from: tomorrow, to: tomorrow };
+    }
+    case "next7":
+      return { from: today, to: shiftBusinessDate(today, 6) };
     case "custom": {
       const from = value.from || value.to;
       const to = value.to || value.from;

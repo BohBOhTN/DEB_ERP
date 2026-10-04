@@ -41,6 +41,11 @@ const orderFilterFields = {
   dueBefore: z.coerce.date().optional(),
   dueAfter: z.coerce.date().optional(),
   dueState: z.enum(["OVERDUE", "UPCOMING"]).optional(),
+  /// Issue 015: the orders awaiting fulfilment, late or not.
+  open: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
   ...searchFields,
 };
 

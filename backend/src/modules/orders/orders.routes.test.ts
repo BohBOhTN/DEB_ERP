@@ -417,6 +417,34 @@ describe("orders routes", () => {
       );
     });
 
+    // Issue 015: the queue and its figures over every open order.
+    it("passes the open filter to the list and to the summary", async () => {
+      const { app, cookie, ordersService } = await createTestApp([
+        "orders.view",
+      ]);
+
+      await request(app)
+        .get("/api/v1/orders?open=true")
+        .set("Cookie", cookie)
+        .expect(200);
+      await request(app)
+        .get("/api/v1/orders/summary?open=true")
+        .set("Cookie", cookie)
+        .expect(200);
+      await request(app)
+        .get("/api/v1/orders?open=yes")
+        .set("Cookie", cookie)
+        .expect(400);
+
+      expect(ordersService.listOrders).toHaveBeenCalledTimes(1);
+      expect(ordersService.listOrders).toHaveBeenCalledWith(
+        expect.objectContaining({ open: true }),
+      );
+      expect(ordersService.summarizeOrders).toHaveBeenCalledWith(
+        expect.objectContaining({ open: true }),
+      );
+    });
+
     it("refuses the summary without orders.view", async () => {
       const { app, cookie, ordersService } = await createTestApp([
         "orders.create",

@@ -1,6 +1,6 @@
-import { ArrowRight, Ban, Banknote, Check, Undo2 } from "lucide-react";
+import { ArrowRight, Ban, Banknote, Check, Pencil, Undo2 } from "lucide-react";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   DataTable,
   type DataTableColumn,
@@ -32,13 +32,14 @@ import {
   remainingOf,
   advanceDateLabel,
 } from "../components/orderLabels.js";
-import { dueLabel } from "./OrdersPage.js";
+import { dueLabel } from "../ordersBoard.js";
 import styles from "./OrderPages.module.css";
 
 /// `/commandes/:id` (UI-14): summary, lines, advances and one action bar
 /// with the permitted transitions only; the linked sale after completion.
 export function OrderDetailPage() {
   const { orderId = "" } = useParams();
+  const navigate = useNavigate();
   const permissions = useSessionPermissions();
   const toast = useToast();
   const query = useOrder(orderId);
@@ -157,6 +158,15 @@ export function OrderDetailPage() {
                 }
               >
                 {actions.resume.label}
+              </Button>
+            ) : null}
+            {actions.edit ? (
+              <Button
+                variant="secondary"
+                leftIcon={<Pencil />}
+                onClick={() => navigate(`/commandes/${order.id}/modifier`)}
+              >
+                Modifier
               </Button>
             ) : null}
             {actions.recordAdvance ? (

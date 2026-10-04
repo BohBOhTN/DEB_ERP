@@ -26,6 +26,7 @@ import {
   loadOrdersPage,
   loadOrderEditorPage,
   loadOrderDetailPage,
+  loadOrderEditPage,
   loadPos,
   loadDistributorsPage,
   loadDistributorDetailPage,
@@ -112,6 +113,9 @@ const OrderEditorPage = lazy(() =>
 );
 const OrderDetailPage = lazy(() =>
   loadOrderDetailPage().then((m) => ({ default: m.OrderDetailPage })),
+);
+const OrderEditPage = lazy(() =>
+  loadOrderEditPage().then((m) => ({ default: m.OrderEditPage })),
 );
 const CaissePage = lazy(() =>
   loadPos().then((m) => ({ default: m.CaissePage })),
@@ -414,6 +418,15 @@ export const routes: RouteObject[] = [
               </Guarded>
             ),
             handle: { title: "Commande" },
+          },
+          {
+            path: "/commandes/:orderId/modifier",
+            element: (
+              <Guarded anyOf={["orders.update"]}>
+                <OrderEditPage />
+              </Guarded>
+            ),
+            handle: { title: "Modifier la commande" },
           },
           {
             path: "/caisse",

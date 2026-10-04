@@ -36,6 +36,8 @@ export const loadOrdersPage = () =>
   import("../features/orders/pages/OrdersPage.js");
 export const loadOrderEditorPage = () =>
   import("../features/orders/pages/OrderEditorPage.js");
+export const loadOrderEditPage = () =>
+  import("../features/orders/pages/OrderEditPage.js");
 export const loadOrderDetailPage = () =>
   import("../features/orders/pages/OrderDetailPage.js");
 export const loadPos = () => import("../features/pos/pos.js");
