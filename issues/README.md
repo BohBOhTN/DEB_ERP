@@ -19,8 +19,9 @@ Workflow: branch `fix/<topic>` or `feat/<topic>` from `dev`, name the issue numb
 | [011](011-produits-photos-caisse.md)             | Produits: photos on the products, shown on the till tiles                               | High     | 010            |
 | [012](012-commandes-acomptes-et-reste.md)        | Commandes: deposits and the remainder shown in the dialogs                              | High     | —              |
 | [013](013-retouches-apres-demo.md)               | After the demo: Accueil, product page, customers refresh, stock pickers                 | Medium   | —              |
+| [014](014-analyses-et-sessions.md)               | Analyses: an analytics module on the collected data, till sessions made findable        | High     | 008, 001       |
 
-Suggested order: 007 → 003 → 001 → 005 → 004 → 006 → 002 → 008. After the client demo of 2026-09-26: 012 → 013 → 011. Issues 003, 005 (PR 1) and 002 are independent and can be picked up any time; 008 was added after the first seven were fixed.
+Suggested order: 007 → 003 → 001 → 005 → 004 → 006 → 002 → 008. After the client demo of 2026-09-26: 012 → 013 → 011. Requested on 2026-10-04: 014 (the first feature that lifts a deferred scope, see `DEC-V2-006`). Issues 003, 005 (PR 1) and 002 are independent and can be picked up any time; 008 was added after the first seven were fixed.
 
 Bugs found that the owner did not report, by severity:
 
@@ -34,3 +35,4 @@ Bugs found that the owner did not report, by severity:
 8. "Dépenses du mois" ignores the selected period and computes the month in UTC (002).
 9. Enter on any focused till button adds the first product instead (003).
 10. Customer ledger labels do not match the backend enum, so règlements render as "payment" (006).
+11. The till sessions history has no navigation entry, and "Crédit accordé" on a session shows what is still owed today, not what was granted (014).
