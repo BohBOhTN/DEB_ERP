@@ -1,0 +1,135 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.swatch {
+  width: 18px;
+  height: 0;
+  border-top: 3px solid var(--chart-1);
+  border-radius: var(--radius-full);
+}
+
+.swatch.dashed {
+  border-top: 2px dashed var(--chart-2);
+  border-radius: 0;
+}
+
+.scale {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.plot {
+  position: relative;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+.gridline {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.area {
+  fill: var(--chart-1);
+  opacity: 0.1;
+}
+
+.line {
+  stroke: var(--chart-1);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.comparison {
+  stroke: var(--chart-2);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.cursor {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+/* One invisible column per point: the pointer picks the point under it. */
+.hover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+
+.hoverColumn {
+  flex: 1 1 0;
+}
+
+/* The keyboard's way through the points: laid over the plot, invisible,
+   and the plot shows the focus ring for it. */
+.scrubber {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.plot:focus-within {
+  border-radius: var(--radius-sm);
+  box-shadow: var(--focus-ring);
+}
+
+.axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.readout {
+  min-height: var(--leading-sm);
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--text-primary);
+}
