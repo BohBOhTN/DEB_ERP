@@ -34,8 +34,16 @@ export interface LineEditorProps {
   showPrice?: boolean;
   errors?: Record<string, string | undefined>;
   disabled?: boolean;
-  /// Helper text under a line (a normalised quantity such as "= 50,000 kg").
+  /// Helper text under the quantity (a normalised quantity such as
+  /// "= 50,000 kg"); nothing is rendered when it answers nothing.
   lineHint?: (line: EditorLine) => ReactNode;
+  /// Helper text under the unit price ("par kg" when the price is not per
+  /// the unit entered).
+  priceHint?: (line: EditorLine) => ReactNode;
+  /// One line per item (issue 016): a line's picker leaves out what the
+  /// other lines already hold. On by default; every document that uses
+  /// this editor refuses a repeated item on the server.
+  uniqueItems?: boolean;
   /// Overrides the quantity × price total, for documents whose price is per
   /// base unit while the quantity is entered in another unit (purchases).
   lineTotalFor?: (line: EditorLine) => string;
@@ -115,6 +123,8 @@ export function LineEditor({
   errors = {},
   disabled = false,
   lineHint,
+  priceHint,
+  uniqueItems = true,
   lineTotalFor,
   unitPriceFromTotal,
   footer,
@@ -171,6 +181,13 @@ export function LineEditor({
         {lines.map((line, index) => {
           const units = unitsFor?.(line);
           const errorFor = (field: string) => errors[`lines.${index}.${field}`];
+          const quantityHint = lineHint?.(line);
+          const unitPriceHint = priceHint?.(line);
+          const taken = uniqueItems
+            ? lines.flatMap((other) =>
+                other.key !== line.key && other.item ? [other.item.value] : [],
+              )
+            : undefined;
 
           return (
             <li
@@ -187,6 +204,7 @@ export function LineEditor({
                   loadOptions={loadItems}
                   value={line.item}
                   onChange={(item) => update(line.key, { item })}
+                  excludeValues={taken}
                   placeholder={`Rechercher ${itemLabel.toLowerCase()}`}
                   disabled={disabled}
                   invalid={Boolean(
@@ -216,8 +234,8 @@ export function LineEditor({
                 {errorFor("quantity") ? (
                   <p className={styles.error}>{errorFor("quantity")}</p>
                 ) : null}
-                {lineHint ? (
-                  <p className={styles.hint}>{lineHint(line)}</p>
+                {quantityHint ? (
+                  <p className={styles.hint}>{quantityHint}</p>
                 ) : null}
               </div>
               {units ? (
@@ -257,6 +275,9 @@ export function LineEditor({
                   )}
                   {errorFor("unitPriceTnd") ? (
                     <p className={styles.error}>{errorFor("unitPriceTnd")}</p>
+                  ) : null}
+                  {unitPriceHint ? (
+                    <p className={styles.hint}>{unitPriceHint}</p>
                   ) : null}
                 </div>
               ) : null}

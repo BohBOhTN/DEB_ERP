@@ -32,6 +32,9 @@ export interface ComboboxProps<
   disabled?: boolean;
   invalid?: boolean;
   clearable?: boolean;
+  /// Values left out of the list: what the other lines of a document
+  /// already hold, so the same item cannot be picked twice (issue 016).
+  excludeValues?: readonly string[];
   id?: string;
   "aria-label"?: string;
   className?: string;
@@ -52,6 +55,7 @@ export function Combobox<TOption extends ComboboxOption = ComboboxOption>({
   disabled,
   invalid,
   clearable = true,
+  excludeValues,
   id,
   className,
   ...rest
@@ -70,7 +74,9 @@ export function Combobox<TOption extends ComboboxOption = ComboboxOption>({
   } | null>(null);
   const debouncedQuery = useDebounce(query, 250);
   const requestId = useRef(0);
-  const options = result?.options ?? [];
+  const options = (result?.options ?? []).filter(
+    (option) => !excludeValues?.includes(option.value),
+  );
   const loading = open && result?.query !== debouncedQuery;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);

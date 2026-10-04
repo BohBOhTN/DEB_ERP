@@ -6,6 +6,22 @@ All notable project changes are recorded here.
 
 ### Fixed
 
+- Issue 016, Achats: cancelling a purchase paid in part and then
+  cancelling its payment (or the reverse order) gave the payment back
+  twice and left a supplier balance nobody owed. A cancellation now takes
+  back what is still applied and marks the payment as cancelled; a
+  payment whose purchase is cancelled offers no cancellation and the API
+  refuses it (`PAYMENT_DOCUMENT_CANCELLED`). The same rule guards the
+  customer and distributor payments.
+- Issue 016, Achats: the purchase form refuses a material on two lines, a
+  zero unit price or line total, a date in the future and a due date
+  before the purchase, each on its field, with a summary of the errors;
+  the server refuses the same with field errors instead of a generic
+  failure. A line's picker no longer offers what another line holds, in
+  purchases, orders, dispatches and distributor sales.
+- Issue 016, Achats: no more "Prix par kg" under the quantity; with a
+  unit other than the base one the quantity shows its base equivalent and
+  the price shows its unit.
 - Issue 015, Commandes: the queue opened on the orders not yet due, today
   only, and its other periods looked backwards, so orders for tomorrow or
   past their hour were hidden and every figure read 0. `À traiter` is now

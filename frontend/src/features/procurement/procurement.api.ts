@@ -81,6 +81,7 @@ export interface SupplierPaymentAllocation {
     reference: string | null;
     purchaseDate: string;
     totalTnd: string;
+    status?: PurchaseStatus;
   };
 }
 
@@ -93,8 +94,15 @@ export interface SupplierPayment {
   reference: string | null;
   notes: string | null;
   supplier: Supplier;
+  /// The purchase a payment taken at posting belongs to (issue 016).
+  purchase?: {
+    id: string;
+    reference: string | null;
+    status: PurchaseStatus;
+  } | null;
   allocations: SupplierPaymentAllocation[];
-  /// Set when the payment was reversed; its ledger effect is compensated.
+  /// Set when the payment was reversed, by hand or by the cancellation of
+  /// its purchase; its ledger effect is compensated.
   reversedAt: string | null;
   reversalReason: string | null;
 }

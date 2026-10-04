@@ -110,6 +110,29 @@ function supplierBalance(store: ProcurementStore, supplier: Supplier): Decimal {
     );
 }
 
+/// The server's field-level refusal of a purchase (issue 016): the same
+/// material on two lines, named on the second one.
+function purchaseRefusal(input: PurchaseInput) {
+  const seen = new Set<string>();
+  const fieldErrors: Record<string, string> = {};
+  input.lines.forEach((line, index) => {
+    if (seen.has(line.rawMaterialId)) {
+      fieldErrors[`lines.${index}.rawMaterialId`] =
+        "Cette matière première est déjà sur une autre ligne.";
+    }
+    seen.add(line.rawMaterialId);
+  });
+
+  return Object.keys(fieldErrors).length > 0
+    ? apiError(
+        400,
+        "VALIDATION_ERROR",
+        "Les données saisies sont invalides.",
+        fieldErrors,
+      )
+    : null;
+}
+
 function buildPurchase(
   store: ProcurementStore,
   input: PurchaseInput,
@@ -323,6 +346,8 @@ export function procurementHandlers(
     }),
     http.post(`${apiV1}/procurement/purchases`, async ({ request }) => {
       const body = (await request.json()) as PurchaseInput;
+      const refusal = purchaseRefusal(body);
+      if (refusal) return refusal;
       if (!body.lines?.length)
         return apiError(
           400,
@@ -432,6 +457,24 @@ export function procurementHandlers(
           cancelledAt: new Date().toISOString(),
           cancellationReason: body.reason ?? null,
         });
+        // Issue 016: a payment that settled nothing but this purchase is
+        // taken back by the cancellation and reads as cancelled.
+        for (const payment of store.payments) {
+          const settles = [
+            payment.purchase?.id,
+            ...payment.allocations.map((allocation) => allocation.purchaseId),
+          ].filter(Boolean);
+          if (
+            !payment.reversedAt &&
+            settles.length > 0 &&
+            settles.every((id) => id === purchase.id)
+          ) {
+            Object.assign(payment, {
+              reversedAt: purchase.cancelledAt,
+              reversalReason: `Achat ${purchase.reference ?? ""} annulé : ${body.reason ?? ""}`,
+            });
+          }
+        }
         return ok({ purchase: withState(store, purchase) }, 201);
       },
     ),
@@ -457,6 +500,7 @@ export function procurementHandlers(
                         reference: purchase.reference,
                         purchaseDate: purchase.purchaseDate,
                         totalTnd: purchase.totalTnd,
+                        status: purchase.status,
                       }
                     : undefined,
                 };
@@ -580,6 +624,18 @@ export function procurementHandlers(
             409,
             "PAYMENT_ALREADY_REVERSED",
             "Ce paiement a déjà été annulé.",
+          );
+        const settled = payment.allocations.map((allocation) =>
+          store.purchases.find((row) => row.id === allocation.purchaseId),
+        );
+        if (
+          settled.length > 0 &&
+          settled.every((purchase) => purchase?.status === "CANCELLED")
+        )
+          return apiError(
+            409,
+            "PAYMENT_DOCUMENT_CANCELLED",
+            "Ce paiement est lié à un achat annulé : il a déjà été repris par l'annulation.",
           );
         Object.assign(payment, {
           reversedAt: new Date().toISOString(),

@@ -84,4 +84,70 @@ describe("LineEditor", () => {
     expect(unitPriceForTotal("0", "10")).toBeNull();
     expect(unitPriceForTotal("4", "")).toBeNull();
   });
+
+  // Issue 016: one line per item. The picker of a line leaves out what
+  // the other lines already hold, and hints sit under the field they are
+  // about.
+  describe("one line per item and hints (issue 016)", () => {
+    const catalogue = [
+      { value: "flour", label: "Farine T55" },
+      { value: "sugar", label: "Sucre" },
+      { value: "butter", label: "Beurre" },
+    ];
+
+    function Picker({ unique }: { unique?: boolean }) {
+      const [lines, setLines] = useState<EditorLine[]>([
+        { ...newLine(), item: catalogue[0] ?? null, quantity: "4" },
+        newLine(),
+      ]);
+
+      return (
+        <LineEditor
+          lines={lines}
+          onChange={setLines}
+          loadItems={async () => catalogue}
+          uniqueItems={unique}
+          lineHint={(line) =>
+            line.quantity ? `= ${line.quantity} sacs` : null
+          }
+          priceHint={(line) => (line.item ? "par kg" : null)}
+        />
+      );
+    }
+
+    const optionsOf = async (name: string) => {
+      await userEvent.click(screen.getByRole("combobox", { name }));
+      // Butter is on no line: it is in every list.
+      await screen.findByRole("option", { name: "Beurre" });
+      return screen.getAllByRole("option").map((option) => option.textContent);
+    };
+
+    it("leaves out of a line's picker what the other lines hold", async () => {
+      render(<Picker />);
+
+      expect(await optionsOf("Produit 2")).toEqual(["Sucre", "Beurre"]);
+      await userEvent.click(screen.getByRole("option", { name: "Sucre" }));
+
+      // The first line keeps its own item and loses the second line's.
+      expect(await optionsOf("Produit 1")).toEqual(["Farine T55", "Beurre"]);
+    });
+
+    it("offers everything again when the document allows a repeated item", async () => {
+      render(<Picker unique={false} />);
+
+      expect(await optionsOf("Produit 2")).toEqual([
+        "Farine T55",
+        "Sucre",
+        "Beurre",
+      ]);
+    });
+
+    it("renders a hint only where there is something to say", () => {
+      render(<Picker />);
+
+      // The first line has a quantity and an item; the second has neither.
+      expect(screen.getAllByText("= 4 sacs")).toHaveLength(1);
+      expect(screen.getAllByText("par kg")).toHaveLength(1);
+    });
+  });
 });
