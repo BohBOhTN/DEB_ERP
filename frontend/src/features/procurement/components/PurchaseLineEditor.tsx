@@ -80,9 +80,10 @@ export function factorFor(
 }
 
 /// Raw material lines of a purchase (07 section 4.3): the picker searches
-/// the catalogue by name, the unit list comes from the material's active
-/// conversions and the hint states the base quantity ("= 50,000 kg") since
-/// the price is per base unit.
+/// the catalogue by name and leaves out the materials already on another
+/// line, the unit list comes from the material's active conversions and,
+/// for a unit other than the base one, the hints state the base quantity
+/// ("= 50 kg") and the unit of the price ("par kg").
 export function PurchaseLineEditor({
   lines,
   onChange,
@@ -168,18 +169,22 @@ export function PurchaseLineEditor({
             })),
         ];
       }}
+      // Nothing under the quantity when the unit is the base unit (issue
+      // 016). With another unit, the quantity says what it amounts to in
+      // the base unit and the price says which unit it is for.
       lineHint={(line) => {
         const { rawMaterial, factorToBase, quantity } =
           line as PurchaseEditorLine;
-        if (!rawMaterial) {
+        if (!rawMaterial || isBaseUnit(factorToBase)) {
           return null;
         }
-        const symbol = rawMaterial.baseUnit.symbol;
-        if (new Decimal(factorToBase || 1).equals(1)) {
-          return `Prix par ${symbol}`;
-        }
-        const base = safeTimes(quantity, factorToBase);
-        return `= ${formatQuantity(base, symbol)} · prix par ${symbol}`;
+        return `= ${formatQuantity(safeTimes(quantity, factorToBase), rawMaterial.baseUnit.symbol)}`;
+      }}
+      priceHint={(line) => {
+        const { rawMaterial, factorToBase } = line as PurchaseEditorLine;
+        return rawMaterial && !isBaseUnit(factorToBase)
+          ? `par ${rawMaterial.baseUnit.symbol}`
+          : null;
       }}
       lineTotalFor={(line) =>
         purchaseLineTotal(line as PurchaseEditorLine).toFixed(3)
@@ -195,6 +200,14 @@ export function PurchaseLineEditor({
       disabled={disabled}
     />
   );
+}
+
+function isBaseUnit(factorToBase: string): boolean {
+  try {
+    return new Decimal(factorToBase || 1).equals(1);
+  } catch {
+    return true;
+  }
 }
 
 function safeTimes(quantity: string, factor: string): string {
