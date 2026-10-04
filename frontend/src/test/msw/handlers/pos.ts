@@ -87,6 +87,100 @@ function totalsOf(store: PosStore, sessionId: string) {
   };
 }
 
+/// The session insights as the server computes them: the posted sales of
+/// the session by Tunis hour (UTC+1) and its products by revenue.
+function insightsOf(store: PosStore, sessionId: string) {
+  const sales = store.sales.filter((sale) => sale.sessionId === sessionId);
+  const posted = sales.filter((sale) => sale.status === "POSTED");
+  const hours = new Map<number, { count: number; total: Decimal }>();
+  const products = new Map<
+    string,
+    { name: string; unitName: string; quantity: Decimal; revenue: Decimal }
+  >();
+
+  for (const sale of posted) {
+    const hour = (new Date(sale.soldAt).getUTCHours() + 1) % 24;
+    const slot = hours.get(hour) ?? { count: 0, total: new Decimal(0) };
+    hours.set(hour, {
+      count: slot.count + 1,
+      total: slot.total.plus(sale.totalTnd),
+    });
+
+    for (const line of sale.lines ?? []) {
+      const row = products.get(line.productId) ?? {
+        name: line.productNameSnapshot,
+        unitName: line.unitNameSnapshot,
+        quantity: new Decimal(0),
+        revenue: new Decimal(0),
+      };
+      products.set(line.productId, {
+        ...row,
+        quantity: row.quantity.plus(line.quantity),
+        revenue: row.revenue.plus(line.lineTotalTnd),
+      });
+    }
+  }
+
+  const total = posted.reduce(
+    (sum, sale) => sum.plus(sale.totalTnd),
+    new Decimal(0),
+  );
+
+  return {
+    averageBasketTnd:
+      posted.length === 0 ? null : total.dividedBy(posted.length).toFixed(3),
+    cancelledSalesCount: sales.length - posted.length,
+    hourly: [...hours.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([hour, slot]) => ({
+        hour,
+        count: slot.count,
+        totalTnd: slot.total.toFixed(3),
+      })),
+    topProducts: [...products.entries()]
+      .sort(([, left], [, right]) => right.revenue.comparedTo(left.revenue))
+      .slice(0, 5)
+      .map(([productId, row]) => ({
+        productId,
+        name: row.name,
+        unitName: row.unitName,
+        quantity: row.quantity.toFixed(6),
+        revenueTnd: row.revenue.toFixed(3),
+      })),
+  };
+}
+
+/// The totals of the session history, for the list's status filter.
+function sessionsSummaryOf(store: PosStore, url: URL) {
+  const status = url.searchParams.get("status");
+  const sessions = store.sessions.filter(
+    (session) => !status || session.status === status,
+  );
+  const totals = sessions.map((session) => totalsOf(store, session.id));
+  const differences = sessions.map(
+    (session) => new Decimal(session.cashDifferenceTnd ?? 0),
+  );
+  const sum = (values: Decimal[]) =>
+    values.reduce((total, value) => total.plus(value), new Decimal(0));
+  const shortage = sum(differences.filter((value) => value.isNegative()));
+  const surplus = sum(differences.filter((value) => value.isPositive()));
+
+  return {
+    count: sessions.length,
+    openCount: sessions.filter((session) => session.status === "OPEN").length,
+    closedCount: sessions.filter((session) => session.status === "CLOSED")
+      .length,
+    salesCount: totals.reduce((total, row) => total + row.salesCount, 0),
+    salesTotalTnd: sum(
+      totals.map((row) => new Decimal(row.salesTotalTnd)),
+    ).toFixed(3),
+    differenceTnd: shortage.plus(surplus).toFixed(3),
+    shortageTnd: shortage.toFixed(3),
+    surplusTnd: surplus.toFixed(3),
+    withDifferenceCount: differences.filter((value) => !value.isZero()).length,
+  };
+}
+
 export function posHandlers(store: PosStore = makePosStore()) {
   return [
     http.get(`${apiV1}/pos/sessions/current`, () =>
@@ -396,10 +490,18 @@ export function posHandlers(store: PosStore = makePosStore()) {
         ),
       ),
     ),
+    // Ahead of `:id`, which would otherwise take "summary" for a session.
+    http.get(`${apiV1}/pos/sessions/summary`, ({ request }) =>
+      ok({ summary: sessionsSummaryOf(store, new URL(request.url)) }),
+    ),
     http.get(`${apiV1}/pos/sessions/:id`, ({ params }) => {
       const session = store.sessions.find((row) => row.id === params.id);
       return session
-        ? ok({ session, totals: totalsOf(store, session.id) })
+        ? ok({
+            session,
+            totals: totalsOf(store, session.id),
+            insights: insightsOf(store, session.id),
+          })
         : apiError(
             404,
             "POS_SESSION_NOT_FOUND",
