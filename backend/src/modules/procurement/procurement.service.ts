@@ -8,7 +8,12 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
-import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
+import {
+  businessDateOf,
+  orderByFor,
+  type SortSpec,
+} from "../../shared/listQuery.js";
+import { messages } from "../../shared/messages.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
 import { planPaymentAllocations } from "../../shared/paymentAllocation.js";
 import { documentPaymentProjection } from "../../shared/paymentState.js";
@@ -389,6 +394,7 @@ export class ProcurementService {
     },
     actor: ProcurementActor,
   ) {
+    assertPurchaseInput(params);
     const supplier = await this.assertActiveSupplier(params.supplierId);
     const lines = await this.buildPurchaseLines(params.lines, this.prisma);
     const total = sumDecimals(
@@ -465,6 +471,7 @@ export class ProcurementService {
     },
     actor: ProcurementActor,
   ) {
+    assertPurchaseInput(params);
     const supplier = await this.assertActiveSupplier(params.supplierId);
     const lines = await this.buildPurchaseLines(params.lines, this.prisma);
     const total = sumDecimals(
@@ -1549,7 +1556,7 @@ export class ProcurementService {
     );
 
     return Promise.all(
-      lines.map(async (line) => {
+      lines.map(async (line, index) => {
         const rawMaterial = rawMaterialById.get(line.rawMaterialId);
 
         if (!rawMaterial) {
@@ -1590,6 +1597,15 @@ export class ProcurementService {
         const lineTotalTnd = normalizedQuantity
           .mul(unitPriceTnd)
           .toDecimalPlaces(3);
+
+        // A quantity and a price can both be positive and still round to
+        // nothing; the table refuses a line of zero.
+        if (!lineTotalTnd.greaterThan(0)) {
+          throw invalidPurchase({
+            [`lines.${index}.unitPriceTnd`]:
+              "Le total de la ligne doit être supérieur à zéro.",
+          });
+        }
 
         return {
           rawMaterialId: rawMaterial.id,
@@ -1854,6 +1870,69 @@ const purchaseInclude = {
   payments: true,
   ledgerEntries: true,
 } as const;
+
+function invalidPurchase(fieldErrors: Record<string, string>): AppError {
+  return new AppError({
+    statusCode: 400,
+    code: "VALIDATION_ERROR",
+    message: messages.VALIDATION_ERROR,
+    fieldErrors,
+  });
+}
+
+const positiveQuantityPattern = /^\d+(\.\d{1,6})?$/;
+const positiveMoneyPattern = /^\d+(\.\d{1,3})?$/;
+
+/// What a purchase form can get wrong, checked before any lookup and
+/// answered all at once on the fields concerned (issue 016): a date in the
+/// future, a due date before the purchase, a material on two lines, a
+/// quantity or a unit price that is not strictly positive.
+export function assertPurchaseInput(
+  params: {
+    purchaseDate: Date;
+    dueDate?: Date;
+    lines: PurchaseLineInput[];
+  },
+  now = new Date(),
+): void {
+  const fieldErrors: Record<string, string> = {};
+  const purchaseDay = businessDateOf(params.purchaseDate);
+
+  if (purchaseDay > businessDateOf(now)) {
+    fieldErrors.purchaseDate =
+      "La date d'achat ne peut pas être dans le futur.";
+  }
+
+  if (params.dueDate && businessDateOf(params.dueDate) < purchaseDay) {
+    fieldErrors.dueDate = "L'échéance ne peut pas précéder la date d'achat.";
+  }
+
+  const firstLineOf = new Map<string, number>();
+  params.lines.forEach((line, index) => {
+    if (firstLineOf.has(line.rawMaterialId)) {
+      fieldErrors[`lines.${index}.rawMaterialId`] =
+        "Cette matière première est déjà sur une autre ligne.";
+    } else {
+      firstLineOf.set(line.rawMaterialId, index);
+    }
+
+    const quantity = line.enteredQuantity.trim();
+    if (!positiveQuantityPattern.test(quantity) || Number(quantity) <= 0) {
+      fieldErrors[`lines.${index}.enteredQuantity`] =
+        "La quantité doit être supérieure à zéro.";
+    }
+
+    const price = line.unitPriceTnd.trim();
+    if (!positiveMoneyPattern.test(price) || Number(price) <= 0) {
+      fieldErrors[`lines.${index}.unitPriceTnd`] =
+        "Le prix unitaire doit être supérieur à zéro.";
+    }
+  });
+
+  if (Object.keys(fieldErrors).length > 0) {
+    throw invalidPurchase(fieldErrors);
+  }
+}
 
 function parseQuantity(value: string): Prisma.Decimal {
   const trimmed = value.trim();
