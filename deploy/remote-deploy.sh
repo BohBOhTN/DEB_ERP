@@ -25,10 +25,18 @@ cd "$STACK_DIR"
 # would otherwise run its migrations and its tests on real data.
 if [ "$STACK_NAME" != "deb" ]; then
   : "${PUBLIC_PORT:?PUBLIC_PORT is required for ${STACK_NAME} (8081 belongs to production)}"
-  if ! printf '%s\n' "$BACKEND_ENV" | grep -Eq '^DATABASE_URL=.*staging'; then
-    echo "Refusing to deploy ${STACK_NAME}: its DATABASE_URL must name a staging database." >&2
-    exit 1
-  fi
+  # The database is the last path segment of the URL, before any `?`. The
+  # check reads that name alone: a staging role on the production database
+  # (`…staging_user@host/dar_el_baraka`) must be refused too.
+  database="$(printf '%s\n' "$BACKEND_ENV" |
+    sed -n 's/^DATABASE_URL=["'"'"']\{0,1\}[^?]*\/\([^/?"'"'"']*\).*/\1/p' | head -n 1)"
+  case "$database" in
+    *staging*) ;;
+    *)
+      echo "Refusing to deploy ${STACK_NAME}: its DATABASE_URL names the database \"${database}\", which is not a staging database." >&2
+      exit 1
+      ;;
+  esac
 fi
 
 # Configuration files are written from the environment, never expanded

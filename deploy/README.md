@@ -116,7 +116,10 @@ reviewer.
 `VPS_SSH_HOST`, `VPS_SSH_USER`, `VPS_SSH_KEY` and `VPS_SSH_PORT` are the
 same as production's. The deploy refuses a staging stack whose
 `DATABASE_URL` does not name a database containing `staging`, so a
-secret copied from production cannot point staging at real data.
+secret copied from production cannot point staging at real data. It reads
+the database name itself, the part after the last `/`: both the role and
+the database change from production's (`…_staging_user` and
+`…/dar_el_baraka_staging`), and changing the role alone is refused.
 
 5. **The host site**: the block of the previous section with
    `server_name testing.darelbarka.work;` and
