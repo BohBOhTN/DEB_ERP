@@ -23,6 +23,17 @@ All notable project changes are recorded here.
   terms (`Paiement des marchandises`); the totals show each part; the
   confirmation lists the stock received for both. Any of the three cards
   may be empty.
+- Issue 021, Analyses: a tab `Achats` (with `purchases.view`): the
+  purchases of the period against the one before, split between raw
+  materials and resold products, what is still owed on them, a trend by
+  kind, the suppliers, the raw materials with their average and last
+  price and how the price moved, the resold products with what was sold
+  of them over the same period.
+- Issue 021, Analyses: a tab `Distributeurs` (with `distributors.view`):
+  the revenue of the channel against the period before, direct sales
+  against consignment, the return rate, each distributor with its balance
+  (`distribution.balances.view`), the products sold through distributors
+  with their returns and approximate margin.
 
 ## [2.3.0] - 2026-10-06
 
