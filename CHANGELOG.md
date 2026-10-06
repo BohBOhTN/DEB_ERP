@@ -4,6 +4,15 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-06
+
+What the owner asked for after 2.2.0: the order queue and the purchase
+form put right (issues 015 and 016), a test environment beside production
+(issue 017, `DEC-V2-008`), and the shopping trip with sub-categories of
+expenses (issue 018, `DEC-V2-009`). Issues 015 to 017 already run in
+production, merged to `main` on their own; this release adds issue 018 and
+its one additive migration.
+
 ### Fixed
 
 - Issue 016, Achats: cancelling a purchase paid in part and then
