@@ -543,7 +543,7 @@ function makeTx(store: Store) {
     };
   };
   const insert = (table: Row[], prefix: string, data: Row) => {
-    const row = { id: id(prefix), ...data };
+    const row: Row & { id: string } = { id: id(prefix), ...data };
     table.push(row);
     return row;
   };

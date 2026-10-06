@@ -59,7 +59,7 @@ any active category, parent or leaf, can carry an expense.
   column with the three totals, the payment of the raw materials
   (`PurchaseTotalsCard`, shown only when there are lines, with "Les
   autres achats sont réglés sur place") and `Sortie de caisse
-  aujourd'hui`. One button, `Valider la course`, into a
+aujourd'hui`. One button, `Valider la course`, into a
   `ConfirmPostingDialog` stating stock per material, the supplier's debt,
   the payment recorded, the expenses and what leaves the till today.
   Success goes to the purchase page, or to `Dépenses` when nothing
@@ -67,7 +67,7 @@ any active category, parent or leaf, can carry an expense.
   any request; a refusal of the server lands on the line it concerns.
 - **Reaching it.** `Course fournisseur` in the quick actions of `Accueil`
   (shown with the three permissions), `Nouvelle course` next to `Nouvel
-  achat` on `Achats`, `Course fournisseur` on `Dépenses`, and the command
+achat` on `Achats`, `Course fournisseur` on `Dépenses`, and the command
   palette.
 - **After.** The purchase page gains `Autres achats de cette course`
   with the total and a link to the expense list filtered on that trip;
