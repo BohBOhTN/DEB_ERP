@@ -664,6 +664,40 @@ describe("procurement routes", () => {
     );
   });
 
+  // Issue 020: a trip's purchase lines take a resold product too.
+  it("passes a resold product line of a shopping trip to the service", async () => {
+    const { app, cookie, shoppingTripService } =
+      await createTestApp(tripPermissions);
+    const water = {
+      productId: "product-1",
+      enteredUnitId: "unit-piece",
+      enteredQuantity: "24",
+      unitPriceTnd: "0.850",
+    };
+
+    await request(app)
+      .post("/api/procurement/shopping-trips")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "trip-3")
+      .send({
+        ...tripBody,
+        purchase: {
+          ...tripBody.purchase,
+          lines: [...tripBody.purchase.lines, water],
+        },
+      })
+      .expect(201);
+
+    expect(shoppingTripService.post).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        purchase: expect.objectContaining({
+          lines: [...tripBody.purchase.lines, water],
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
   it("defaults a shopping trip to no expense lines", async () => {
     const { app, cookie, shoppingTripService } =
       await createTestApp(tripPermissions);

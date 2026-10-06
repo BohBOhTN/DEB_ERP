@@ -130,10 +130,12 @@ export const shoppingTripSchema = z.object({
       paymentTerms: z.nativeEnum(PurchasePaymentTerms),
       paidAmountTnd: moneyTnd.default("0"),
       dueDate: z.coerce.date().optional(),
+      // Issue 020: a raw material or a resold product, like a purchase.
       lines: z
         .array(
           z.object({
-            rawMaterialId: z.string().trim().min(1),
+            rawMaterialId: z.string().trim().min(1).optional(),
+            productId: z.string().trim().min(1).optional(),
             enteredUnitId: z.string().trim().min(1),
             enteredQuantity: z.string(),
             unitPriceTnd: z.string(),

@@ -105,6 +105,93 @@ describe("ShoppingTripService", () => {
     ]);
   });
 
+  // Issue 020: the raw materials and the resold products of a trip are one
+  // purchase; the other goods are its expenses.
+  it("posts one purchase of raw materials and resold products with its expenses", async () => {
+    const { service, prisma } = makeService();
+
+    const result = await service.post(
+      {
+        idempotencyKey: "trip-mixed",
+        supplierId: "store-a",
+        tripDate,
+        purchase: {
+          paymentTerms: "PAID",
+          paidAmountTnd: "32.400",
+          lines: [
+            flour,
+            {
+              productId: "bottle",
+              enteredUnitId: "piece",
+              enteredQuantity: "24",
+              unitPriceTnd: "0.850",
+            },
+          ],
+        },
+        expenses: [bags],
+      },
+      actor,
+    );
+
+    expect(result.purchase).toMatchObject({
+      status: "POSTED",
+      totalTnd: "32.400",
+      expensesTotalTnd: "12.500",
+    });
+    expect(result.totals).toEqual({
+      purchaseTnd: "32.400",
+      expensesTnd: "12.500",
+      totalTnd: "44.900",
+      paidTodayTnd: "44.900",
+    });
+    const store = prisma.snapshot();
+    expect(store.purchases).toHaveLength(1);
+    expect(
+      store.inventoryMovements.map((movement) => [
+        movement.itemType,
+        movement.rawMaterialId ?? movement.productId,
+        movement.quantityDelta,
+      ]),
+    ).toEqual([
+      ["RAW_MATERIAL", "flour", "10.000000"],
+      ["PRODUCT", "bottle", "24.000000"],
+    ]);
+    expect(store.products.find((row) => row.id === "bottle")).toMatchObject({
+      approximateCostTnd: "0.850",
+    });
+    expect(store.expenses).toHaveLength(1);
+  });
+
+  it("refuses a product made here on a trip and writes nothing", async () => {
+    const { service, prisma } = makeService();
+
+    await expect(
+      service.post(
+        {
+          idempotencyKey: "trip-not-resale",
+          supplierId: "store-a",
+          tripDate,
+          purchase: {
+            paymentTerms: "PAID",
+            paidAmountTnd: "1.000",
+            lines: [
+              {
+                productId: "baguette",
+                enteredUnitId: "piece",
+                enteredQuantity: "5",
+                unitPriceTnd: "0.200",
+              },
+            ],
+          },
+          expenses: [bags],
+        },
+        actor,
+      ),
+    ).rejects.toMatchObject({ code: "ACTIVE_RESALE_PRODUCT_REQUIRED" });
+    expect(prisma.snapshot().purchases).toHaveLength(0);
+    expect(prisma.snapshot().expenses).toHaveLength(0);
+  });
+
   it("records the expenses alone when no raw material was bought", async () => {
     const { service, prisma } = makeService();
 
@@ -350,6 +437,41 @@ describe("assertShoppingTripInput", () => {
       "expenses.0.description": "Un libellé est obligatoire.",
       "expenses.0.amountTnd": "Le montant doit être supérieur à zéro.",
       "expenses.1.amountTnd": "Le montant doit être supérieur à zéro.",
+    });
+  });
+
+  it("answers a purchase line without an item, or a repeated product, under purchase.lines", () => {
+    const water = {
+      productId: "bottle",
+      enteredUnitId: "piece",
+      enteredQuantity: "24",
+      unitPriceTnd: "0.850",
+    };
+    const error = errorsOf(() =>
+      assertShoppingTripInput(
+        {
+          supplierId: "store-a",
+          tripDate,
+          purchase: {
+            paymentTerms: "PAID",
+            paidAmountTnd: "0",
+            lines: [
+              flour,
+              water,
+              { enteredUnitId: "kg", enteredQuantity: "1", unitPriceTnd: "1" },
+              water,
+            ],
+          },
+          expenses: [],
+        },
+        now,
+      ),
+    );
+
+    expect(error?.fieldErrors).toEqual({
+      "purchase.lines.2.rawMaterialId":
+        "Choisissez une matière première ou un produit de revente, un seul par ligne.",
+      "purchase.lines.3.productId": "Ce produit est déjà sur une autre ligne.",
     });
   });
 

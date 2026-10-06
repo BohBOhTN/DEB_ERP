@@ -5586,7 +5586,8 @@ export interface operations {
                         /** Format: date-time */
                         dueDate?: string;
                         lines: {
-                            rawMaterialId: string;
+                            rawMaterialId?: string;
+                            productId?: string;
                             enteredUnitId: string;
                             enteredQuantity: string;
                             unitPriceTnd: string;

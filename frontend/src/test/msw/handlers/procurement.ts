@@ -463,7 +463,7 @@ export function procurementHandlers(
         return apiError(
           400,
           "SHOPPING_TRIP_EMPTY",
-          "Ajoutez au moins une matière première ou une dépense.",
+          "Ajoutez au moins une matière première, un produit de revente ou une dépense.",
         );
       const fieldErrors: Record<string, string> = {};
       body.expenses.forEach((line, index) => {
