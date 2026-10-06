@@ -17,6 +17,12 @@ All notable project changes are recorded here.
   margin follows what the supplier charged; cancelling takes the stock
   back. The purchase page marks the resold lines. The API refuses a
   product not flagged for resale (`ACTIVE_RESALE_PRODUCT_REQUIRED`).
+- Issue 020, Achats: `Nouvelle course` gains a card `Produits de revente`
+  between the raw materials and the other purchases. The raw materials
+  and the resold products of a trip are one purchase, paid on the same
+  terms (`Paiement des marchandises`); the totals show each part; the
+  confirmation lists the stock received for both. Any of the three cards
+  may be empty.
 
 ## [2.3.0] - 2026-10-06
 
