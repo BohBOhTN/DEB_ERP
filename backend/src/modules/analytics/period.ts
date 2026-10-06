@@ -100,6 +100,18 @@ export function resolvePeriod(
   };
 }
 
+/// The window as every analysis answers it.
+export function describePeriod(period: AnalyticsPeriod) {
+  return {
+    from: period.from,
+    to: period.to,
+    days: period.days,
+    granularity: period.granularity,
+    previousFrom: period.previous.from,
+    previousTo: period.previous.to,
+  };
+}
+
 function invalidPeriod(fieldErrors: Record<string, string>): AppError {
   return new AppError({
     statusCode: 400,
