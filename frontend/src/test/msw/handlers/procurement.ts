@@ -8,7 +8,7 @@ import type {
   SupplierPayment,
   SupplierPaymentInput,
 } from "../../../features/procurement/procurement.api.js";
-import { kg, sac } from "../../factories/catalog.js";
+import { kg, piece, sac } from "../../factories/catalog.js";
 import { makeExpense } from "../../factories/expenses.js";
 import { makePage } from "../../factories/page.js";
 import {
@@ -67,6 +67,10 @@ const rawMaterialNames: Record<string, string> = {
   "raw-1": "Farine T55",
   "raw-2": "Sucre",
 };
+/// Issue 019: the resold products a mock purchase can hold, in pieces.
+const productNames: Record<string, string> = {
+  "product-water": "Eau 1,5 L",
+};
 
 function balanceOf(store: ProcurementStore, purchase: Purchase): Decimal {
   if (purchase.status !== "POSTED") return new Decimal(0);
@@ -119,11 +123,15 @@ function purchaseRefusal(input: PurchaseInput) {
   const seen = new Set<string>();
   const fieldErrors: Record<string, string> = {};
   input.lines.forEach((line, index) => {
-    if (seen.has(line.rawMaterialId)) {
-      fieldErrors[`lines.${index}.rawMaterialId`] =
-        "Cette matière première est déjà sur une autre ligne.";
+    const item = line.productId ?? line.rawMaterialId ?? "";
+    if (seen.has(item)) {
+      fieldErrors[
+        `lines.${index}.${line.productId ? "productId" : "rawMaterialId"}`
+      ] = line.productId
+        ? "Ce produit est déjà sur une autre ligne."
+        : "Cette matière première est déjà sur une autre ligne.";
     }
-    seen.add(line.rawMaterialId);
+    seen.add(item);
   });
 
   return Object.keys(fieldErrors).length > 0
@@ -144,12 +152,31 @@ function buildPurchase(
   const supplier = store.suppliers.find((row) => row.id === input.supplierId);
   if (!supplier) throw new Error("supplier");
   const lines = input.lines.map((line, index) => {
+    if (line.productId) {
+      const quantity = new Decimal(line.enteredQuantity);
+      return {
+        id: `line-${sequence}-${index}`,
+        rawMaterialId: null,
+        productId: line.productId,
+        enteredUnitId: line.enteredUnitId,
+        baseUnitId: piece.id,
+        enteredQuantity: quantity.toFixed(6),
+        conversionFactorToBase: "1.000000",
+        normalizedQuantity: quantity.toFixed(6),
+        unitPriceTnd: new Decimal(line.unitPriceTnd).toFixed(3),
+        lineTotalTnd: quantity.times(line.unitPriceTnd).toFixed(3),
+        rawMaterialNameSnapshot: productNames[line.productId] ?? "Produit",
+        enteredUnitNameSnapshot: piece.name,
+        baseUnitNameSnapshot: piece.name,
+      };
+    }
     const entered = line.enteredUnitId === sac.id ? sac : kg;
     const factor = line.enteredUnitId === sac.id ? "50.000000" : "1.000000";
     const normalized = new Decimal(line.enteredQuantity).times(factor);
     return {
       id: `line-${sequence}-${index}`,
-      rawMaterialId: line.rawMaterialId,
+      rawMaterialId: line.rawMaterialId ?? null,
+      productId: null,
       enteredUnitId: line.enteredUnitId,
       baseUnitId: kg.id,
       enteredQuantity: new Decimal(line.enteredQuantity).toFixed(6),
@@ -158,7 +185,7 @@ function buildPurchase(
       unitPriceTnd: new Decimal(line.unitPriceTnd).toFixed(3),
       lineTotalTnd: normalized.times(line.unitPriceTnd).toFixed(3),
       rawMaterialNameSnapshot:
-        rawMaterialNames[line.rawMaterialId] ?? "Matière",
+        rawMaterialNames[line.rawMaterialId ?? ""] ?? "Matière",
       enteredUnitNameSnapshot: entered.name,
       baseUnitNameSnapshot: kg.name,
     };

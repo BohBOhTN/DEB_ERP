@@ -35,6 +35,8 @@ export interface ProductListParams extends Omit<ListParams, "sort"> {
   >;
   categoryId?: string;
   isStockable?: boolean;
+  /// Issue 019: the products bought to be resold.
+  isResale?: boolean;
 }
 
 const defaultUnits = [
@@ -721,6 +723,7 @@ export class CatalogService {
       ...(params.isStockable === undefined
         ? {}
         : { isStockable: params.isStockable }),
+      ...(params.isResale === undefined ? {} : { isResale: params.isResale }),
       ...(normalizedSearch
         ? {
             OR: [
@@ -794,6 +797,7 @@ export class CatalogService {
       salePriceTnd: string;
       approximateCostTnd?: string | null;
       isStockable: boolean;
+      isResale?: boolean;
       notes?: string;
     },
     actor: CatalogActor,
@@ -813,7 +817,9 @@ export class CatalogService {
         baseUnitId: params.baseUnitId,
         salePriceTnd: params.salePriceTnd,
         approximateCostTnd: params.approximateCostTnd ?? null,
-        isStockable: params.isStockable,
+        // DEC-V2-010: a product bought to be resold is always stock-tracked.
+        isStockable: params.isResale ? true : params.isStockable,
+        isResale: params.isResale ?? false,
         notes: emptyToNull(params.notes),
         createdByUserId: actor.actorUserId,
         updatedByUserId: actor.actorUserId,
@@ -847,11 +853,15 @@ export class CatalogService {
       salePriceTnd?: string;
       approximateCostTnd?: string | null;
       isStockable?: boolean;
+      isResale?: boolean;
       notes?: string;
     },
     actor: CatalogActor,
   ) {
     const existing = await this.findProductOrThrow(productId);
+    // DEC-V2-010: resale forces stock tracking, whether the flag arrives
+    // with this update or was already on the product.
+    const isResale = params.isResale ?? existing.isResale;
     const normalizedName =
       params.name !== undefined ? normalizeName(params.name) : undefined;
 
@@ -892,9 +902,12 @@ export class CatalogService {
         ...(params.approximateCostTnd !== undefined
           ? { approximateCostTnd: params.approximateCostTnd }
           : {}),
-        ...(params.isStockable !== undefined
-          ? { isStockable: params.isStockable }
-          : {}),
+        ...(isResale
+          ? { isStockable: true }
+          : params.isStockable !== undefined
+            ? { isStockable: params.isStockable }
+            : {}),
+        ...(params.isResale !== undefined ? { isResale: params.isResale } : {}),
         ...(params.notes !== undefined
           ? { notes: emptyToNull(params.notes) }
           : {}),

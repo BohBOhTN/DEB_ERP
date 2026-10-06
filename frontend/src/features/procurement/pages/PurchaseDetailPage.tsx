@@ -70,8 +70,13 @@ export function PurchaseDetailPage() {
   const lineColumns: DataTableColumn<PurchaseLine>[] = [
     {
       id: "material",
-      header: "Matière première",
-      accessorFn: (row) => row.rawMaterialNameSnapshot,
+      header: "Article",
+      cell: ({ row }) => (
+        <span className={styles.nameCell}>
+          {row.original.rawMaterialNameSnapshot}
+          {row.original.productId ? <Badge tone="accent">Revente</Badge> : null}
+        </span>
+      ),
     },
     {
       id: "quantity",
@@ -241,7 +246,10 @@ export function PurchaseDetailPage() {
               mobileCard={(row) => (
                 <>
                   <span className={styles.cardTop}>
-                    <strong>{row.rawMaterialNameSnapshot}</strong>
+                    <strong>
+                      {row.rawMaterialNameSnapshot}
+                      {row.productId ? " (revente)" : ""}
+                    </strong>
                     <span className="tabular-nums">
                       {formatMoney(row.lineTotalTnd)}
                     </span>

@@ -55,6 +55,8 @@ export interface PurchaseListParams {
   asOf?: Date;
   /// Purchases containing a given raw material (raw material detail, UI-10).
   rawMaterialId?: string;
+  /// Purchases containing a given resold product (issue 019).
+  productId?: string;
   page: number;
   pageSize: number;
 }
@@ -84,8 +86,10 @@ export interface SupplierPaymentListParams {
   pageSize: number;
 }
 
+/// Issue 019: a raw material or a product flagged for resale, exactly one.
 export interface PurchaseLineInput {
-  rawMaterialId: string;
+  rawMaterialId?: string;
+  productId?: string;
   enteredUnitId: string;
   enteredQuantity: string;
   unitPriceTnd: string;
@@ -315,6 +319,9 @@ export class ProcurementService {
       ...(params.rawMaterialId
         ? { lines: { some: { rawMaterialId: params.rawMaterialId } } }
         : {}),
+      ...(params.productId
+        ? { lines: { some: { productId: params.productId } } }
+        : {}),
       ...(params.from || params.to
         ? {
             purchaseDate: {
@@ -437,6 +444,7 @@ export class ProcurementService {
           createMany: {
             data: lines.map((line) => ({
               rawMaterialId: line.rawMaterialId,
+              productId: line.productId,
               enteredUnitId: line.enteredUnitId,
               baseUnitId: line.baseUnitId,
               enteredQuantity: line.enteredQuantity.toFixed(6),
@@ -527,6 +535,7 @@ export class ProcurementService {
             createMany: {
               data: lines.map((line) => ({
                 rawMaterialId: line.rawMaterialId,
+                productId: line.productId,
                 enteredUnitId: line.enteredUnitId,
                 baseUnitId: line.baseUnitId,
                 enteredQuantity: line.enteredQuantity.toFixed(6),
@@ -624,8 +633,7 @@ export class ProcurementService {
     await tx.inventoryMovement.createMany({
       data: purchase.lines.map((line) => ({
         locationId: location.id,
-        itemType: InventoryItemType.RAW_MATERIAL,
-        rawMaterialId: line.rawMaterialId,
+        ...stockItemOf(line),
         unitId: line.baseUnitId,
         movementType: InventoryMovementType.PURCHASE_RECEIPT,
         quantityDelta: line.normalizedQuantity,
@@ -657,6 +665,34 @@ export class ProcurementService {
     await this.afterTransactionStep("supplier_payable_created", {
       purchaseId: purchase.id,
     });
+
+    // DEC-V2-010: what a resold product costs is what its supplier just
+    // charged for it. A product made here keeps the cost its owner typed.
+    for (const line of purchase.lines) {
+      if (!line.productId) {
+        continue;
+      }
+      const costed = await tx.product.updateMany({
+        where: { id: line.productId, isResale: true },
+        data: {
+          approximateCostTnd: line.unitPriceTnd,
+          version: { increment: 1 },
+          updatedByUserId: actor.actorUserId,
+        },
+      });
+      if (costed.count > 0) {
+        await this.auditWithClient(tx, {
+          actor,
+          action: "product.cost_from_purchase",
+          entity: "product",
+          targetId: line.productId,
+          after: {
+            approximateCostTnd: line.unitPriceTnd,
+            purchaseId: purchase.id,
+          },
+        });
+      }
+    }
 
     let payment = null;
     if (new Prisma.Decimal(purchase.paidAmountTnd).greaterThan(0)) {
@@ -756,8 +792,7 @@ export class ProcurementService {
         await tx.inventoryMovement.createMany({
           data: purchase.lines.map((line) => ({
             locationId: location.id,
-            itemType: InventoryItemType.RAW_MATERIAL,
-            rawMaterialId: line.rawMaterialId,
+            ...stockItemOf(line),
             unitId: line.baseUnitId,
             movementType: InventoryMovementType.REVERSAL,
             quantityDelta: new Prisma.Decimal(line.normalizedQuantity)
@@ -1575,34 +1610,59 @@ export class ProcurementService {
       });
     }
 
-    // One lookup for every raw material on the document instead of one query
-    // per line.
-    const rawMaterials = await client.rawMaterial.findMany({
-      where: {
-        id: { in: [...new Set(lines.map((line) => line.rawMaterialId))] },
-        isActive: true,
-      },
-      include: {
-        baseUnit: true,
-        conversions: {
-          where: {
-            isActive: true,
-          },
-          include: {
-            unit: true,
-          },
-        },
-      },
-    });
+    // One lookup per kind for the whole document instead of one query per
+    // line; a kind absent from the document costs no query.
+    const idsOf = (pick: (line: PurchaseLineInput) => string | undefined) => [
+      ...new Set(lines.flatMap((line) => pick(line) ?? [])),
+    ];
+    const rawMaterialIds = idsOf((line) => line.rawMaterialId);
+    const productIds = idsOf((line) => line.productId);
+    const [rawMaterials, products] = await Promise.all([
+      rawMaterialIds.length === 0
+        ? []
+        : client.rawMaterial.findMany({
+            where: { id: { in: rawMaterialIds }, isActive: true },
+            include: {
+              baseUnit: true,
+              conversions: {
+                where: { isActive: true },
+                include: { unit: true },
+              },
+            },
+          }),
+      // Issue 019: only an active product flagged for resale is bought.
+      productIds.length === 0
+        ? []
+        : client.product.findMany({
+            where: { id: { in: productIds }, isActive: true, isResale: true },
+            include: { baseUnit: true },
+          }),
+    ]);
     const rawMaterialById = new Map(
       rawMaterials.map((rawMaterial) => [rawMaterial.id, rawMaterial]),
+    );
+    const productById = new Map(
+      products.map((product) => [product.id, product]),
     );
 
     return Promise.all(
       lines.map(async (line, index) => {
-        const rawMaterial = rawMaterialById.get(line.rawMaterialId);
+        const product = line.productId
+          ? productById.get(line.productId)
+          : undefined;
+        const rawMaterial = line.rawMaterialId
+          ? rawMaterialById.get(line.rawMaterialId)
+          : undefined;
 
-        if (!rawMaterial) {
+        if (line.productId && !product) {
+          throw new AppError({
+            statusCode: 400,
+            code: "ACTIVE_RESALE_PRODUCT_REQUIRED",
+            message: "Un produit de revente actif est requis.",
+          });
+        }
+
+        if (!line.productId && !rawMaterial) {
           throw new AppError({
             statusCode: 400,
             code: "ACTIVE_RAW_MATERIAL_REQUIRED",
@@ -1610,16 +1670,35 @@ export class ProcurementService {
           });
         }
 
+        // A product has one unit and no conversion; a raw material has its
+        // base unit and its active conversions.
+        const item = product
+          ? {
+              name: product.name,
+              baseUnitId: product.baseUnitId,
+              baseUnitName: product.baseUnit.name,
+              conversions: [],
+            }
+          : {
+              name: (rawMaterial as NonNullable<typeof rawMaterial>).name,
+              baseUnitId: (rawMaterial as NonNullable<typeof rawMaterial>)
+                .baseUnitId,
+              baseUnitName: (rawMaterial as NonNullable<typeof rawMaterial>)
+                .baseUnit.name,
+              conversions: (rawMaterial as NonNullable<typeof rawMaterial>)
+                .conversions,
+            };
+
         const enteredQuantity = parseQuantity(line.enteredQuantity);
         const unitPriceTnd = parseMoney(line.unitPriceTnd);
         const conversion =
-          line.enteredUnitId === rawMaterial.baseUnitId
+          line.enteredUnitId === item.baseUnitId
             ? {
-                unitId: rawMaterial.baseUnitId,
+                unitId: item.baseUnitId,
                 factorToBase: new Prisma.Decimal(1),
-                unitName: rawMaterial.baseUnit.name,
+                unitName: item.baseUnitName,
               }
-            : rawMaterial.conversions.find(
+            : item.conversions.find(
                 (candidate) =>
                   candidate.unitId === line.enteredUnitId &&
                   candidate.unit.isActive,
@@ -1651,22 +1730,23 @@ export class ProcurementService {
         }
 
         return {
-          rawMaterialId: rawMaterial.id,
+          rawMaterialId: product ? null : (rawMaterial?.id ?? null),
+          productId: product?.id ?? null,
           enteredUnitId: line.enteredUnitId,
-          baseUnitId: rawMaterial.baseUnitId,
+          baseUnitId: item.baseUnitId,
           enteredQuantity,
           conversionFactorToBase: factor,
           normalizedQuantity,
           unitPriceTnd,
           lineTotalTnd,
-          rawMaterialNameSnapshot: rawMaterial.name,
+          rawMaterialNameSnapshot: item.name,
           enteredUnitNameSnapshot:
-            line.enteredUnitId === rawMaterial.baseUnitId
-              ? rawMaterial.baseUnit.name
+            line.enteredUnitId === item.baseUnitId
+              ? item.baseUnitName
               : "unitName" in conversion
                 ? conversion.unitName
                 : conversion.unit.name,
-          baseUnitNameSnapshot: rawMaterial.baseUnit.name,
+          baseUnitNameSnapshot: item.baseUnitName,
         };
       }),
     );
@@ -1929,6 +2009,20 @@ const purchaseDetailInclude = {
   },
 } satisfies Prisma.PurchaseInclude;
 
+/// The stock item a purchase line moves: the resold product or the raw
+/// material it bought (issue 019).
+function stockItemOf(line: {
+  rawMaterialId: string | null;
+  productId: string | null;
+}) {
+  return line.productId
+    ? { itemType: InventoryItemType.PRODUCT, productId: line.productId }
+    : {
+        itemType: InventoryItemType.RAW_MATERIAL,
+        rawMaterialId: line.rawMaterialId,
+      };
+}
+
 function invalidPurchase(fieldErrors: Record<string, string>): AppError {
   return new AppError({
     statusCode: 400,
@@ -1967,11 +2061,22 @@ export function assertPurchaseInput(
 
   const firstLineOf = new Map<string, number>();
   params.lines.forEach((line, index) => {
-    if (firstLineOf.has(line.rawMaterialId)) {
+    // Issue 019: one item per line, a raw material or a resold product,
+    // and each item on one line only.
+    const item = line.productId
+      ? `product:${line.productId}`
+      : `raw:${line.rawMaterialId ?? ""}`;
+    if (Boolean(line.productId) === Boolean(line.rawMaterialId)) {
       fieldErrors[`lines.${index}.rawMaterialId`] =
-        "Cette matière première est déjà sur une autre ligne.";
+        "Choisissez une matière première ou un produit de revente, un seul par ligne.";
+    } else if (firstLineOf.has(item)) {
+      fieldErrors[
+        `lines.${index}.${line.productId ? "productId" : "rawMaterialId"}`
+      ] = line.productId
+        ? "Ce produit est déjà sur une autre ligne."
+        : "Cette matière première est déjà sur une autre ligne.";
     } else {
-      firstLineOf.set(line.rawMaterialId, index);
+      firstLineOf.set(item, index);
     }
 
     const quantity = line.enteredQuantity.trim();

@@ -4,6 +4,29 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Issue 019, Produits: a product can be flagged `Produit de revente`,
+  bought from a supplier to be resold as it is. Such a product is always
+  stock-tracked (the stock switch locks on), carries a `Revente` badge in
+  the list, can be filtered on, and shows its purchases on its page.
+- Issue 019, Achats: a purchase line buys a raw material or a product
+  flagged for resale. The picker of `Nouvel achat` finds both and says
+  which is which; a resold product is bought in its own unit. Posting
+  receives its stock and sets its cost to the price just paid, so its
+  margin follows what the supplier charged; cancelling takes the stock
+  back. The purchase page marks the resold lines. The API refuses a
+  product not flagged for resale (`ACTIVE_RESALE_PRODUCT_REQUIRED`).
+
+## [2.3.0] - 2026-10-06
+
+What the owner asked for after 2.2.0: the order queue and the purchase
+form put right (issues 015 and 016), a test environment beside production
+(issue 017, `DEC-V2-008`), and the shopping trip with sub-categories of
+expenses (issue 018, `DEC-V2-009`). Issues 015 to 017 already run in
+production, merged to `main` on their own; this release adds issue 018 and
+its one additive migration.
+
 ### Fixed
 
 - Issue 016, Achats: cancelling a purchase paid in part and then
