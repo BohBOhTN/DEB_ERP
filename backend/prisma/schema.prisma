@@ -357,6 +357,7 @@ model Supplier {
   purchases       Purchase[]
   payments        SupplierPayment[]
   ledgerEntries   SupplierLedgerEntry[]
+  expenses        Expense[]
 
   @@index([isActive])
   @@index([normalizedName])
@@ -395,6 +396,7 @@ model Purchase {
   payments           SupplierPayment[]
   ledgerEntries      SupplierLedgerEntry[]
   paymentAllocations SupplierPaymentAllocation[]
+  expenses           Expense[]
 
   @@index([supplierId])
   @@index([purchaseDate])
@@ -1238,20 +1240,26 @@ model CostSimulationIngredient {
 }
 
 model ExpenseCategory {
-  id              String    @id @default(cuid())
+  id              String            @id @default(cuid())
   name            String
-  normalizedName  String    @map("normalized_name")
+  normalizedName  String            @map("normalized_name")
   description     String?
-  isActive        Boolean   @default(true) @map("is_active")
-  version         Int       @default(1)
-  createdByUserId String    @map("created_by_user_id")
-  updatedByUserId String    @map("updated_by_user_id")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  /// Issue 018: a sub-category sits under its parent ("Fournitures ›
+  /// Emballage"); any active category, parent or leaf, can carry an expense.
+  parentId        String?           @map("parent_id")
+  isActive        Boolean           @default(true) @map("is_active")
+  version         Int               @default(1)
+  createdByUserId String            @map("created_by_user_id")
+  updatedByUserId String            @map("updated_by_user_id")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  parent          ExpenseCategory?  @relation("ExpenseCategoryParent", fields: [parentId], references: [id], onDelete: Restrict)
+  children        ExpenseCategory[] @relation("ExpenseCategoryParent")
   expenses        Expense[]
 
   @@index([isActive])
   @@index([normalizedName])
+  @@index([parentId])
   @@map("expense_categories")
 }
 
@@ -1271,6 +1279,11 @@ model Expense {
   externalReference  String?         @map("external_reference")
   method             PaymentMethod   @default(CASH)
   notes              String?
+  /// Issue 018: an expense recorded on a shopping trip remembers the store
+  /// and the purchase posted on the same trip, so "what did we spend at
+  /// store A" can be answered. Both stay null for a plain expense.
+  supplierId         String?         @map("supplier_id")
+  purchaseId         String?         @map("purchase_id")
   responsibleUserId  String          @map("responsible_user_id")
   postedAt           DateTime?       @map("posted_at")
   postedByUserId     String?         @map("posted_by_user_id")
@@ -1284,11 +1297,15 @@ model Expense {
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @updatedAt @map("updated_at")
   category           ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  supplier           Supplier?       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchase           Purchase?       @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
 
   @@index([categoryId])
   @@index([status])
   @@index([expenseDate])
   @@index([status, expenseDate])
+  @@index([supplierId])
+  @@index([purchaseId])
   @@map("expenses")
 }
 
