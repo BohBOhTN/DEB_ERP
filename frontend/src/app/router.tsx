@@ -19,6 +19,7 @@ import {
   loadSupplierDetailPage,
   loadPurchasesPage,
   loadPurchaseEditorPage,
+  loadShoppingTripPage,
   loadPurchaseDetailPage,
   loadSupplierPaymentsPage,
   loadCustomersPage,
@@ -92,6 +93,9 @@ const PurchasesPage = lazy(() =>
 );
 const PurchaseEditorPage = lazy(() =>
   loadPurchaseEditorPage().then((m) => ({ default: m.PurchaseEditorPage })),
+);
+const ShoppingTripPage = lazy(() =>
+  loadShoppingTripPage().then((m) => ({ default: m.ShoppingTripPage })),
 );
 const PurchaseDetailPage = lazy(() =>
   loadPurchaseDetailPage().then((m) => ({ default: m.PurchaseDetailPage })),
@@ -346,6 +350,15 @@ export const routes: RouteObject[] = [
               </Guarded>
             ),
             handle: { title: "Nouvel achat" },
+          },
+          {
+            path: "/achats/course",
+            element: (
+              <Guarded anyOf={["purchases.create"]}>
+                <ShoppingTripPage />
+              </Guarded>
+            ),
+            handle: { title: "Nouvelle course" },
           },
           {
             path: "/achats/:purchaseId",

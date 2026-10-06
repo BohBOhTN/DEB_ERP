@@ -23,6 +23,8 @@ export type ExpenseFormOutput = z.output<typeof expenseSchema>;
 export const expenseCategorySchema = z.object({
   name: requiredString(2, 80),
   description: optionalString(200),
+  /// Issue 018: the category this one sits under; empty for the top level.
+  parentId: z.string().default(""),
 });
 export type ExpenseCategoryFormInput = z.input<typeof expenseCategorySchema>;
 export type ExpenseCategoryFormOutput = z.output<typeof expenseCategorySchema>;

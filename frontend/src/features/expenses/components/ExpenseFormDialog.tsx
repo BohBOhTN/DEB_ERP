@@ -13,7 +13,7 @@ import { TextInput } from "../../../components/ui/TextInput/TextInput.js";
 import { useToast } from "../../../components/ui/Toast/useToast.js";
 import { formatMoney, toBusinessDate } from "../../../i18n/format.js";
 import { useSessionPermissions } from "../../../app/sessionContext.js";
-import type { Expense } from "../expenses.api.js";
+import { categoryLabel, type Expense } from "../expenses.api.js";
 import {
   useCreateExpense,
   useExpenseCategories,
@@ -140,7 +140,7 @@ export function ExpenseFormDialog({
                 onValueChange={(value) => field.onChange(value ?? "")}
                 options={(categories.data ?? []).map((category) => ({
                   value: category.id,
-                  label: category.name,
+                  label: categoryLabel(category),
                 }))}
                 invalid={Boolean(errors.categoryId)}
               />

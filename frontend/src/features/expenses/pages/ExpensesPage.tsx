@@ -5,9 +5,11 @@ import {
   Pencil,
   Plus,
   Settings2,
+  ShoppingBasket,
+  X,
 } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { BarChart } from "../../../components/patterns/BarChart/BarChart.js";
 import {
   DataTable,
@@ -34,7 +36,11 @@ import { useToast } from "../../../components/ui/Toast/useToast.js";
 import { formatDate, formatMoney } from "../../../i18n/format.js";
 import { useUrlState } from "../../../lib/hooks/useUrlState.js";
 import { useSessionPermissions } from "../../../app/sessionContext.js";
-import type { Expense, ExpenseStatus } from "../expenses.api.js";
+import {
+  categoryLabel,
+  type Expense,
+  type ExpenseStatus,
+} from "../expenses.api.js";
 import {
   useExpenseCategories,
   useExpenses,
@@ -52,6 +58,9 @@ const defaults = {
   to: "",
   categoryId: "",
   status: "",
+  /// Issue 018: the expenses of one shopping trip, reached from the
+  /// purchase page.
+  purchaseId: "",
   sort: "expenseDate:desc",
   page: 1,
   pageSize: 25,
@@ -88,10 +97,18 @@ export function ExpensesPage() {
     sort,
     categoryId: state.categoryId || undefined,
     status: (state.status || undefined) as ExpenseStatus | undefined,
+    purchaseId: state.purchaseId || undefined,
     from: range.from || undefined,
     to: range.to || undefined,
   });
-  const activeCount = (state.categoryId ? 1 : 0) + (state.status ? 1 : 0);
+  const activeCount =
+    (state.categoryId ? 1 : 0) +
+    (state.status ? 1 : 0) +
+    (state.purchaseId ? 1 : 0);
+  const tripReference = state.purchaseId
+    ? (query.data?.items.find((row) => row.purchaseId === state.purchaseId)
+        ?.purchase?.reference ?? null)
+    : null;
   const topCategories = [...(totals.data?.byCategory ?? [])]
     .sort((a, b) => Number(b.totalTnd) - Number(a.totalTnd))
     .slice(0, 6);
@@ -114,6 +131,23 @@ export function ExpensesPage() {
       accessorFn: (row) => row.category.name,
     },
     { id: "label", header: "Libellé", accessorFn: (row) => row.description },
+    {
+      id: "supplier",
+      header: "Fournisseur",
+      cell: ({ row }) =>
+        row.original.supplier ? (
+          <span className={styles.nameCell}>
+            {row.original.supplier.name}
+            {row.original.purchase ? (
+              <Link to={`/achats/${row.original.purchase.id}`}>
+                {row.original.purchase.reference ?? "Achat"}
+              </Link>
+            ) : null}
+          </span>
+        ) : (
+          "—"
+        ),
+    },
     {
       id: "amount",
       header: "Montant",
@@ -144,6 +178,18 @@ export function ExpensesPage() {
             >
               <Button leftIcon={<Plus />} onClick={() => setEditing("new")}>
                 Nouvelle dépense
+              </Button>
+            </PermissionGate>
+            <PermissionGate
+              permissions={permissions}
+              allOf={["purchases.create", "purchases.post", "expenses.create"]}
+            >
+              <Button
+                variant="secondary"
+                leftIcon={<ShoppingBasket />}
+                onClick={() => navigate("/achats/course")}
+              >
+                Course fournisseur
               </Button>
             </PermissionGate>
             <PermissionGate
@@ -197,9 +243,22 @@ export function ExpensesPage() {
         </div>
         <FilterBar
           activeCount={activeCount}
-          onReset={() => setState({ categoryId: "", status: "", page: 1 })}
+          onReset={() =>
+            setState({ categoryId: "", status: "", purchaseId: "", page: 1 })
+          }
           filters={
             <>
+              {state.purchaseId ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  rightIcon={<X />}
+                  onClick={() => setState({ purchaseId: "", page: 1 })}
+                  aria-label={`Retirer le filtre sur la course ${tripReference ?? ""}`.trim()}
+                >
+                  Course {tripReference ?? ""}
+                </Button>
+              ) : null}
               <Select
                 aria-label="Catégorie"
                 placeholder="Toutes les catégories"
@@ -210,7 +269,7 @@ export function ExpensesPage() {
                 }
                 options={(categories.data ?? []).map((category) => ({
                   value: category.id,
-                  label: category.name,
+                  label: categoryLabel(category),
                 }))}
               />
               <Select
@@ -313,6 +372,7 @@ export function ExpensesPage() {
               <span className={styles.muted}>
                 {row.reference} · {formatDate(row.expenseDate)} ·{" "}
                 {row.category.name}
+                {row.supplier ? ` · ${row.supplier.name}` : ""}
               </span>
               <span className={styles.nameCell}>
                 <StatusPill {...expenseStatusPill(row.status)} />

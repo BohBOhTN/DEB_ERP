@@ -49,3 +49,28 @@ export function errorSummary(count: number): {
         : "Corrigez le champ signalé.",
   };
 }
+
+/// The shopping trip (issue 018) nests the purchase under `purchase.` and
+/// calls the date `tripDate`; the form keeps the purchase editor's names.
+const tripApiToForm: Array<[pattern: RegExp, formPath: string]> = [
+  [/^supplierId$/, "supplier"],
+  [/^tripDate$/, "purchaseDate"],
+  [/^purchase\.dueDate$/, "dueDate"],
+  [/^purchase\.paidAmountTnd$/, "paidAmountTnd"],
+  [/^purchase\.lines\.(\d+)\.rawMaterialId$/, "lines.$1.item"],
+  [/^purchase\.lines\.(\d+)\.enteredQuantity$/, "lines.$1.quantity"],
+  [/^purchase\.lines\.(\d+)\.enteredUnitId$/, "lines.$1.unitId"],
+  [/^purchase\.lines\.(\d+)\.unitPriceTnd$/, "lines.$1.unitPriceTnd"],
+];
+
+export function toTripFormFieldErrors(
+  fieldErrors: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(fieldErrors).map(([path, message]) => {
+      const rule = tripApiToForm.find(([pattern]) => pattern.test(path));
+
+      return [rule ? path.replace(rule[0], rule[1]) : path, message];
+    }),
+  );
+}

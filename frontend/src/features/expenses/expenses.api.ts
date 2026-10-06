@@ -11,9 +11,19 @@ export interface ExpenseCategory {
   id: string;
   name: string;
   description: string | null;
+  /// Issue 018: the category this one sits under, null at the top level;
+  /// the list answers the depth and the path ("Fournitures › Emballage").
+  parentId: string | null;
+  depth?: number;
+  path?: string;
   isActive: boolean;
   version: number;
   expenseCount?: number;
+}
+
+/// What a picker prints for a category: its path when the list gave one.
+export function categoryLabel(category: ExpenseCategory): string {
+  return category.path ?? category.name;
 }
 
 export interface Expense {
@@ -34,6 +44,12 @@ export interface Expense {
   version: number;
   createdAt: string;
   category: ExpenseCategory;
+  /// Issue 018: the store and the purchase of the shopping trip the expense
+  /// was recorded on; null for a plain expense.
+  supplierId?: string | null;
+  purchaseId?: string | null;
+  supplier?: { id: string; name: string } | null;
+  purchase?: { id: string; reference: string | null } | null;
 }
 
 export interface ExpenseTotals {
@@ -67,6 +83,7 @@ export async function listExpenseCategories(
 export async function createExpenseCategory(input: {
   name: string;
   description?: string;
+  parentId?: string | null;
 }): Promise<ExpenseCategory> {
   return (
     await apiClient.post<{ expenseCategory: ExpenseCategory }>(
@@ -82,6 +99,7 @@ export async function updateExpenseCategory(
     version: number;
     name?: string;
     description?: string;
+    parentId?: string | null;
     isActive?: boolean;
   },
 ): Promise<ExpenseCategory> {
@@ -99,6 +117,8 @@ export interface ExpenseListQuery {
   sort?: SortSpec;
   categoryId?: string;
   status?: ExpenseStatus;
+  purchaseId?: string;
+  supplierId?: string;
   from?: string;
   to?: string;
 }

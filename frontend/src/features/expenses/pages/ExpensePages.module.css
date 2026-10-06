@@ -34,3 +34,17 @@
     align-items: start;
   }
 }
+
+/* The category tree (issue 018): a sub-category steps in under its parent. */
+.treeName {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-inline-start: calc(var(--depth, 0) * var(--space-5));
+}
+
+.treeMark {
+  width: 1em;
+  height: 1em;
+  color: var(--text-secondary);
+}
