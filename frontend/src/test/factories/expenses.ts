@@ -10,6 +10,7 @@ export const electricity: ExpenseCategory = {
   id: "xcat-1",
   name: "Électricité",
   description: null,
+  parentId: null,
   isActive: true,
   version: 1,
   expenseCount: 0,
@@ -18,6 +19,26 @@ export const rent: ExpenseCategory = {
   id: "xcat-2",
   name: "Loyer",
   description: null,
+  parentId: null,
+  isActive: true,
+  version: 1,
+  expenseCount: 0,
+};
+/// Issue 018: a parent and its sub-category.
+export const supplies: ExpenseCategory = {
+  id: "xcat-3",
+  name: "Fournitures",
+  description: null,
+  parentId: null,
+  isActive: true,
+  version: 1,
+  expenseCount: 0,
+};
+export const packaging: ExpenseCategory = {
+  id: "xcat-4",
+  name: "Emballage",
+  description: null,
+  parentId: supplies.id,
   isActive: true,
   version: 1,
   expenseCount: 0,
@@ -31,6 +52,7 @@ export function makeExpenseCategory(
     id: `xcat-${n + 10}`,
     name: `Catégorie ${n}`,
     description: null,
+    parentId: null,
     isActive: true,
     version: 1,
     expenseCount: 0,
@@ -59,6 +81,10 @@ export function makeExpense(overrides: Partial<Expense> = {}): Expense {
     version: 1,
     createdAt: "2026-09-10T10:00:00.000Z",
     category,
+    supplierId: null,
+    purchaseId: null,
+    supplier: null,
+    purchase: null,
     ...overrides,
   };
 }

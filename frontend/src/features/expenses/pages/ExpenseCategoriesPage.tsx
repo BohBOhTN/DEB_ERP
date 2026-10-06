@@ -1,5 +1,11 @@
-import { MoreHorizontal, Pencil, Plus, Power } from "lucide-react";
-import { useState } from "react";
+import {
+  CornerDownRight,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Power,
+} from "lucide-react";
+import { useState, type CSSProperties } from "react";
 import {
   DataTable,
   type DataTableColumn,
@@ -11,7 +17,7 @@ import { DropdownMenu } from "../../../components/ui/DropdownMenu/DropdownMenu.j
 import { IconButton } from "../../../components/ui/IconButton/IconButton.js";
 import { StatusPill } from "../../../components/ui/StatusPill/StatusPill.js";
 import { useToast } from "../../../components/ui/Toast/useToast.js";
-import type { ExpenseCategory } from "../expenses.api.js";
+import { categoryLabel, type ExpenseCategory } from "../expenses.api.js";
 import {
   useExpenseCategories,
   useUpdateExpenseCategory,
@@ -20,7 +26,8 @@ import { ExpenseCategoryFormDialog } from "../components/ExpenseCategoryFormDial
 import styles from "./ExpensePages.module.css";
 
 /// `/depenses/categories` (UI-17, EXP-001 to EXP-003): names, how many
-/// expenses use each, activation instead of deletion.
+/// expenses use each, activation instead of deletion. Issue 018: the rows
+/// come in tree order and a sub-category sits indented under its parent.
 export function ExpenseCategoriesPage() {
   const toast = useToast();
   const query = useExpenseCategories();
@@ -30,7 +37,22 @@ export function ExpenseCategoriesPage() {
   const rows = query.data ?? [];
 
   const columns: DataTableColumn<ExpenseCategory>[] = [
-    { id: "name", header: "Nom", accessorFn: (row) => row.name },
+    {
+      id: "name",
+      header: "Nom",
+      cell: ({ row }) => (
+        <span
+          className={styles.treeName}
+          style={{ "--depth": row.original.depth ?? 0 } as CSSProperties}
+          data-depth={row.original.depth ?? 0}
+        >
+          {(row.original.depth ?? 0) > 0 ? (
+            <CornerDownRight aria-hidden="true" className={styles.treeMark} />
+          ) : null}
+          {row.original.name}
+        </span>
+      ),
+    },
     {
       id: "description",
       header: "Description",
@@ -119,6 +141,7 @@ export function ExpenseCategoriesPage() {
               />
             </span>
             <span className={styles.muted}>
+              {(row.depth ?? 0) > 0 ? `${categoryLabel(row)} · ` : ""}
               {row.expenseCount ?? 0} dépense
               {(row.expenseCount ?? 0) > 1 ? "s" : ""}
             </span>
@@ -144,7 +167,8 @@ export function ExpenseCategoriesPage() {
           toggling?.isActive ? (
             <p>
               La catégorie ne sera plus proposée pour une nouvelle dépense ;
-              l'historique la conserve.
+              l'historique la conserve. Ses sous-catégories actives doivent être
+              désactivées d'abord.
             </p>
           ) : (
             <p>La catégorie sera de nouveau proposée pour les dépenses.</p>
