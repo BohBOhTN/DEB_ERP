@@ -904,6 +904,15 @@ async function seedHistory(prisma: PrismaClient) {
         remainingDueTnd: (Number(total) - Number(paid)).toFixed(3),
         postedAt: purchaseDate,
         postedByUserId: user.id,
+        // A cancelled purchase carries its cancellation, as the table
+        // demands (`purchases_cancelled_metadata_check`).
+        ...(input.cancelled
+          ? {
+              cancelledAt: purchaseDate,
+              cancelledByUserId: user.id,
+              cancellationReason: "Livraison refusée",
+            }
+          : {}),
         ...by,
         lines: {
           create: input.lines.map((line) => ({
