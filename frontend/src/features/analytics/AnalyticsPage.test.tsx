@@ -92,15 +92,31 @@ describe("Analyses: vue d'ensemble", () => {
     // 4 800 against 4 000 the period before.
     expect(screen.getByText("4 800,000")).toBeInTheDocument();
     expect(screen.getByText("+20 % vs période précédente")).toBeInTheDocument();
-    expect(screen.getByText("Ventes en caisse")).toBeInTheDocument();
-    expect(screen.getByText("360")).toBeInTheDocument();
-    expect(screen.getByText("hors 2 ventes annulées")).toBeInTheDocument();
-    expect(screen.getByText("Panier moyen")).toBeInTheDocument();
-    expect(screen.getByText("Reste à encaisser")).toBeInTheDocument();
-    expect(screen.getByText("240,000")).toBeInTheDocument();
-    // Spending went down: good news, in the direction of the arrow only.
-    expect(screen.getByText("dépenses validées")).toBeInTheDocument();
-    expect(screen.getByText("−10 % vs période précédente")).toBeInTheDocument();
+    // Issue 022: five figures. The number of sales sits under the revenue.
+    expect(
+      screen.getByText("360 ventes en caisse · 30 jours"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Ventes en caisse")).not.toBeInTheDocument();
+    expect(screen.queryByText("Panier moyen")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reste à encaisser")).not.toBeInTheDocument();
+    // 900 of expenses and 1 140 of raw materials against 2 000 before.
+    expect(screen.getByText("Total charges")).toBeInTheDocument();
+    expect(screen.getByText("2 040,000")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /^Dépenses 900,000.TND · matières premières 1 140,000.TND$/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("+2 % vs période précédente")).toBeInTheDocument();
+    expect(screen.getByText("Achats matières premières")).toBeInTheDocument();
+    expect(screen.getByText("1 140,000")).toBeInTheDocument();
+    expect(screen.getByText("+14 % vs période précédente")).toBeInTheDocument();
+    // Goods bought to be resold are stock, shown apart from the charges.
+    expect(screen.getByText("Achats produits de revente")).toBeInTheDocument();
+    expect(screen.getByText("360,000")).toBeInTheDocument();
+    expect(
+      screen.getByText("stock à revendre, hors charges"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Marge approximative")).toBeInTheDocument();
     expect(
       screen.getByText("ingrédients seulement · sur 75 % des ventes en caisse"),
@@ -139,12 +155,19 @@ describe("Analyses: vue d'ensemble", () => {
     renderAnalytics({
       permissions: ["analytics.view"],
       fixtures: {
-        overview: makeAnalyticsOverview({ expenses: null, margin: null }),
+        overview: makeAnalyticsOverview({
+          expenses: null,
+          margin: null,
+          purchases: null,
+          charges: null,
+        }),
       },
     });
 
     expect(await screen.findByText("Chiffre d'affaires")).toBeInTheDocument();
-    expect(screen.queryByText("dépenses validées")).toBeNull();
+    expect(screen.queryByText("Total charges")).toBeNull();
+    expect(screen.queryByText("Achats matières premières")).toBeNull();
+    expect(screen.queryByText("Achats produits de revente")).toBeNull();
     expect(screen.queryByText("Marge approximative")).toBeNull();
     expect(screen.queryByText("Dépenses par catégorie")).toBeNull();
     // Without customers.view the customer analysis is not offered.
@@ -157,8 +180,9 @@ describe("Analyses: vue d'ensemble", () => {
     expect(
       await screen.findByText("Aucune activité sur cette période"),
     ).toBeInTheDocument();
-    // Revenue, sales and expenses: nothing now, nothing before.
-    expect(screen.getAllByText("Comme la période précédente")).toHaveLength(3);
+    // Revenue, charges and both kinds of purchase: nothing now, nothing
+    // before.
+    expect(screen.getAllByText("Comme la période précédente")).toHaveLength(4);
     expect(
       screen.queryByRole("img", { name: "Chiffre d'affaires par jour" }),
     ).toBeNull();

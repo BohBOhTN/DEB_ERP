@@ -95,6 +95,17 @@ describe("Accueil", () => {
     expect(
       screen.getByRole("list", { name: "Activité récente" }),
     ).toHaveTextContent("Vente en caisse");
+    // Issue 022: the charges of the day, 85 of expenses and 120 of raw
+    // materials, took the place of the cash collected.
+    expect(screen.getByText("Total charges")).toBeInTheDocument();
+    expect(screen.getByText("205,000")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /^Dépenses 85,000.TND · matières premières 120,000.TND$/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("+193 % vs la veille")).toBeInTheDocument();
+    expect(screen.queryByText("Encaissé en espèces")).not.toBeInTheDocument();
     // Issue #66: the expenses figure sits in the KPI row with the others.
     expect(screen.getByText("Dépenses du jour")).toBeInTheDocument();
     expect(screen.getByText("85,000")).toBeInTheDocument();
@@ -177,9 +188,7 @@ describe("Accueil", () => {
     expect(screen.getByText("Dépenses d'hier")).toBeInTheDocument();
     expect(screen.getByText("1 dépense validée")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("40,000")).toBeInTheDocument());
-    expect(
-      screen.getByText("Espèces de la veille à la caisse"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Total charges d'hier")).toBeInTheDocument();
     expect(dates.at(-1)).toBe(
       toBusinessDate(new Date(Date.now() - 24 * 60 * 60 * 1000)),
     );
@@ -198,6 +207,7 @@ describe("Accueil", () => {
           orders: null,
           stock: null,
           expenses: null,
+          charges: null,
           margin: null,
           custody: null,
           recent: null,
@@ -210,6 +220,7 @@ describe("Accueil", () => {
     expect(await screen.findByText("Ventes du jour")).toBeInTheDocument();
     expect(screen.queryByText("À payer fournisseurs")).not.toBeInTheDocument();
     expect(screen.queryByText("Marge approximative")).not.toBeInTheDocument();
+    expect(screen.queryByText("Total charges")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Reste à encaisser clients"),
     ).not.toBeInTheDocument();

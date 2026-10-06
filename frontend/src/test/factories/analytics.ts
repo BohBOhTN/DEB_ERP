@@ -69,6 +69,20 @@ export function makeAnalyticsOverview(
         uncostedLinesCount: 35,
       },
     },
+    // Issue 022: 1 140 of raw materials and 360 of goods to resell; the
+    // charges are the 900 of expenses plus the raw materials.
+    purchases: {
+      rawMaterialsTnd: "1140.000",
+      previousRawMaterialsTnd: "1000.000",
+      resaleTnd: "360.000",
+      previousResaleTnd: "200.000",
+    },
+    charges: {
+      totalTnd: "2040.000",
+      previousTotalTnd: "2000.000",
+      expensesTnd: "900.000",
+      rawMaterialsTnd: "1140.000",
+    },
     trend: Array.from({ length: 30 }, (_, index) => ({
       bucket: day(index),
       revenueTnd: index === 11 ? "410.000" : "150.000",
@@ -101,6 +115,18 @@ export function makeQuietOverview(): AnalyticsOverview {
     },
     expenses: { totalTnd: "0.000", previousTotalTnd: "0.000", byCategory: [] },
     margin: null,
+    purchases: {
+      rawMaterialsTnd: "0.000",
+      previousRawMaterialsTnd: "0.000",
+      resaleTnd: "0.000",
+      previousResaleTnd: "0.000",
+    },
+    charges: {
+      totalTnd: "0.000",
+      previousTotalTnd: "0.000",
+      expensesTnd: "0.000",
+      rawMaterialsTnd: "0.000",
+    },
     trend: Array.from({ length: 30 }, (_, index) => ({
       bucket: day(index),
       revenueTnd: "0.000",
