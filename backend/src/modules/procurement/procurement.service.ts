@@ -1,4 +1,5 @@
 import {
+  ExpenseStatus,
   InventoryItemType,
   InventoryMovementType,
   Prisma,
@@ -88,6 +89,17 @@ export interface PurchaseLineInput {
   enteredUnitId: string;
   enteredQuantity: string;
   unitPriceTnd: string;
+}
+
+export interface PurchaseInput {
+  supplierId: string;
+  purchaseDate: Date;
+  supplierReference?: string;
+  paymentTerms: PurchasePaymentTerms;
+  paidAmountTnd: string;
+  dueDate?: Date;
+  notes?: string;
+  lines: PurchaseLineInput[];
 }
 
 export interface SupplierPaymentAllocationInput {
@@ -381,22 +393,20 @@ export class ProcurementService {
     );
   }
 
-  public async createPurchase(
-    params: {
-      supplierId: string;
-      purchaseDate: Date;
-      supplierReference?: string;
-      paymentTerms: PurchasePaymentTerms;
-      paidAmountTnd: string;
-      dueDate?: Date;
-      notes?: string;
-      lines: PurchaseLineInput[];
-    },
+  public async createPurchase(params: PurchaseInput, actor: ProcurementActor) {
+    return this.createPurchaseWith(this.prisma, params, actor);
+  }
+
+  /// The draft written through a caller's client, so a shopping trip (issue
+  /// 018) can create and post the purchase inside its own transaction.
+  public async createPurchaseWith(
+    client: PrismaClient | Prisma.TransactionClient,
+    params: PurchaseInput,
     actor: ProcurementActor,
   ) {
     assertPurchaseInput(params);
-    const supplier = await this.assertActiveSupplier(params.supplierId);
-    const lines = await this.buildPurchaseLines(params.lines, this.prisma);
+    const supplier = await this.assertActiveSupplier(params.supplierId, client);
+    const lines = await this.buildPurchaseLines(params.lines, client);
     const total = sumDecimals(
       lines.map((line) => line.lineTotalTnd),
       3,
@@ -410,7 +420,7 @@ export class ProcurementService {
       dueDate: params.dueDate,
     });
 
-    const purchase = await this.prisma.purchase.create({
+    const purchase = await client.purchase.create({
       data: {
         supplierId: supplier.id,
         purchaseDate: params.purchaseDate,
@@ -444,7 +454,7 @@ export class ProcurementService {
       include: purchaseInclude,
     });
 
-    await this.audit({
+    await this.auditWithClient(client, {
       actor,
       action: "purchase.create",
       entity: "purchase",
@@ -560,134 +570,144 @@ export class ProcurementService {
       `purchase.post.${purchaseId}`,
       params.idempotencyKey,
       { purchaseId },
-      async (tx) => {
-        const purchase = await this.findPurchaseOrThrow(purchaseId, tx);
-
-        if (purchase.status !== PurchaseStatus.DRAFT) {
-          throw new AppError({
-            statusCode: 409,
-            code: "PURCHASE_NOT_DRAFT",
-            message: "Seul un achat brouillon peut être confirmé.",
-          });
-        }
-
-        if (!purchase.supplier.isActive) {
-          throw new AppError({
-            statusCode: 400,
-            code: "ACTIVE_SUPPLIER_REQUIRED",
-            message: "Un fournisseur actif est requis.",
-          });
-        }
-
-        const location = await this.findMainLocation(tx);
-        const postedAt = new Date();
-        const updatedPurchase = await tx.purchase.update({
-          where: {
-            id: purchase.id,
-          },
-          data: {
-            reference: await nextPurchaseReference(tx),
-            status: PurchaseStatus.POSTED,
-            postedAt,
-            postedByUserId: actor.actorUserId,
-            correlationId: actor.correlationId,
-            updatedByUserId: actor.actorUserId,
-          },
-          include: purchaseInclude,
-        });
-        await this.afterTransactionStep("purchase_status_updated", {
-          purchaseId: purchase.id,
-        });
-
-        await tx.inventoryMovement.createMany({
-          data: purchase.lines.map((line) => ({
-            locationId: location.id,
-            itemType: InventoryItemType.RAW_MATERIAL,
-            rawMaterialId: line.rawMaterialId,
-            unitId: line.baseUnitId,
-            movementType: InventoryMovementType.PURCHASE_RECEIPT,
-            quantityDelta: line.normalizedQuantity,
-            itemNameSnapshot: line.rawMaterialNameSnapshot,
-            unitNameSnapshot: line.baseUnitNameSnapshot,
-            sourceType: "PURCHASE",
-            sourceId: purchase.id,
-            reason: "Achat fournisseur",
-            occurredAt: postedAt,
-            actorUserId: actor.actorUserId,
-            correlationId: actor.correlationId,
-          })),
-        });
-        await this.afterTransactionStep("purchase_stock_receipt_created", {
-          purchaseId: purchase.id,
-        });
-
-        await tx.supplierLedgerEntry.create({
-          data: {
-            supplierId: purchase.supplierId,
-            purchaseId: purchase.id,
-            entryType: SupplierLedgerEntryType.PURCHASE_PAYABLE,
-            amountTnd: purchase.totalTnd,
-            occurredAt: postedAt,
-            actorUserId: actor.actorUserId,
-            correlationId: actor.correlationId,
-          },
-        });
-        await this.afterTransactionStep("supplier_payable_created", {
-          purchaseId: purchase.id,
-        });
-
-        let payment = null;
-        if (new Prisma.Decimal(purchase.paidAmountTnd).greaterThan(0)) {
-          payment = await tx.supplierPayment.create({
-            data: {
-              supplierId: purchase.supplierId,
-              purchaseId: purchase.id,
-              amountTnd: purchase.paidAmountTnd,
-              paidAt: postedAt,
-              actorUserId: actor.actorUserId,
-              correlationId: actor.correlationId,
-            },
-          });
-          await this.afterTransactionStep("supplier_payment_created", {
-            purchaseId: purchase.id,
-          });
-          await tx.supplierLedgerEntry.create({
-            data: {
-              supplierId: purchase.supplierId,
-              purchaseId: purchase.id,
-              paymentId: payment.id,
-              entryType: SupplierLedgerEntryType.PAYMENT,
-              amountTnd: new Prisma.Decimal(purchase.paidAmountTnd)
-                .negated()
-                .toFixed(3),
-              occurredAt: postedAt,
-              actorUserId: actor.actorUserId,
-              correlationId: actor.correlationId,
-            },
-          });
-          await this.afterTransactionStep("supplier_payment_ledger_created", {
-            purchaseId: purchase.id,
-          });
-        }
-
-        await this.auditWithClient(tx, {
-          actor,
-          action: "purchase.post",
-          entity: "purchase",
-          targetId: purchase.id,
-          before: purchase,
-          after: updatedPurchase,
-        });
-        await this.afterTransactionStep("purchase_post_audit_created", {
-          purchaseId: purchase.id,
-        });
-
-        return {
-          purchase: updatedPurchase,
-          payment,
-        };
-      },
+      (tx) => this.postPurchaseWith(tx, purchaseId, actor),
     );
+  }
+
+  /// The posting effects inside a caller's transaction: stock receipt,
+  /// payable, payment at posting and its ledger entry, audit. The idempotent
+  /// command above wraps it for a purchase posted alone; a shopping trip
+  /// (issue 018) wraps it with the expenses bought on the same trip.
+  public async postPurchaseWith(
+    tx: Prisma.TransactionClient,
+    purchaseId: string,
+    actor: ProcurementActor,
+  ) {
+    const purchase = await this.findPurchaseOrThrow(purchaseId, tx);
+
+    if (purchase.status !== PurchaseStatus.DRAFT) {
+      throw new AppError({
+        statusCode: 409,
+        code: "PURCHASE_NOT_DRAFT",
+        message: "Seul un achat brouillon peut être confirmé.",
+      });
+    }
+
+    if (!purchase.supplier.isActive) {
+      throw new AppError({
+        statusCode: 400,
+        code: "ACTIVE_SUPPLIER_REQUIRED",
+        message: "Un fournisseur actif est requis.",
+      });
+    }
+
+    const location = await this.findMainLocation(tx);
+    const postedAt = new Date();
+    const updatedPurchase = await tx.purchase.update({
+      where: {
+        id: purchase.id,
+      },
+      data: {
+        reference: await nextPurchaseReference(tx),
+        status: PurchaseStatus.POSTED,
+        postedAt,
+        postedByUserId: actor.actorUserId,
+        correlationId: actor.correlationId,
+        updatedByUserId: actor.actorUserId,
+      },
+      include: purchaseInclude,
+    });
+    await this.afterTransactionStep("purchase_status_updated", {
+      purchaseId: purchase.id,
+    });
+
+    await tx.inventoryMovement.createMany({
+      data: purchase.lines.map((line) => ({
+        locationId: location.id,
+        itemType: InventoryItemType.RAW_MATERIAL,
+        rawMaterialId: line.rawMaterialId,
+        unitId: line.baseUnitId,
+        movementType: InventoryMovementType.PURCHASE_RECEIPT,
+        quantityDelta: line.normalizedQuantity,
+        itemNameSnapshot: line.rawMaterialNameSnapshot,
+        unitNameSnapshot: line.baseUnitNameSnapshot,
+        sourceType: "PURCHASE",
+        sourceId: purchase.id,
+        reason: "Achat fournisseur",
+        occurredAt: postedAt,
+        actorUserId: actor.actorUserId,
+        correlationId: actor.correlationId,
+      })),
+    });
+    await this.afterTransactionStep("purchase_stock_receipt_created", {
+      purchaseId: purchase.id,
+    });
+
+    await tx.supplierLedgerEntry.create({
+      data: {
+        supplierId: purchase.supplierId,
+        purchaseId: purchase.id,
+        entryType: SupplierLedgerEntryType.PURCHASE_PAYABLE,
+        amountTnd: purchase.totalTnd,
+        occurredAt: postedAt,
+        actorUserId: actor.actorUserId,
+        correlationId: actor.correlationId,
+      },
+    });
+    await this.afterTransactionStep("supplier_payable_created", {
+      purchaseId: purchase.id,
+    });
+
+    let payment = null;
+    if (new Prisma.Decimal(purchase.paidAmountTnd).greaterThan(0)) {
+      payment = await tx.supplierPayment.create({
+        data: {
+          supplierId: purchase.supplierId,
+          purchaseId: purchase.id,
+          amountTnd: purchase.paidAmountTnd,
+          paidAt: postedAt,
+          actorUserId: actor.actorUserId,
+          correlationId: actor.correlationId,
+        },
+      });
+      await this.afterTransactionStep("supplier_payment_created", {
+        purchaseId: purchase.id,
+      });
+      await tx.supplierLedgerEntry.create({
+        data: {
+          supplierId: purchase.supplierId,
+          purchaseId: purchase.id,
+          paymentId: payment.id,
+          entryType: SupplierLedgerEntryType.PAYMENT,
+          amountTnd: new Prisma.Decimal(purchase.paidAmountTnd)
+            .negated()
+            .toFixed(3),
+          occurredAt: postedAt,
+          actorUserId: actor.actorUserId,
+          correlationId: actor.correlationId,
+        },
+      });
+      await this.afterTransactionStep("supplier_payment_ledger_created", {
+        purchaseId: purchase.id,
+      });
+    }
+
+    await this.auditWithClient(tx, {
+      actor,
+      action: "purchase.post",
+      entity: "purchase",
+      targetId: purchase.id,
+      before: purchase,
+      after: updatedPurchase,
+    });
+    await this.afterTransactionStep("purchase_post_audit_created", {
+      purchaseId: purchase.id,
+    });
+
+    return {
+      purchase: updatedPurchase,
+      payment,
+    };
   }
 
   public async cancelPurchase(
@@ -1395,9 +1415,19 @@ export class ProcurementService {
   }
 
   public async getPurchase(purchaseId: string) {
-    const purchase = await this.prisma.purchase.findUnique({
+    return this.getPurchaseWith(this.prisma, purchaseId);
+  }
+
+  /// The detail with its payment state and, since issue 018, the other
+  /// goods bought on the same shopping trip: every linked expense with its
+  /// state, and the total of the posted ones.
+  public async getPurchaseWith(
+    client: PrismaClient | Prisma.TransactionClient,
+    purchaseId: string,
+  ) {
+    const purchase = await client.purchase.findUnique({
       where: { id: purchaseId },
-      include: purchaseInclude,
+      include: purchaseDetailInclude,
     });
 
     if (!purchase) {
@@ -1408,7 +1438,7 @@ export class ProcurementService {
       });
     }
 
-    const balance = await this.prisma.supplierLedgerEntry.aggregate({
+    const balance = await client.supplierLedgerEntry.aggregate({
       where: { purchaseId },
       _sum: { amountTnd: true },
     });
@@ -1416,6 +1446,12 @@ export class ProcurementService {
 
     return {
       ...purchase,
+      expensesTotalTnd: sumDecimals(
+        purchase.expenses
+          .filter((expense) => expense.status === ExpenseStatus.POSTED)
+          .map((expense) => new Prisma.Decimal(expense.amountTnd)),
+        3,
+      ).toFixed(3),
       balanceTnd: balanceTnd.toFixed(3),
       paymentState: derivePaymentState(purchase, balanceTnd),
     };
@@ -1439,8 +1475,11 @@ export class ProcurementService {
     return supplier;
   }
 
-  private async assertActiveSupplier(supplierId: string) {
-    const supplier = await this.prisma.supplier.findFirst({
+  private async assertActiveSupplier(
+    supplierId: string,
+    client: PrismaClient | Prisma.TransactionClient = this.prisma,
+  ) {
+    const supplier = await client.supplier.findFirst({
       where: {
         id: supplierId,
         isActive: true,
@@ -1501,7 +1540,7 @@ export class ProcurementService {
   }
 
   private async auditWithClient(
-    client: Prisma.TransactionClient,
+    client: PrismaClient | Prisma.TransactionClient,
     params: {
       actor: ProcurementActor;
       action: string;
@@ -1873,7 +1912,22 @@ const purchaseInclude = {
   lines: true,
   payments: true,
   ledgerEntries: true,
-} as const;
+} satisfies Prisma.PurchaseInclude;
+
+const purchaseDetailInclude = {
+  ...purchaseInclude,
+  expenses: {
+    select: {
+      id: true,
+      reference: true,
+      description: true,
+      amountTnd: true,
+      status: true,
+      category: { select: { id: true, name: true } },
+    },
+    orderBy: [{ createdAt: "asc" }],
+  },
+} satisfies Prisma.PurchaseInclude;
 
 function invalidPurchase(fieldErrors: Record<string, string>): AppError {
   return new AppError({

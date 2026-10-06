@@ -1271,6 +1271,18 @@ const procurementOperations: ApiOperation[] = [
   }),
   operation({
     method: "post",
+    path: "/procurement/shopping-trips",
+    operationId: "procurement.postShoppingTrip",
+    summary:
+      "Record a shopping trip: a purchase posted and its expenses, together",
+    tag: "procurement",
+    permissions: ["purchases.create", "purchases.post", "expenses.create"],
+    body: procurement.shoppingTripSchema,
+    idempotent: true,
+    status: 201,
+  }),
+  operation({
+    method: "post",
     path: "/procurement/purchases/{purchaseId}/cancel",
     operationId: "procurement.cancelPurchase",
     summary: "Cancel a purchase",
