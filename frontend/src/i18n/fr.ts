@@ -219,7 +219,8 @@ export const fr = {
   // Accueil
   salesOfDay: "Ventes du jour",
   salesOfYesterday: "Ventes d'hier",
-  cashCollected: "Encaissé en espèces",
+  totalCharges: "Total charges",
+  totalChargesOfYesterday: "Total charges d'hier",
   expensesOfDay: "Dépenses du jour",
   expensesOfYesterday: "Dépenses d'hier",
   vsPreviousDay: "vs la veille",

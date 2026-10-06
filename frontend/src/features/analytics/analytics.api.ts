@@ -55,6 +55,21 @@ export interface AnalyticsOverview {
     byCategory: Array<{ categoryId: string; name: string; totalTnd: string }>;
   } | null;
   margin: { current: MarginDay; previous: MarginDay } | null;
+  /// Issue 022: what was bought, by kind; `null` without `purchases.view`.
+  purchases: {
+    rawMaterialsTnd: string;
+    previousRawMaterialsTnd: string;
+    resaleTnd: string;
+    previousResaleTnd: string;
+  } | null;
+  /// Issue 022, DEC-V2-012: posted expenses plus the raw materials bought;
+  /// `null` without `expenses.view` or `purchases.view`.
+  charges: {
+    totalTnd: string;
+    previousTotalTnd: string;
+    expensesTnd: string;
+    rawMaterialsTnd: string;
+  } | null;
   trend: TrendBucket[];
   bestBucket: { bucket: string; revenueTnd: string } | null;
 }

@@ -4,6 +4,20 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Issue 022, Accueil: the tile `Total charges` replaces `Encaissé en
+espèces`. It is the posted expenses of the day plus the raw materials
+  bought that day, with each part under it and the comparison with the
+  day before; it needs `expenses.view` and `purchases.view`. The cash of
+  the day stays on the session card and the session pages.
+- Issue 022, Analyses: `Vue d'ensemble` shows five figures against the
+  previous period: `Chiffre d'affaires` with the number of till sales
+  under it, `Total charges`, `Marge approximative`, `Achats matières
+premières` and `Achats produits de revente`. The tiles for the sales
+  count, the average basket, the expenses and what is still due are gone;
+  purchases of goods to resell are stock and stay out of the charges.
+
 ### Added
 
 - Issue 019, Produits: a product can be flagged `Produit de revente`,

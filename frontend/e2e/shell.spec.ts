@@ -54,6 +54,9 @@ test("signs in, opens every module inside the shell, and signs out", async ({
     page.getByRole("heading", { level: 1, name: /Bonjour, Salma/ }),
   ).toBeVisible();
   await expect(page.getByText("Ventes du jour")).toBeVisible();
+  // Issue 022: the charges of the day took the place of the cash collected.
+  await expect(page.getByText("Total charges")).toBeVisible();
+  await expect(page.getByText("205,000")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "3 achats en retard" }),
   ).toBeVisible();
