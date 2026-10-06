@@ -108,14 +108,26 @@ Run locally on macOS, Node 24, on 2026-10-06:
   the three permissions, 400 without an idempotency key, the body passed
   through, the empty default); the expenses list filter; the
   authorization matrix and the OpenAPI coverage with the new route
-- `npm run test --workspace frontend`: see the run noted below
+- `npm run test --workspace frontend`: 301 passed (100 files). New: the
+  trip page (flour and bags validated together with the totals, the
+  impact, the toast and the purchase page's card; expenses alone on a
+  phone; an empty trip and an empty line refused before any request; a
+  refusal of the server on the lines it concerns; the three permissions),
+  the category tree and the parent picker (neither itself nor its
+  descendants), a parent kept active while a sub-category is, the store
+  and the purchase link on an expense row and the trip filter, the quick
+  action with and without the three permissions, the invalidation map,
+  the French copy of the new error codes
 - `npm run build`: passed; 201.7 kB gzip initial against 250 kB (the trip
   page is its own 4.7 kB chunk); POS route 14.3 kB against 120 kB
 - Playwright on the system Brave browser (`E2E_BROWSER`), mocked API,
   360, 768 and 1280 px: `e2e/shoppingTrip.spec.ts` (the trip from the
   quick action to the purchase page, both editors fitting their card, the
   totals, the impact, axe on the confirmation; an empty trip refused
-  before any request) and axe on `/achats/course`
+  before any request), axe on `/achats/course`, and the procurement,
+  expenses and shell specs again: 6 + 3 + 10 passed, 2 skipped by design.
+  Two phone runs timed out while the unit suite ran beside them and
+  passed on their own
 - Not run here (no local PostgreSQL): the database-backed suites and the
   migration against a real database. Both run in CI; the first run of
   this branch is the evidence to read
