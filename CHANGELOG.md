@@ -4,6 +4,15 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-06
+
+What the owner asked for after 2.2.0: the order queue and the purchase
+form put right (issues 015 and 016), a test environment beside production
+(issue 017, `DEC-V2-008`), and the shopping trip with sub-categories of
+expenses (issue 018, `DEC-V2-009`). Issues 015 to 017 already run in
+production, merged to `main` on their own; this release adds issue 018 and
+its one additive migration.
+
 ### Fixed
 
 - Issue 016, Achats: cancelling a purchase paid in part and then
@@ -30,6 +39,22 @@ All notable project changes are recorded here.
 
 ### Added
 
+- Issue 018, Achats: `Nouvelle course` (`/achats/course`), one page for
+  what was bought at a store in one go: the raw materials, which become a
+  posted purchase (stock, supplier account, payment at posting), and the
+  other goods such as bags or napkins, which become expenses posted on
+  the spot and linked to the store and the purchase. One button, one
+  confirmation stating stock, debt, payment and expenses, one
+  transaction on the server (`POST /procurement/shopping-trips`). A trip
+  may hold expenses alone or raw materials alone. Reached from the quick
+  actions of `Accueil` (`Course fournisseur`), from `Achats` and from
+  `Dépenses`. The purchase page lists the other goods of its trip; an
+  expense names its store and links its purchase; the expense list can be
+  narrowed to one trip.
+- Issue 018, Dépenses: categories nest. A category takes a parent
+  (`Catégorie parente`), the list shows the tree, every picker prints the
+  path ("Fournitures › Emballage"), a parent is deactivated only once its
+  sub-categories are.
 - Issue 017, staging: a second stack on the VPS for
   `testing.darelbarka.work`, deployed by a push to the `staging` branch
   without an approval step, with its own containers, network, media

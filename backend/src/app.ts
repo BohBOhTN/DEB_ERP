@@ -39,6 +39,7 @@ import { procurementRouter } from "./modules/procurement/procurement.routes.js";
 import { simulationRouter } from "./modules/simulation/simulation.routes.js";
 import type { SimulationService } from "./modules/simulation/simulation.service.js";
 import type { ProcurementService } from "./modules/procurement/procurement.service.js";
+import type { ShoppingTripService } from "./modules/procurement/shoppingTrip.service.js";
 import { createRateLimiter } from "./modules/auth/rateLimit.js";
 import { AppError } from "./shared/appError.js";
 import { correlationId } from "./shared/correlation.js";
@@ -99,6 +100,7 @@ export function createApp(params: {
   };
   procurement?: {
     procurementService: ProcurementService;
+    shoppingTripService: ShoppingTripService;
   };
   pos?: {
     posService: PosService;
@@ -273,6 +275,7 @@ export function createApp(params: {
         authService: params.auth.authService,
         cookie: params.auth.cookie,
         procurementService: params.procurement.procurementService,
+        shoppingTripService: params.procurement.shoppingTripService,
       }),
     );
   }

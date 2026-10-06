@@ -29,12 +29,16 @@ export const categoryListQuerySchema = z.object({
 export const createCategorySchema = z.object({
   name: z.string().trim().min(1),
   description: z.string().optional(),
+  /// Issue 018: the category this one sits under; absent or null for the
+  /// top level.
+  parentId: z.string().trim().min(1).nullable().optional(),
 });
 
 export const updateCategorySchema = z.object({
   version: z.number().int().positive(),
   name: z.string().trim().min(1).optional(),
   description: z.string().optional(),
+  parentId: z.string().trim().min(1).nullable().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -42,6 +46,8 @@ export const expenseListQuerySchema = z.object({
   sort: sortField(["expenseDate", "amountTnd"]),
   categoryId: z.string().trim().min(1).optional(),
   status: z.nativeEnum(ExpenseStatus).optional(),
+  purchaseId: z.string().trim().min(1).optional(),
+  supplierId: z.string().trim().min(1).optional(),
   ...dateRangeFields,
   ...pageFields,
 });

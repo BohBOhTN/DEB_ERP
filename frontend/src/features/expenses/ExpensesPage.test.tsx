@@ -6,6 +6,7 @@ import { AppProviders, createQueryClient } from "../../app/providers";
 import { createTestRouter } from "../../app/router";
 import { makeUser } from "../../test/factories/user";
 import { authHandlers } from "../../test/msw/handlers/auth";
+import { makeExpense } from "../../test/factories/expenses";
 import {
   expensesHandlers,
   makeExpensesStore,
@@ -204,6 +205,153 @@ describe("Expenses", () => {
       amountTnd: "800.000",
       status: "POSTED",
     });
+  });
+
+  // Issue 018: a sub-category sits under its parent, the picker says where
+  // a category sits, and a parent cannot go under its own sub-category.
+  it("shows the category tree and creates a sub-category under a parent", async () => {
+    const store = makeExpensesStore();
+    server.use(...expensesHandlers(store));
+    renderAt("/depenses/categories");
+
+    const table = await screen.findByRole("table", {
+      name: "Catégories de dépenses",
+    });
+    const names = within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[0]?.textContent?.trim());
+    expect(names).toEqual(["Électricité", "Loyer", "Fournitures", "Emballage"]);
+    expect(
+      within(table).getByText("Emballage").closest("[data-depth]"),
+    ).toHaveAttribute("data-depth", "1");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Nouvelle catégorie" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Nouvelle catégorie de dépense",
+    });
+    await userEvent.type(within(dialog).getByLabelText(/^Nom/), "Serviettes");
+    await userEvent.click(
+      within(dialog).getByRole("combobox", { name: "Catégorie parente" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Fournitures › Emballage" }),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Enregistrer" }),
+    );
+    await waitFor(() =>
+      expect(store.categories.at(-1)).toMatchObject({
+        name: "Serviettes",
+        parentId: "xcat-4",
+      }),
+    );
+    expect(
+      await within(
+        screen.getByRole("table", { name: "Catégories de dépenses" }),
+      ).findByText("Serviettes"),
+    ).toBeInTheDocument();
+
+    // Editing the parent offers neither itself nor its sub-categories.
+    const parentRow = within(table)
+      .getByText("Fournitures")
+      .closest("tr") as HTMLElement;
+    await userEvent.click(
+      within(parentRow).getByRole("button", { name: "Actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Modifier" }),
+    );
+    const edit = await screen.findByRole("dialog", {
+      name: "Modifier Fournitures",
+    });
+    await userEvent.click(
+      within(edit).getByRole("combobox", { name: "Catégorie parente" }),
+    );
+    const listbox = await screen.findByRole("listbox");
+    expect(
+      within(listbox).getByRole("option", { name: "Électricité" }),
+    ).toBeInTheDocument();
+    expect(
+      within(listbox).queryByRole("option", { name: "Fournitures" }),
+    ).toBeNull();
+    expect(
+      within(listbox).queryByRole("option", { name: /Emballage/ }),
+    ).toBeNull();
+  });
+
+  it("refuses to deactivate a parent whose sub-category is active", async () => {
+    const store = makeExpensesStore();
+    server.use(...expensesHandlers(store));
+    renderAt("/depenses/categories");
+
+    const table = await screen.findByRole("table", {
+      name: "Catégories de dépenses",
+    });
+    const row = within(table)
+      .getByText("Fournitures")
+      .closest("tr") as HTMLElement;
+    await userEvent.click(within(row).getByRole("button", { name: "Actions" }));
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Désactiver" }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Désactiver",
+      }),
+    );
+    expect(
+      await screen.findByText(/Désactivez d'abord ses sous-catégories/),
+    ).toBeInTheDocument();
+    expect(store.categories.find((row) => row.id === "xcat-3")).toMatchObject({
+      isActive: true,
+    });
+  });
+
+  // Issue 018: an expense of a trip names its store and links its purchase;
+  // the list can be narrowed to one trip from the purchase page.
+  it("shows the store of a trip expense and filters the list by its purchase", async () => {
+    const store = makeExpensesStore();
+    store.expenses.unshift(
+      makeExpense({
+        id: "expense-9",
+        reference: "DEP-000009",
+        category: store.categories[3],
+        categoryId: "xcat-4",
+        amountTnd: "12.500",
+        description: "Sachets plastiques",
+        expenseDate: "2026-09-12T09:00:00.000Z",
+        supplierId: "supplier-1",
+        purchaseId: "purchase-7",
+        supplier: { id: "supplier-1", name: "Minoterie du Sud" },
+        purchase: { id: "purchase-7", reference: "AC-000007" },
+      }),
+    );
+    server.use(...expensesHandlers(store));
+    renderAt(
+      "/depenses?period=custom&from=2026-09-01&to=2026-09-30&purchaseId=purchase-7",
+    );
+
+    const table = await screen.findByRole("table", { name: "Dépenses" });
+    const row = within(table)
+      .getByText("Sachets plastiques")
+      .closest("tr") as HTMLElement;
+    expect(row).toHaveTextContent("Minoterie du Sud");
+    expect(
+      within(row).getByRole("link", { name: "AC-000007" }),
+    ).toHaveAttribute("href", "/achats/purchase-7");
+    expect(within(table).queryByText("Facture STEG")).toBeNull();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /Retirer le filtre sur la course/ }),
+    );
+    expect(
+      await within(screen.getByRole("table", { name: "Dépenses" })).findByText(
+        "Facture STEG",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("lists categories with their expense count and deactivates one", async () => {

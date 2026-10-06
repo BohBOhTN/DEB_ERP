@@ -1,4 +1,4 @@
-import { Ban, Check, Pencil } from "lucide-react";
+import { Ban, Check, Pencil, ShoppingBasket } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ConfirmPostingDialog } from "../../../components/patterns/ConfirmPostingDialog/ConfirmPostingDialog.js";
@@ -282,6 +282,56 @@ export function PurchaseDetailPage() {
                   }))}
                 />
               )}
+            </Card>
+          ) : null}
+          {(purchase.expenses ?? []).length > 0 ? (
+            <Card>
+              <CardHeader
+                as="h2"
+                title="Autres achats de cette course"
+                description="Comptés en dépenses, réglés sur place ; ni dans le stock ni dans le compte du fournisseur."
+                actions={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    leftIcon={<ShoppingBasket />}
+                    onClick={() =>
+                      navigate(`/depenses?period=all&purchaseId=${purchase.id}`)
+                    }
+                  >
+                    Voir dans les dépenses
+                  </Button>
+                }
+              />
+              <KeyValueList
+                columns={1}
+                items={[
+                  ...(purchase.expenses ?? []).map((expense) => ({
+                    label: (
+                      <span className={styles.nameCell}>
+                        {expense.description}
+                        <span className={styles.muted}>
+                          {expense.category.name}
+                        </span>
+                        {expense.status === "CANCELLED" ? (
+                          <Badge tone="neutral">Annulée</Badge>
+                        ) : null}
+                      </span>
+                    ),
+                    value: formatMoney(expense.amountTnd),
+                    numeric: true,
+                  })),
+                  {
+                    label: <strong>Total des autres achats</strong>,
+                    value: (
+                      <strong>
+                        {formatMoney(purchase.expensesTotalTnd ?? "0")}
+                      </strong>
+                    ),
+                    numeric: true,
+                  },
+                ]}
+              />
             </Card>
           ) : null}
         </div>

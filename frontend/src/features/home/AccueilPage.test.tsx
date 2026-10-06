@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http } from "msw";
 import { RouterProvider } from "react-router-dom";
@@ -112,6 +112,38 @@ describe("Accueil", () => {
 
   // Issue #42: "Hier" moves every daily tile to yesterday, expenses
   // included, through one `date` on the summary request.
+  // Issue 018: the trip creates and posts a purchase and records expenses;
+  // the owner fixture above lacks two of the three, so no action shows.
+  it("offers the shopping trip only with its three permissions", async () => {
+    server.use(
+      ...authHandlers(makeUser({ effectivePermissions: ownerPermissions })),
+      ...homeHandlers(makeHomeSummary()),
+    );
+    renderHome();
+    await screen.findByRole("link", { name: "Nouvel achat" });
+    expect(
+      screen.queryByRole("link", { name: "Course fournisseur" }),
+    ).not.toBeInTheDocument();
+    cleanup();
+
+    server.use(
+      ...authHandlers(
+        makeUser({
+          effectivePermissions: [
+            ...ownerPermissions,
+            "purchases.post",
+            "expenses.create",
+          ],
+        }),
+      ),
+      ...homeHandlers(makeHomeSummary()),
+    );
+    renderHome();
+    expect(
+      await screen.findByRole("link", { name: "Course fournisseur" }),
+    ).toHaveAttribute("href", "/achats/course");
+  });
+
   it("switches the daily tiles to yesterday, expenses included", async () => {
     const dates: Array<string | null> = [];
     server.use(

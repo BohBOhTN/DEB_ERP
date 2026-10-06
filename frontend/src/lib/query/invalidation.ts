@@ -15,6 +15,7 @@ export type DomainEvent =
   | "inventory.movement"
   | "procurement.supplier"
   | "procurement.purchase"
+  | "procurement.shoppingTrip"
   | "procurement.payment"
   | "customer.record"
   | "customer.payment"
@@ -113,6 +114,16 @@ const map: Record<DomainEvent, readonly QueryRoot[]> = {
     roots.catalogRawMaterial,
     roots.catalogRelated,
     roots.home,
+  ],
+  // A shopping trip (issue 018) is a posted purchase and posted expenses.
+  "procurement.shoppingTrip": [
+    roots.procurement,
+    roots.inventory,
+    roots.catalogRawMaterial,
+    roots.catalogRelated,
+    roots.expenses,
+    roots.home,
+    roots.analytics,
   ],
   "procurement.payment": [roots.procurement, roots.home],
   "customer.record": [

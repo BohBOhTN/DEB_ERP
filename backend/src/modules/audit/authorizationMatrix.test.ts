@@ -136,7 +136,7 @@ function buildApp(): Express {
     expenses: { expensesService: stub },
     inventory: { inventoryService: stub },
     orders: { ordersService: stub },
-    procurement: { procurementService: stub },
+    procurement: { procurementService: stub, shoppingTripService: stub },
     pos: { posService: stub },
     simulation: { simulationService: stub },
   });

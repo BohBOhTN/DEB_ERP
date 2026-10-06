@@ -37,6 +37,7 @@ const actionLabels: Record<string, string> = {
   "purchase.create": "Création d'un achat",
   "purchase.update": "Modification d'un achat brouillon",
   "purchase.post": "Validation d'un achat",
+  "shopping_trip.post": "Validation d'une course fournisseur",
   "purchase.cancel": "Annulation d'un achat",
   "supplier_payment.create": "Paiement fournisseur",
   "supplier_payment.reverse": "Annulation d'un paiement fournisseur",

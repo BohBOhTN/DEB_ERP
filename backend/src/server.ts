@@ -20,6 +20,7 @@ import { InventoryService } from "./modules/inventory/inventory.service.js";
 import { OrdersService } from "./modules/orders/orders.service.js";
 import { PosService } from "./modules/pos/pos.service.js";
 import { ProcurementService } from "./modules/procurement/procurement.service.js";
+import { ShoppingTripService } from "./modules/procurement/shoppingTrip.service.js";
 import { SimulationService } from "./modules/simulation/simulation.service.js";
 import { scheduleCleanup } from "./jobs/cleanup.js";
 import { createLogger } from "./shared/logger.js";
@@ -67,6 +68,11 @@ const homeService = new HomeService(prisma);
 const inventoryService = new InventoryService(prisma);
 const ordersService = new OrdersService(prisma);
 const procurementService = new ProcurementService(prisma);
+const shoppingTripService = new ShoppingTripService(
+  prisma,
+  procurementService,
+  expensesService,
+);
 const posService = new PosService(prisma);
 const simulationService = new SimulationService(prisma);
 const authService = new AuthService(
@@ -136,6 +142,7 @@ const app = createApp({
   },
   procurement: {
     procurementService,
+    shoppingTripService,
   },
   pos: {
     posService,

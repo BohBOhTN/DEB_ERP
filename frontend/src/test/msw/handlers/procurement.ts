@@ -3,11 +3,13 @@ import { http } from "msw";
 import type {
   Purchase,
   PurchaseInput,
+  ShoppingTripInput,
   Supplier,
   SupplierPayment,
   SupplierPaymentInput,
 } from "../../../features/procurement/procurement.api.js";
 import { kg, sac } from "../../factories/catalog.js";
+import { makeExpense } from "../../factories/expenses.js";
 import { makePage } from "../../factories/page.js";
 import {
   makePurchase,
@@ -15,6 +17,7 @@ import {
   makeSupplierPayment,
 } from "../../factories/procurement.js";
 import { apiError, apiV1, ok } from "../envelope.js";
+import type { ExpensesStore } from "./expenses.js";
 
 /// In-memory procurement: balances derive from posted purchases minus
 /// payments, like the ledger; posting snapshots conversions from the
@@ -191,8 +194,41 @@ function buildPurchase(
   });
 }
 
+/// Posts a draft the way the post route does: a reference, a posting time
+/// and, when something was paid at posting, the payment and its allocation.
+function postDraft(store: ProcurementStore, purchase: Purchase) {
+  sequence += 1;
+  Object.assign(purchase, {
+    status: "POSTED",
+    reference: `AC-${String(sequence).padStart(6, "0")}`,
+    postedAt: new Date().toISOString(),
+  });
+  if (new Decimal(purchase.paidAmountTnd).greaterThan(0)) {
+    store.payments.unshift(
+      makeSupplierPayment({
+        id: `payment-${sequence}`,
+        supplier: purchase.supplier,
+        supplierId: purchase.supplierId,
+        amountTnd: purchase.paidAmountTnd,
+        paidAt: purchase.postedAt ?? new Date().toISOString(),
+        allocations: [
+          {
+            id: `alloc-${sequence}`,
+            paymentId: `payment-${sequence}`,
+            purchaseId: purchase.id,
+            amountTnd: purchase.paidAmountTnd,
+          },
+        ],
+      }),
+    );
+  }
+}
+
 export function procurementHandlers(
   store: ProcurementStore = makeProcurementStore(),
+  /// The expenses a shopping trip writes (issue 018); without it the trip
+  /// route records the purchase alone.
+  expenses?: ExpensesStore,
 ) {
   return [
     http.get(`${apiV1}/procurement/supplier-balances`, ({ request }) => {
@@ -361,9 +397,144 @@ export function procurementHandlers(
     }),
     http.get(`${apiV1}/procurement/purchases/:id`, ({ params }) => {
       const purchase = store.purchases.find((row) => row.id === params.id);
-      return purchase
-        ? ok({ purchase: withState(store, purchase) })
-        : apiError(404, "PURCHASE_NOT_FOUND", "Achat introuvable.");
+      if (!purchase)
+        return apiError(404, "PURCHASE_NOT_FOUND", "Achat introuvable.");
+      const linked = (expenses?.expenses ?? []).filter(
+        (expense) => expense.purchaseId === purchase.id,
+      );
+      return ok({
+        purchase: {
+          ...withState(store, purchase),
+          expenses: linked.map((expense) => ({
+            id: expense.id,
+            reference: expense.reference,
+            description: expense.description,
+            amountTnd: expense.amountTnd,
+            status: expense.status,
+            category: { id: expense.category.id, name: expense.category.name },
+          })),
+          expensesTotalTnd: linked
+            .filter((expense) => expense.status === "POSTED")
+            .reduce(
+              (sum, expense) => sum.plus(expense.amountTnd),
+              new Decimal(0),
+            )
+            .toFixed(3),
+        },
+      });
+    }),
+    // Issue 018: one trip, two documents, refused whole on a bad line.
+    http.post(`${apiV1}/procurement/shopping-trips`, async ({ request }) => {
+      if (!request.headers.get("Idempotency-Key"))
+        return apiError(
+          400,
+          "IDEMPOTENCY_KEY_REQUIRED",
+          "Une clé d'idempotence est requise.",
+        );
+      const body = (await request.json()) as ShoppingTripInput;
+      if (!body.purchase && body.expenses.length === 0)
+        return apiError(
+          400,
+          "SHOPPING_TRIP_EMPTY",
+          "Ajoutez au moins une matière première ou une dépense.",
+        );
+      const fieldErrors: Record<string, string> = {};
+      body.expenses.forEach((line, index) => {
+        const category = expenses?.categories.find(
+          (row) => row.id === line.categoryId && row.isActive,
+        );
+        if (!category)
+          fieldErrors[`expenses.${index}.categoryId`] =
+            "Une catégorie de dépense active est obligatoire.";
+        if (!line.description.trim())
+          fieldErrors[`expenses.${index}.description`] =
+            "Un libellé est obligatoire.";
+        if (!(Number(line.amountTnd) > 0))
+          fieldErrors[`expenses.${index}.amountTnd`] =
+            "Le montant doit être supérieur à zéro.";
+      });
+      if (Object.keys(fieldErrors).length > 0)
+        return apiError(
+          400,
+          "VALIDATION_ERROR",
+          "Les données saisies sont invalides.",
+          fieldErrors,
+        );
+      let purchase: Purchase | null = null;
+      if (body.purchase) {
+        const refusal = purchaseRefusal({
+          supplierId: body.supplierId,
+          purchaseDate: body.tripDate,
+          supplierReference: body.supplierReference,
+          notes: body.notes,
+          ...body.purchase,
+        });
+        if (refusal) return refusal;
+        sequence += 1;
+        purchase = buildPurchase(store, {
+          supplierId: body.supplierId,
+          purchaseDate: body.tripDate,
+          supplierReference: body.supplierReference,
+          notes: body.notes,
+          ...body.purchase,
+        });
+        store.purchases.unshift(purchase);
+        postDraft(store, purchase);
+      }
+      const supplier = store.suppliers.find(
+        (row) => row.id === body.supplierId,
+      );
+      const created = body.expenses.map((line) => {
+        sequence += 1;
+        const category = expenses?.categories.find(
+          (row) => row.id === line.categoryId,
+        );
+        const expense = makeExpense({
+          id: `expense-${sequence}`,
+          reference: `DEP-${String(sequence).padStart(6, "0")}`,
+          categoryId: line.categoryId,
+          ...(category ? { category } : {}),
+          status: "POSTED",
+          expenseDate: new Date(body.tripDate).toISOString(),
+          postedAt: new Date().toISOString(),
+          amountTnd: line.amountTnd,
+          description: line.description,
+          externalReference: body.supplierReference ?? null,
+          supplierId: body.supplierId,
+          purchaseId: purchase?.id ?? null,
+          supplier: supplier ? { id: supplier.id, name: supplier.name } : null,
+          purchase: purchase
+            ? { id: purchase.id, reference: purchase.reference }
+            : null,
+        });
+        expenses?.expenses.unshift(expense);
+        return expense;
+      });
+      const expensesTnd = created.reduce(
+        (sum, expense) => sum.plus(expense.amountTnd),
+        new Decimal(0),
+      );
+      const purchaseTnd = new Decimal(purchase?.totalTnd ?? 0);
+      return ok(
+        {
+          purchase: purchase ? withState(store, purchase) : null,
+          expenses: created.map((expense) => ({
+            id: expense.id,
+            reference: expense.reference,
+            description: expense.description,
+            amountTnd: expense.amountTnd,
+          })),
+          totals: {
+            purchaseTnd: purchaseTnd.toFixed(3),
+            expensesTnd: expensesTnd.toFixed(3),
+            totalTnd: purchaseTnd.plus(expensesTnd).toFixed(3),
+            paidTodayTnd: new Decimal(purchase?.paidAmountTnd ?? 0)
+              .plus(expensesTnd)
+              .toFixed(3),
+          },
+        },
+        201,
+      );
     }),
     http.patch(
       `${apiV1}/procurement/purchases/:id`,
