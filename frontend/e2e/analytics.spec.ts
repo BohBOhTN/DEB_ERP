@@ -58,6 +58,32 @@ test("reads the month: figures, trend, channels, then each tab", async ({
     page.getByRole("list", { name: "Clients à relancer" }),
   ).toBeVisible();
   await expectNoPageOverflow(page, "Clients");
+
+  // Issue 021: what was bought, by kind, and the distributor channel.
+  await page.getByRole("tab", { name: "Achats" }).click();
+  await expect(page).toHaveURL(/tab=purchases/);
+  await expect(page.getByText("Total des achats")).toBeVisible();
+  await expect(page.getByText("1 500,000")).toBeVisible();
+  await expect(
+    page.getByRole("img", { name: "Achats par jour" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("figure", { name: "Achats par fournisseur" }),
+  ).toBeVisible();
+  await expect(page.getByRole("main")).toContainText("Farine T55");
+  await expect(page.getByRole("main")).toContainText("Eau 1,5 L");
+  await expectNoPageOverflow(page, "Achats");
+
+  await page.getByRole("tab", { name: "Distributeurs" }).click();
+  await expect(page).toHaveURL(/tab=distributors/);
+  await expect(
+    page.getByText("Chiffre d'affaires distributeurs", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("figure", { name: "Chiffre d'affaires par distributeur" }),
+  ).toBeVisible();
+  await expect(page.getByRole("main")).toContainText("Épicerie du Port");
+  await expectNoPageOverflow(page, "Distributeurs");
 });
 
 // The bars once had a width only under the pointer: they must be drawn

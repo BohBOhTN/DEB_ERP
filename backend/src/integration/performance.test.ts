@@ -160,6 +160,9 @@ suite("query performance on a large history", () => {
         "margin.view",
         "orders.view",
         "customers.view",
+        "purchases.view",
+        "distributors.view",
+        "distribution.balances.view",
       ]),
     };
     const timings = {
@@ -198,6 +201,11 @@ suite("query performance on a large history", () => {
       analyticsFrequency: await p95(() => analytics.getFrequency(analysis)),
       analyticsProducts: await p95(() => analytics.getProducts(analysis)),
       analyticsCustomers: await p95(() => analytics.getCustomers(analysis)),
+      // Issue 021: purchases by kind and the distributor channel.
+      analyticsPurchases: await p95(() => analytics.getPurchases(analysis)),
+      analyticsDistributors: await p95(() =>
+        analytics.getDistributors(analysis),
+      ),
     };
 
     // Reported in the CI log as evidence for the sprint brief.

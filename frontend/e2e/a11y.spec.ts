@@ -12,6 +12,8 @@ const routes = [
   "/analyses?tab=frequency",
   "/analyses?tab=products",
   "/analyses?tab=customers",
+  "/analyses?tab=purchases",
+  "/analyses?tab=distributors",
   "/produits",
   "/matieres-premieres",
   "/catalogue/parametres",

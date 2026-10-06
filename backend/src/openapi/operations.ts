@@ -883,6 +883,28 @@ const analyticsOperations: ApiOperation[] = [
     query: analytics.periodQuerySchema,
     dataKey: "customers",
   }),
+  operation({
+    method: "get",
+    path: "/analytics/purchases",
+    operationId: "analytics.purchases",
+    summary:
+      "Purchases by kind (raw materials, resold products), suppliers and prices",
+    tag: "analytics",
+    permissions: ["analytics.view", "purchases.view"],
+    query: analytics.periodQuerySchema,
+    dataKey: "purchases",
+  }),
+  operation({
+    method: "get",
+    path: "/analytics/distributors",
+    operationId: "analytics.distributors",
+    summary:
+      "The distributor channel: revenue, distributors, returns and products",
+    tag: "analytics",
+    permissions: ["analytics.view", "distributors.view"],
+    query: analytics.periodQuerySchema,
+    dataKey: "distributors",
+  }),
 ];
 
 const inventoryOperations: ApiOperation[] = [

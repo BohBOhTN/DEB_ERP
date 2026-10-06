@@ -96,6 +96,8 @@ async function createTestApp(permissionKeys: string[]) {
     getFrequency: vi.fn().mockResolvedValue({ sales: { count: 0 } }),
     getProducts: vi.fn().mockResolvedValue({ items: [] }),
     getCustomers: vi.fn().mockResolvedValue({ top: [] }),
+    getPurchases: vi.fn().mockResolvedValue({ suppliers: [] }),
+    getDistributors: vi.fn().mockResolvedValue({ distributors: [] }),
   };
 
   const app = createApp({
@@ -235,6 +237,61 @@ describe("analytics routes", () => {
 
     expect(response.body.data.customers).toEqual({ top: [] });
   });
+
+  // Issue 021: each new analysis sits behind analytics.view and the
+  // permission of the module it reads.
+  it.each([
+    ["purchases", "purchases.view", "getPurchases", { suppliers: [] }],
+    [
+      "distributors",
+      "distributors.view",
+      "getDistributors",
+      { distributors: [] },
+    ],
+  ] as const)(
+    "keeps the %s analysis behind %s as well",
+    async (endpoint, permission, method, body) => {
+      const withoutModule = await createTestApp(["analytics.view"]);
+      await request(withoutModule.app)
+        .get(`/api/v1/analytics/${endpoint}`)
+        .set("Cookie", withoutModule.cookie)
+        .expect(403);
+      const withoutAnalytics = await createTestApp([permission]);
+      await request(withoutAnalytics.app)
+        .get(`/api/v1/analytics/${endpoint}`)
+        .set("Cookie", withoutAnalytics.cookie)
+        .expect(403);
+      expect(withoutModule.analyticsService[method]).not.toHaveBeenCalled();
+      expect(withoutAnalytics.analyticsService[method]).not.toHaveBeenCalled();
+
+      const allowed = await createTestApp([
+        "analytics.view",
+        permission,
+        "margin.view",
+      ]);
+      const response = await request(allowed.app)
+        .get(`/api/v1/analytics/${endpoint}?from=2026-09-01&to=2026-09-30`)
+        .set("Cookie", allowed.cookie)
+        .expect(200);
+
+      expect(response.body.data[endpoint]).toEqual(body);
+      const params = allowed.analyticsService[method].mock.calls[0]?.[0] as {
+        period: { from: string; to: string };
+        permissions: Set<string>;
+      };
+      expect(params.period).toMatchObject({
+        from: "2026-09-01",
+        to: "2026-09-30",
+      });
+      expect(params.permissions.has("margin.view")).toBe(true);
+
+      const reversed = await request(allowed.app)
+        .get(`/api/v1/analytics/${endpoint}?from=2026-09-30&to=2026-09-01`)
+        .set("Cookie", allowed.cookie)
+        .expect(400);
+      expect(reversed.body.error.code).toBe("VALIDATION_ERROR");
+    },
+  );
 
   it("refuses a malformed date, a reversed period and a period that is too long", async () => {
     const { app, cookie, analyticsService } = await createTestApp([

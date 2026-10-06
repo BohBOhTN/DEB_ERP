@@ -12,11 +12,19 @@ import {
 } from "../../lib/dates/periodRange.js";
 import { useUrlState } from "../../lib/hooks/useUrlState.js";
 import { CustomersTab } from "./tabs/CustomersTab.js";
+import { DistributorsTab } from "./tabs/DistributorsTab.js";
 import { FrequencyTab } from "./tabs/FrequencyTab.js";
 import { OverviewTab } from "./tabs/OverviewTab.js";
 import { ProductsTab } from "./tabs/ProductsTab.js";
+import { PurchasesTab } from "./tabs/PurchasesTab.js";
 
-type AnalysisTab = "overview" | "frequency" | "products" | "customers";
+type AnalysisTab =
+  | "overview"
+  | "frequency"
+  | "products"
+  | "customers"
+  | "purchases"
+  | "distributors";
 
 // `page` belongs to the product table: a new period or tab starts it over.
 const defaults = {
@@ -67,6 +75,26 @@ export function AnalyticsPage() {
           },
         ]
       : []),
+    // Issue 021: each of these reads another module, so it needs that
+    // module's permission as well.
+    ...(permissions.has("purchases.view")
+      ? [
+          {
+            value: "purchases" as const,
+            label: "Achats",
+            content: <PurchasesTab query={query} />,
+          },
+        ]
+      : []),
+    ...(permissions.has("distributors.view")
+      ? [
+          {
+            value: "distributors" as const,
+            label: "Distributeurs",
+            content: <DistributorsTab query={query} />,
+          },
+        ]
+      : []),
   ];
   const tab = items.some((item) => item.value === state.tab)
     ? (state.tab as AnalysisTab)
@@ -77,7 +105,7 @@ export function AnalyticsPage() {
       <PageHeader
         eyebrow="Pilotage"
         title="Analyses"
-        description="Ce que disent vos ventes, vos produits et vos clients sur la période choisie."
+        description="Ce que disent vos ventes, vos produits, vos clients, vos achats et vos distributeurs sur la période choisie."
       />
       <PeriodFilter
         presets={analysisPeriodPresets}

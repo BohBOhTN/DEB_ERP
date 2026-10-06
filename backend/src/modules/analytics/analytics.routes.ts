@@ -108,5 +108,39 @@ export function analyticsRouter(params: {
     },
   );
 
+  // Issue 021: what was bought and from whom: the purchases permission too.
+  router.get(
+    "/purchases",
+    requirePermission("analytics.view"),
+    requirePermission("purchases.view"),
+    async (request, response, next) => {
+      try {
+        const purchases = await params.analyticsService.getPurchases(
+          paramsOf(request.query, response),
+        );
+        response.json(okFor(response, { purchases }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  // Issue 021: names and sales of distributors: their list permission too.
+  router.get(
+    "/distributors",
+    requirePermission("analytics.view"),
+    requirePermission("distributors.view"),
+    async (request, response, next) => {
+      try {
+        const distributors = await params.analyticsService.getDistributors(
+          paramsOf(request.query, response),
+        );
+        response.json(okFor(response, { distributors }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   return router;
 }
