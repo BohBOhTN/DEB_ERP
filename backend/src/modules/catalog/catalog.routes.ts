@@ -43,6 +43,10 @@ export const productListQuerySchema = listQuerySchema.extend({
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
+  isResale: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
 });
 
 export const createUnitSchema = z.object({
@@ -138,6 +142,7 @@ export const createProductSchema = z.object({
     .regex(/^\d+(\.\d{1,3})?$/),
   approximateCostTnd: approximateCostSchema,
   isStockable: z.boolean(),
+  isResale: z.boolean().optional(),
   notes: z.string().optional(),
 });
 
@@ -155,6 +160,7 @@ export const updateProductSchema = z.object({
     .optional(),
   approximateCostTnd: approximateCostSchema,
   isStockable: z.boolean().optional(),
+  isResale: z.boolean().optional(),
   notes: z.string().optional(),
 });
 

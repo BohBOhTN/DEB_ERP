@@ -347,6 +347,43 @@ describe("catalog routes", () => {
     );
   });
 
+  // Issue 019: the resale flag travels through the create, the update and
+  // the list filter.
+  it("passes the resale flag on create and filters the list on it", async () => {
+    const { app, cookie, catalogService } = await createTestApp([
+      "products.view",
+      "products.create",
+    ]);
+    catalogService.createProduct = vi
+      .fn()
+      .mockResolvedValue({ id: "product-3", name: "Eau 1,5 L" });
+
+    await request(app)
+      .post("/api/catalog/products")
+      .set("Cookie", cookie)
+      .send({
+        name: "Eau 1,5 L",
+        categoryId: "category-1",
+        baseUnitId: "unit-1",
+        salePriceTnd: "1.200",
+        isStockable: true,
+        isResale: true,
+      })
+      .expect(201);
+    expect(catalogService.createProduct).toHaveBeenLastCalledWith(
+      expect.objectContaining({ isResale: true }),
+      expect.anything(),
+    );
+
+    await request(app)
+      .get("/api/catalog/products?isResale=true&isActive=true")
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(catalogService.listProducts).toHaveBeenLastCalledWith(
+      expect.objectContaining({ isResale: true, isActive: true }),
+    );
+  });
+
   it("creates raw materials when the user has raw_materials.create", async () => {
     const { app, cookie, catalogService } = await createTestApp([
       "raw_materials.create",
