@@ -4155,6 +4155,17 @@
                 "false"
               ]
             }
+          },
+          {
+            "name": "isResale",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
           }
         ],
         "responses": {
@@ -4271,6 +4282,9 @@
                     ]
                   },
                   "isStockable": {
+                    "type": "boolean"
+                  },
+                  "isResale": {
                     "type": "boolean"
                   },
                   "notes": {
@@ -4527,6 +4541,9 @@
                     ]
                   },
                   "isStockable": {
+                    "type": "boolean"
+                  },
+                  "isResale": {
                     "type": "boolean"
                   },
                   "notes": {
@@ -6156,6 +6173,14 @@
             }
           },
           {
+            "name": "productId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
             "name": "from",
             "in": "query",
             "schema": {
@@ -6319,6 +6344,10 @@
                           "type": "string",
                           "minLength": 1
                         },
+                        "productId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
                         "enteredUnitId": {
                           "type": "string",
                           "minLength": 1
@@ -6333,7 +6362,6 @@
                         }
                       },
                       "required": [
-                        "rawMaterialId",
                         "enteredUnitId",
                         "enteredQuantity",
                         "unitPriceTnd"
@@ -6587,6 +6615,10 @@
                           "type": "string",
                           "minLength": 1
                         },
+                        "productId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
                         "enteredUnitId": {
                           "type": "string",
                           "minLength": 1
@@ -6601,7 +6633,6 @@
                         }
                       },
                       "required": [
-                        "rawMaterialId",
                         "enteredUnitId",
                         "enteredQuantity",
                         "unitPriceTnd"

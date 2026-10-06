@@ -35,6 +35,7 @@ export const purchaseListQuerySchema = z.object({
   status: z.nativeEnum(PurchaseStatus).optional(),
   paymentTerms: z.nativeEnum(PurchasePaymentTerms).optional(),
   rawMaterialId: z.string().trim().min(1).optional(),
+  productId: z.string().trim().min(1).optional(),
   ...dateRangeFields,
   dueState: z.enum(["OVERDUE", "UPCOMING"]).optional(),
   ...pageFields,
@@ -92,6 +93,16 @@ const moneyTnd = z
   .trim()
   .regex(/^\d+(\.\d{1,3})?$/);
 
+/// Issue 019: a line buys a raw material or a resold product. Which of the
+/// two, and that it is exactly one, is the service's to say on the field.
+export const purchaseLineSchema = z.object({
+  rawMaterialId: z.string().trim().min(1).optional(),
+  productId: z.string().trim().min(1).optional(),
+  enteredUnitId: z.string().trim().min(1),
+  enteredQuantity: decimalQuantity,
+  unitPriceTnd: moneyTnd,
+});
+
 export const createPurchaseSchema = z.object({
   supplierId: z.string().trim().min(1),
   purchaseDate: z.coerce.date(),
@@ -100,16 +111,7 @@ export const createPurchaseSchema = z.object({
   paidAmountTnd: moneyTnd.default("0"),
   dueDate: z.coerce.date().optional(),
   notes: z.string().optional(),
-  lines: z
-    .array(
-      z.object({
-        rawMaterialId: z.string().trim().min(1),
-        enteredUnitId: z.string().trim().min(1),
-        enteredQuantity: decimalQuantity,
-        unitPriceTnd: moneyTnd,
-      }),
-    )
-    .min(1),
+  lines: z.array(purchaseLineSchema).min(1),
 });
 
 export const cancelPurchaseSchema = z.object({

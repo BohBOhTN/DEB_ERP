@@ -22,6 +22,8 @@ const actionLabels: Record<string, string> = {
   "product_category.update": "Modification d'une catégorie",
   "product.create": "Création d'un produit",
   "product.update": "Modification d'un produit",
+  "product.cost_from_purchase":
+    "Coût d'un produit de revente mis à jour par un achat",
   "product.activate": "Activation d'un produit",
   "product.deactivate": "Désactivation d'un produit",
   "product.image": "Photo d'un produit",

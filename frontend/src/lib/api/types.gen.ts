@@ -4110,6 +4110,7 @@ export interface operations {
                 pageSize?: number;
                 categoryId?: string;
                 isStockable?: "true" | "false";
+                isResale?: "true" | "false";
             };
             header?: never;
             path?: never;
@@ -4176,6 +4177,7 @@ export interface operations {
                     salePriceTnd: string;
                     approximateCostTnd?: (string | "") | null;
                     isStockable: boolean;
+                    isResale?: boolean;
                     notes?: string;
                 };
             };
@@ -4312,6 +4314,7 @@ export interface operations {
                     salePriceTnd?: string;
                     approximateCostTnd?: (string | "") | null;
                     isStockable?: boolean;
+                    isResale?: boolean;
                     notes?: string;
                 };
             };
@@ -5194,6 +5197,7 @@ export interface operations {
                 status?: "DRAFT" | "POSTED" | "CANCELLED";
                 paymentTerms?: "PAID" | "PARTIAL" | "UNPAID";
                 rawMaterialId?: string;
+                productId?: string;
                 from?: string;
                 to?: string;
                 dueState?: "OVERDUE" | "UPCOMING";
@@ -5269,7 +5273,8 @@ export interface operations {
                     dueDate?: string;
                     notes?: string;
                     lines: {
-                        rawMaterialId: string;
+                        rawMaterialId?: string;
+                        productId?: string;
                         enteredUnitId: string;
                         enteredQuantity: string;
                         unitPriceTnd: string;
@@ -5412,7 +5417,8 @@ export interface operations {
                     dueDate?: string;
                     notes?: string;
                     lines: {
-                        rawMaterialId: string;
+                        rawMaterialId?: string;
+                        productId?: string;
                         enteredUnitId: string;
                         enteredQuantity: string;
                         unitPriceTnd: string;
