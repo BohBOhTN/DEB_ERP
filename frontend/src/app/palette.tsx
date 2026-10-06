@@ -43,6 +43,13 @@ const actions: Action[] = [
     keywords: ["fournisseur"],
   },
   {
+    id: "new-shopping-trip",
+    label: "Nouvelle course fournisseur",
+    path: "/achats/course",
+    permission: "purchases.create",
+    keywords: ["magasin", "dépense", "achat"],
+  },
+  {
     id: "new-dispatch",
     label: "Nouvelle sortie en dépôt-vente",
     path: "/distribution/sorties/nouvelle",

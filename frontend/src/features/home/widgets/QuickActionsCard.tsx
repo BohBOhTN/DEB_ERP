@@ -1,5 +1,6 @@
 import {
   ClipboardPlus,
+  ShoppingBasket,
   ShoppingCart,
   Store,
   Truck,
@@ -12,7 +13,7 @@ import type {
   PermissionKey,
   PermissionSet,
 } from "../../../lib/auth/permissions.js";
-import { hasAny } from "../../../lib/auth/permissions.js";
+import { hasAny, hasPermission } from "../../../lib/auth/permissions.js";
 import styles from "./QuickActionsCard.module.css";
 
 export interface QuickActionsCardProps {
@@ -26,6 +27,9 @@ interface QuickAction {
   to: string;
   icon: typeof Store;
   anyOf: readonly PermissionKey[];
+  /// Every one of these as well: a trip creates and posts a purchase and
+  /// records expenses (issue 018).
+  allOf?: readonly PermissionKey[];
 }
 
 /// Row 2, right: permission-gated links to the most frequent actions.
@@ -56,6 +60,14 @@ export function quickActionsFor(
       anyOf: ["purchases.create"],
     },
     {
+      id: "shopping-trip",
+      label: "Course fournisseur",
+      to: "/achats/course",
+      icon: ShoppingBasket,
+      anyOf: ["purchases.create"],
+      allOf: ["purchases.post", "expenses.create"],
+    },
+    {
       id: "distributor-sale",
       label: "Vente directe distributeur",
       to: "/distributeurs?vente=directe",
@@ -78,7 +90,11 @@ export function quickActionsFor(
     },
   ];
 
-  return actions.filter((action) => hasAny(permissions, action.anyOf));
+  return actions.filter(
+    (action) =>
+      hasAny(permissions, action.anyOf) &&
+      (action.allOf ?? []).every((key) => hasPermission(permissions, key)),
+  );
 }
 
 export function QuickActionsCard({

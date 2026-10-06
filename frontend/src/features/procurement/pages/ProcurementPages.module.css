@@ -123,3 +123,19 @@
   border: 1px solid var(--danger);
   border-radius: var(--radius-md);
 }
+
+/* Under each line editor of the trip: what the card adds up to. */
+.subtotal {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.subtotal strong {
+  color: var(--text-primary);
+}
