@@ -136,6 +136,29 @@ suite("AnalyticsService on PostgreSQL", () => {
     });
   }, 60_000);
 
+  // Issue 022: the charges of March are its 12.500 of expenses and the
+  // 16.000 of flour bought; the 19.200 of croissants bought to be resold
+  // are shown on their own.
+  it("adds the purchases by kind and the charges to the overview", async () => {
+    const overview = await service.getOverview({
+      period: march,
+      permissions: everything,
+    });
+
+    expect(overview.purchases).toEqual({
+      rawMaterialsTnd: "16.000",
+      previousRawMaterialsTnd: "3.000",
+      resaleTnd: "19.200",
+      previousResaleTnd: "0.000",
+    });
+    expect(overview.charges).toEqual({
+      totalTnd: "28.500",
+      previousTotalTnd: "3.000",
+      expensesTnd: "12.500",
+      rawMaterialsTnd: "16.000",
+    });
+  });
+
   it("buckets a long window by month", async () => {
     const overview = await service.getOverview({
       period: resolvePeriod({ from: "2001-01-01", to: "2001-06-30" }),

@@ -195,6 +195,63 @@ describe("AnalyticsService overview", () => {
     expect(models.expense.groupBy).not.toHaveBeenCalled();
   });
 
+  // Issue 022, DEC-V2-012: the charges are the posted expenses plus the raw
+  // materials bought; the products bought to be resold are shown apart.
+  it("adds the purchases by kind and the charges, each behind its permissions", async () => {
+    const bought: RawRoute = [
+      "IS NOT NULL) AS resale,",
+      (values) =>
+        isPrevious(values)
+          ? [{ resale: false, total: "30.000" }]
+          : [
+              { resale: false, total: "120.000" },
+              { resale: true, total: "60.000" },
+            ],
+    ];
+    const withFigures = () => {
+      const made = makePrisma([bought, ...routes]);
+      made.models.expense.groupBy.mockResolvedValue([
+        { categoryId: "energy", _sum: { amountTnd: money("85.000") } },
+      ]);
+      made.models.expense.aggregate.mockResolvedValue({
+        _sum: { amountTnd: money("40.000") },
+      });
+      made.models.expenseCategory.findMany.mockResolvedValue([
+        { id: "energy", name: "Énergie" },
+      ]);
+      return made.prisma;
+    };
+    const overviewFor = (permissions: string[]) =>
+      new AnalyticsService(withFigures()).getOverview({
+        period: lastThirtyDays,
+        permissions: new Set(["analytics.view", ...permissions]),
+      });
+
+    const full = await overviewFor(["expenses.view", "purchases.view"]);
+    expect(full.purchases).toEqual({
+      rawMaterialsTnd: "120.000",
+      previousRawMaterialsTnd: "30.000",
+      resaleTnd: "60.000",
+      previousResaleTnd: "0.000",
+    });
+    // 85 of expenses and 120 of raw materials; the 60 of resold goods are
+    // not a charge.
+    expect(full.charges).toEqual({
+      totalTnd: "205.000",
+      previousTotalTnd: "70.000",
+      expensesTnd: "85.000",
+      rawMaterialsTnd: "120.000",
+    });
+
+    const purchasesOnly = await overviewFor(["purchases.view"]);
+    expect(purchasesOnly.purchases?.resaleTnd).toBe("60.000");
+    expect(purchasesOnly.charges).toBeNull();
+
+    const expensesOnly = await overviewFor(["expenses.view"]);
+    expect(expensesOnly.purchases).toBeNull();
+    expect(expensesOnly.charges).toBeNull();
+  });
+
   it("adds expenses by category and the approximate margin with their permissions", async () => {
     const { prisma, models } = makePrisma(routes);
     models.expense.groupBy.mockResolvedValue([

@@ -6,6 +6,7 @@ import {
 } from "@prisma/client";
 import { sumOrZero } from "../../shared/ledger.js";
 import { marginFigures } from "../../shared/marginFigures.js";
+import { purchaseTotalsByKind } from "../../shared/purchaseFigures.js";
 import { bucketFormat } from "./analytics.sql.js";
 import { distributorsAnalysis } from "./distributors.analysis.js";
 import {
@@ -53,11 +54,12 @@ export class AnalyticsService {
   public constructor(private readonly prisma: PrismaClient) {}
 
   /// Revenue by channel, till sales and average basket against the window
-  /// just before, expenses, approximate margin and the trend per bucket.
+  /// just before, expenses, approximate margin, purchases by kind, the
+  /// charges (issue 022) and the trend per bucket.
   public async getOverview(params: AnalyticsParams) {
     const { period } = params;
     const can = (key: string) => params.permissions.has(key);
-    const [current, previous, cancelledCount, expenses, margin] =
+    const [current, previous, cancelledCount, expenses, margin, bought] =
       await Promise.all([
         this.revenueBuckets(period.start, period.end, period.granularity),
         this.revenueBuckets(period.previous.start, period.previous.end, "day"),
@@ -72,6 +74,18 @@ export class AnalyticsService {
           ? Promise.all([
               marginFigures(this.prisma, period.start, period.end),
               marginFigures(
+                this.prisma,
+                period.previous.start,
+                period.previous.end,
+              ),
+            ]).then(([now, before]) => ({ current: now, previous: before }))
+          : null,
+        // Issue 022: what was bought, by kind, for the two purchase tiles
+        // and for the charges.
+        can("purchases.view")
+          ? Promise.all([
+              purchaseTotalsByKind(this.prisma, period.start, period.end),
+              purchaseTotalsByKind(
                 this.prisma,
                 period.previous.start,
                 period.previous.end,
@@ -134,6 +148,29 @@ export class AnalyticsService {
           }
         : null,
       margin,
+      purchases: bought
+        ? {
+            rawMaterialsTnd: bought.current.rawMaterialsTnd.toFixed(3),
+            previousRawMaterialsTnd: bought.previous.rawMaterialsTnd.toFixed(3),
+            resaleTnd: bought.current.resaleTnd.toFixed(3),
+            previousResaleTnd: bought.previous.resaleTnd.toFixed(3),
+          }
+        : null,
+      // DEC-V2-012: posted expenses plus the raw materials bought; the
+      // products bought to be resold are stock, shown on their own.
+      charges:
+        bought && expenses
+          ? {
+              totalTnd: bought.current.rawMaterialsTnd
+                .plus(expenses.totalTnd)
+                .toFixed(3),
+              previousTotalTnd: bought.previous.rawMaterialsTnd
+                .plus(expenses.previousTotalTnd)
+                .toFixed(3),
+              expensesTnd: expenses.totalTnd,
+              rawMaterialsTnd: bought.current.rawMaterialsTnd.toFixed(3),
+            }
+          : null,
       trend,
       bestBucket: best
         ? { bucket: best.bucket, revenueTnd: best.revenueTnd }
