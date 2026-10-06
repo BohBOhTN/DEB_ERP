@@ -31,6 +31,7 @@ export function makePurchaseLine(
   return {
     id: `line-${n}`,
     rawMaterialId: "raw-1",
+    productId: null,
     enteredUnitId: "unit-sac",
     baseUnitId: "unit-kg",
     enteredQuantity: "4",

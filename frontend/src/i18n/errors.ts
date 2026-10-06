@@ -150,6 +150,11 @@ const errorCopy: Record<string, ErrorCopy> = {
     title: "Matière première inactive",
     description: "Choisissez une matière première active.",
   },
+  ACTIVE_RESALE_PRODUCT_REQUIRED: {
+    title: "Produit de revente requis",
+    description:
+      "Choisissez un produit actif marqué « Produit de revente » ; un produit fabriqué ici ne s'achète pas.",
+  },
   STOCKABLE_PRODUCT_REQUIRED: {
     title: "Produit non stockable",
     description: "Ce produit ne suit pas le stock.",

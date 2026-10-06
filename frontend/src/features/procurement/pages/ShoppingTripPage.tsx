@@ -236,6 +236,7 @@ export function ShoppingTripPage() {
                 <PurchaseLineEditor
                   lines={(field.value ?? []) as PurchaseEditorLine[]}
                   onChange={field.onChange}
+                  kinds={["RAW_MATERIAL"]}
                   errors={lineErrors}
                   disabled={busy}
                 />

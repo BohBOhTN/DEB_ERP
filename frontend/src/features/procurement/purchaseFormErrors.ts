@@ -5,6 +5,7 @@
 const apiToForm: Array<[pattern: RegExp, formPath: string]> = [
   [/^supplierId$/, "supplier"],
   [/^lines\.(\d+)\.rawMaterialId$/, "lines.$1.item"],
+  [/^lines\.(\d+)\.productId$/, "lines.$1.item"],
   [/^lines\.(\d+)\.enteredQuantity$/, "lines.$1.quantity"],
   [/^lines\.(\d+)\.enteredUnitId$/, "lines.$1.unitId"],
 ];
@@ -58,6 +59,7 @@ const tripApiToForm: Array<[pattern: RegExp, formPath: string]> = [
   [/^purchase\.dueDate$/, "dueDate"],
   [/^purchase\.paidAmountTnd$/, "paidAmountTnd"],
   [/^purchase\.lines\.(\d+)\.rawMaterialId$/, "lines.$1.item"],
+  [/^purchase\.lines\.(\d+)\.productId$/, "lines.$1.item"],
   [/^purchase\.lines\.(\d+)\.enteredQuantity$/, "lines.$1.quantity"],
   [/^purchase\.lines\.(\d+)\.enteredUnitId$/, "lines.$1.unitId"],
   [/^purchase\.lines\.(\d+)\.unitPriceTnd$/, "lines.$1.unitPriceTnd"],

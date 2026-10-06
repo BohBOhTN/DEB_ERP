@@ -26,10 +26,13 @@ export type SupplierFormOutput = z.output<typeof supplierSchema>;
 /// unit, as the backend computes `normalizedQuantity × unitPriceTnd`.
 export const purchaseLineSchema = z.object({
   key: z.string(),
+  /// Issue 019: what the picked item is, a raw material or a resold
+  /// product; it decides which id the request carries.
+  kind: z.enum(["RAW_MATERIAL", "PRODUCT"]).default("RAW_MATERIAL"),
   item: z
     .object({ value: z.string(), label: z.string() })
     .nullable()
-    .refine((item) => item !== null, "Choisissez une matière première."),
+    .refine((item) => item !== null, "Choisissez un article."),
   quantity: decimalString(6, { positive: true }),
   unitId: z.string().nullable().optional(),
   unitPriceTnd: tnd({ positive: true }),
@@ -60,6 +63,7 @@ type PurchaseRuleValues = {
   paidAmountTnd: string;
   dueDate: string;
   lines: Array<{
+    kind?: "RAW_MATERIAL" | "PRODUCT";
     item: { value: string } | null;
     quantity: string;
     unitPriceTnd: string;
@@ -91,7 +95,10 @@ function addPurchaseIssues(
       context.addIssue({
         code: "custom",
         path: ["lines", index, "item"],
-        message: "Cette matière première est déjà sur une autre ligne.",
+        message:
+          line.kind === "PRODUCT"
+            ? "Ce produit est déjà sur une autre ligne."
+            : "Cette matière première est déjà sur une autre ligne.",
       });
     } else if (material) {
       firstLineOf.set(material, index);
