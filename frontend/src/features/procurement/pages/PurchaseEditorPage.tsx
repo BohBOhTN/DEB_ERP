@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "../../../components/patterns/PageHeader/PageHeader.js";
@@ -26,6 +26,11 @@ import {
   type PurchaseFormInput,
   type PurchaseFormOutput,
 } from "../procurement.schemas.js";
+import {
+  countFieldErrors,
+  errorSummary,
+  toFormFieldErrors,
+} from "../purchaseFormErrors.js";
 import { PostPurchaseDialog } from "../components/PostPurchaseDialog.js";
 import {
   lineFromRawMaterial,
@@ -78,6 +83,12 @@ export function PurchaseEditorPage() {
     defaultValues: emptyDefaults(),
   });
   const errors = form.formState.errors;
+  const summaryRef = useRef<HTMLDivElement>(null);
+  // A refused save can leave the fields in error far below the buttons on
+  // a phone: the summary is brought into view so the refusal is seen.
+  useEffect(() => {
+    if (summary) summaryRef.current?.scrollIntoView?.({ block: "center" });
+  }, [summary]);
   const lines = form.watch("lines") as PurchaseEditorLine[];
   const paymentTerms = form.watch("paymentTerms") ?? "UNPAID";
   const paidAmountTnd = form.watch("paidAmountTnd") ?? "";
@@ -193,12 +204,9 @@ export function PurchaseEditorPage() {
       return await save.mutateAsync({ purchaseId, body: bodyFrom(values) });
     } catch (error) {
       if (error instanceof ApiError && error.isValidation) {
-        const unknown = applyFieldErrors(form.setError, error.fieldErrors);
-        if (unknown.length > 0)
-          setSummary({
-            title: "Le formulaire contient des erreurs",
-            description: unknown.join(" "),
-          });
+        const fieldErrors = toFormFieldErrors(error.fieldErrors);
+        applyFieldErrors(form.setError, fieldErrors);
+        setSummary(errorSummary(Object.keys(fieldErrors).length));
         return null;
       }
       setSummary(describeError(error));
@@ -206,18 +214,21 @@ export function PurchaseEditorPage() {
     }
   };
 
+  const refused = (invalid: unknown) =>
+    setSummary(errorSummary(countFieldErrors(invalid)));
+
   const saveDraft = form.handleSubmit(async (values) => {
     const purchase = await persist(values);
     if (purchase) {
       toast.success("Brouillon enregistré", purchase.supplier.name);
       navigate(`/achats/${purchase.id}`);
     }
-  });
+  }, refused);
 
   const saveAndPost = form.handleSubmit(async (values) => {
     const purchase = await persist(values);
     if (purchase) setToPost(purchase);
-  });
+  }, refused);
 
   if (purchaseId && (existing.isError || loadError)) {
     const copy = describeError(existing.error ?? loadError);
@@ -263,7 +274,7 @@ export function PurchaseEditorPage() {
       >
         <div className={styles.editorMain}>
           {summary ? (
-            <div role="alert" className={styles.muted}>
+            <div ref={summaryRef} role="alert" className={styles.formError}>
               <strong>{summary.title}</strong> {summary.description}
             </div>
           ) : null}
@@ -300,6 +311,8 @@ export function PurchaseEditorPage() {
                     <DateInput
                       value={field.value ?? ""}
                       onChange={field.onChange}
+                      max={toBusinessDate(new Date())}
+                      invalid={Boolean(errors.purchaseDate)}
                       disabled={busy}
                     />
                   )}

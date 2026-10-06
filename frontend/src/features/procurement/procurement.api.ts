@@ -69,6 +69,19 @@ export interface Purchase {
   /// Remaining due and derived state, from the ledger (list and detail).
   balanceTnd: string;
   paymentState: SupplierPaymentState;
+  /// Detail only (issue 018): the other goods bought on the same shopping
+  /// trip, and the total of the posted ones.
+  expenses?: LinkedExpense[];
+  expensesTotalTnd?: string;
+}
+
+export interface LinkedExpense {
+  id: string;
+  reference: string;
+  description: string;
+  amountTnd: string;
+  status: "DRAFT" | "POSTED" | "CANCELLED";
+  category: { id: string; name: string };
 }
 
 export interface SupplierPaymentAllocation {
@@ -81,6 +94,7 @@ export interface SupplierPaymentAllocation {
     reference: string | null;
     purchaseDate: string;
     totalTnd: string;
+    status?: PurchaseStatus;
   };
 }
 
@@ -93,8 +107,15 @@ export interface SupplierPayment {
   reference: string | null;
   notes: string | null;
   supplier: Supplier;
+  /// The purchase a payment taken at posting belongs to (issue 016).
+  purchase?: {
+    id: string;
+    reference: string | null;
+    status: PurchaseStatus;
+  } | null;
   allocations: SupplierPaymentAllocation[];
-  /// Set when the payment was reversed; its ledger effect is compensated.
+  /// Set when the payment was reversed, by hand or by the cancellation of
+  /// its purchase; its ledger effect is compensated.
   reversedAt: string | null;
   reversalReason: string | null;
 }
@@ -274,6 +295,53 @@ export async function postPurchase(
       { idempotencyKey },
     )
   ).purchase;
+}
+
+/// Issue 018: one trip to one store, validated once. `purchase` is absent
+/// when no raw material was bought; `expenses` may be empty.
+export interface ShoppingTripInput {
+  supplierId: string;
+  tripDate: string;
+  supplierReference?: string;
+  notes?: string;
+  purchase?: {
+    paymentTerms: PurchasePaymentTerms;
+    paidAmountTnd: string;
+    dueDate?: string;
+    lines: PurchaseLineInput[];
+  };
+  expenses: Array<{
+    categoryId: string;
+    description: string;
+    amountTnd: string;
+  }>;
+}
+
+export interface ShoppingTripResult {
+  purchase: Purchase | null;
+  expenses: Array<{
+    id: string;
+    reference: string;
+    description: string;
+    amountTnd: string;
+  }>;
+  totals: {
+    purchaseTnd: string;
+    expensesTnd: string;
+    totalTnd: string;
+    paidTodayTnd: string;
+  };
+}
+
+export function postShoppingTrip(
+  input: ShoppingTripInput,
+  idempotencyKey: string,
+): Promise<ShoppingTripResult> {
+  return apiClient.post<ShoppingTripResult>(
+    "/procurement/shopping-trips",
+    input,
+    { idempotencyKey },
+  );
 }
 
 export async function cancelPurchase(

@@ -5,11 +5,20 @@ on:
   push:
     branches:
       - main
+      - staging
       - dev
   # A deploy by hand: the current commit of the chosen branch, or an image
-  # built earlier when `image_tag` names its commit (a rollback).
+  # built earlier when `image_tag` names its commit (a rollback), to the
+  # stack chosen. Staging is the default so a slip never reaches production.
   workflow_dispatch:
     inputs:
+      target:
+        description: "Stack to deploy to"
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
       image_tag:
         description: "Commit SHA of an image already in GHCR to redeploy; empty builds this commit"
         required: false
@@ -162,22 +171,75 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
-  # Ships a release to the VPS (issue 010): after `quality`, behind the
-  # `production` environment's reviewer, on pushes to `main` or by hand.
+  # Which stack a run deploys (issue 017): a push to `main` goes to
+  # production, a push to `staging` to the staging stack, a run by hand to
+  # the target chosen. Each stack has its folder and its container names on
+  # the VPS, and its own GitHub environment for the secrets.
+  target:
+    name: Deploy target
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'))
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.pick.outputs.name }}
+      stack_dir: ${{ steps.pick.outputs.stack_dir }}
+      stack_name: ${{ steps.pick.outputs.stack_name }}
+      channel: ${{ steps.pick.outputs.channel }}
+    steps:
+      - name: Pick the stack
+        id: pick
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          CHOSEN: ${{ github.event.inputs.target }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            name="$CHOSEN"
+          elif [ "$REF" = "refs/heads/main" ]; then
+            name=production
+          else
+            name=staging
+          fi
+          case "$name" in
+            production)
+              stack_dir=/opt/dar-el-barka
+              stack_name=deb
+              channel=latest
+              ;;
+            staging)
+              stack_dir=/opt/dar-el-barka-staging
+              stack_name=deb-staging
+              channel=staging
+              ;;
+            *)
+              echo "Unknown deploy target: $name" >&2
+              exit 1
+              ;;
+          esac
+          {
+            echo "name=$name"
+            echo "stack_dir=$stack_dir"
+            echo "stack_name=$stack_name"
+            echo "channel=$channel"
+          } >> "$GITHUB_OUTPUT"
+
+  # Ships a build to the VPS (issues 010 and 017): after `quality`, to the
+  # stack `target` picked. Production waits for its environment's reviewer;
+  # staging deploys as soon as the checks are green.
   deploy:
     name: Deploy to the VPS
-    needs: quality
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: [quality, target]
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ needs.target.outputs.name }}
     concurrency:
-      group: production-deploy
+      group: ${{ needs.target.outputs.name }}-deploy
       cancel-in-progress: false
     permissions:
       contents: read
       packages: write
     env:
       IMAGE_TAG: ${{ github.event.inputs.image_tag != '' && github.event.inputs.image_tag || github.sha }}
+      STACK_DIR: ${{ needs.target.outputs.stack_dir }}
+      STACK_NAME: ${{ needs.target.outputs.stack_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -206,7 +268,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ steps.prep.outputs.owner }}/dar-el-barka-backend:${{ github.sha }}
-            ghcr.io/${{ steps.prep.outputs.owner }}/dar-el-barka-backend:latest
+            ghcr.io/${{ steps.prep.outputs.owner }}/dar-el-barka-backend:${{ needs.target.outputs.channel }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
@@ -219,7 +281,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ steps.prep.outputs.owner }}/dar-el-barka-frontend:${{ github.sha }}
-            ghcr.io/${{ steps.prep.outputs.owner }}/dar-el-barka-frontend:latest
+            ghcr.io/${{ steps.prep.outputs.owner }}/dar-el-barka-frontend:${{ needs.target.outputs.channel }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
@@ -230,8 +292,8 @@ jobs:
           username: ${{ secrets.VPS_SSH_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
-          source: "deploy/docker-compose.yml,deploy/remote-deploy.sh"
-          target: /opt/dar-el-barka
+          source: "deploy/docker-compose.yml,deploy/remote-deploy.sh,deploy/refresh-staging-db.sh"
+          target: ${{ needs.target.outputs.stack_dir }}
           strip_components: 1
 
       - name: Run the deploy on the VPS
@@ -248,11 +310,11 @@ jobs:
           username: ${{ secrets.VPS_SSH_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT || 22 }}
-          envs: IMAGE_TAG,REGISTRY_OWNER,PUBLIC_PORT,PUBLIC_BIND,GHCR_USER,GHCR_TOKEN,BACKEND_ENV
+          envs: IMAGE_TAG,STACK_DIR,STACK_NAME,REGISTRY_OWNER,PUBLIC_PORT,PUBLIC_BIND,GHCR_USER,GHCR_TOKEN,BACKEND_ENV
           script: |
             set -e
-            chmod +x /opt/dar-el-barka/remote-deploy.sh
-            /opt/dar-el-barka/remote-deploy.sh
+            chmod +x "$STACK_DIR/remote-deploy.sh"
+            "$STACK_DIR/remote-deploy.sh"
 
       - name: Smoke the public endpoint
         run: |

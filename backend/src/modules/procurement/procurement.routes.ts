@@ -17,6 +17,7 @@ import {
 import { AppError } from "../../shared/appError.js";
 import { getCorrelationId } from "../../shared/correlation.js";
 import type { ProcurementService } from "./procurement.service.js";
+import type { ShoppingTripService } from "./shoppingTrip.service.js";
 
 export const listQuerySchema = z.object({
   sort: sortField(["name", "createdAt"]),
@@ -115,6 +116,42 @@ export const cancelPurchaseSchema = z.object({
   reason: z.string().trim().min(3),
 });
 
+/// Issue 018: one trip to one store. The line fields are read loosely here
+/// so the service answers every mistake at once, on the field concerned.
+export const shoppingTripSchema = z.object({
+  supplierId: z.string().trim().min(1),
+  tripDate: z.coerce.date(),
+  supplierReference: z.string().optional(),
+  notes: z.string().optional(),
+  purchase: z
+    .object({
+      paymentTerms: z.nativeEnum(PurchasePaymentTerms),
+      paidAmountTnd: moneyTnd.default("0"),
+      dueDate: z.coerce.date().optional(),
+      lines: z
+        .array(
+          z.object({
+            rawMaterialId: z.string().trim().min(1),
+            enteredUnitId: z.string().trim().min(1),
+            enteredQuantity: z.string(),
+            unitPriceTnd: z.string(),
+          }),
+        )
+        .min(1),
+    })
+    .optional(),
+  expenses: z
+    .array(
+      z.object({
+        categoryId: z.string().trim().min(1),
+        description: z.string(),
+        amountTnd: z.string(),
+      }),
+    )
+    .max(50)
+    .default([]),
+});
+
 export const reversePaymentSchema = z.object({
   reason: z.string().trim().min(3),
 });
@@ -139,6 +176,7 @@ export function procurementRouter(params: {
   authService: AuthService;
   cookie: SessionCookieConfig;
   procurementService: ProcurementService;
+  shoppingTripService: ShoppingTripService;
 }): Router {
   const router = Router();
   router.use(
@@ -276,6 +314,30 @@ export function procurementRouter(params: {
           {
             idempotencyKey: readIdempotencyKey(request.headers),
             reason: body.reason,
+          },
+          actorFromResponse(response),
+        );
+        sendCommandResult(response, 201, result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  // One validation over a purchase and expenses: the caller needs what each
+  // document needs on its own.
+  router.post(
+    "/shopping-trips",
+    requirePermission("purchases.create"),
+    requirePermission("purchases.post"),
+    requirePermission("expenses.create"),
+    async (request, response, next) => {
+      try {
+        const body = shoppingTripSchema.parse(request.body);
+        const result = await params.shoppingTripService.post(
+          {
+            ...body,
+            idempotencyKey: readIdempotencyKey(request.headers),
           },
           actorFromResponse(response),
         );

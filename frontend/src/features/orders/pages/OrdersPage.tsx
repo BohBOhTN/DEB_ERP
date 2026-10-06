@@ -11,6 +11,7 @@ import { PermissionGate } from "../../../components/patterns/PermissionGate/Perm
 import { KpiGrid } from "../../../components/patterns/KpiGrid/KpiGrid.js";
 import { KpiTile } from "../../../components/patterns/KpiTile/KpiTile.js";
 import { PeriodFilter } from "../../../components/patterns/PeriodFilter/PeriodFilter.js";
+import { Badge } from "../../../components/ui/Badge/Badge.js";
 import { Button } from "../../../components/ui/Button/Button.js";
 import { Card } from "../../../components/ui/Card/Card.js";
 import { EmptyState } from "../../../components/ui/EmptyState/EmptyState.js";
@@ -33,76 +34,34 @@ import {
 import { useUrlState } from "../../../lib/hooks/useUrlState.js";
 import { useSessionPermissions } from "../../../app/sessionContext.js";
 import { CustomerCombobox } from "../../customers/components/CustomerCombobox.js";
-import type { Order, OrderFilterQuery } from "../orders.api.js";
+import type { Order } from "../orders.api.js";
 import { useOrders, useOrdersSummary } from "../orders.queries.js";
+import {
+  boardQuery,
+  boards,
+  closedBoards,
+  defaultPeriod,
+  dueLabel,
+  isLate,
+  presetsFor,
+  windowOf,
+  type Board,
+} from "../ordersBoard.js";
 import { OrderRowActions } from "../components/OrderRowActions.js";
-import { remainingOf } from "../components/orderLabels.js";
+import { openOrderStatuses, remainingOf } from "../components/orderLabels.js";
 import styles from "./OrderPages.module.css";
 
-type Board = "todo" | "overdue" | "ready" | "completed" | "cancelled";
-const boards: Array<{ value: Board; label: string }> = [
-  { value: "todo", label: "À traiter" },
-  { value: "overdue", label: "En retard" },
-  { value: "ready", label: "Prêtes" },
-  { value: "completed", label: "Terminées" },
-  { value: "cancelled", label: "Annulées" },
-];
 const defaults = {
   board: "todo",
   q: "",
   customerId: "",
   customerName: "",
-  period: "today",
+  period: defaultPeriod as string,
   from: "",
   to: "",
   page: 1,
   pageSize: 25,
 };
-
-/// The board tab is the status dimension: open orders still to fulfil, the
-/// overdue ones, the ready ones, the closed ones. The period (issue #41) is
-/// the date dimension on the fulfilment time and combines with the tab;
-/// "En retard" ignores it since overdue is dated by definition.
-export function boardQuery(
-  board: Board,
-  range: { from: string; to: string },
-): Partial<OrderFilterQuery> {
-  const window = {
-    ...(board !== "overdue" && range.from
-      ? { dueAfter: new Date(`${range.from}T00:00:00+01:00`).toISOString() }
-      : {}),
-    ...(board !== "overdue" && range.to
-      ? { dueBefore: new Date(`${range.to}T23:59:59.999+01:00`).toISOString() }
-      : {}),
-  };
-  switch (board) {
-    case "todo":
-      return { dueState: "UPCOMING", ...window };
-    case "overdue":
-      return { dueState: "OVERDUE" };
-    case "ready":
-      return { status: "READY", ...window };
-    case "completed":
-      return { status: "COMPLETED", ...window };
-    default:
-      return { status: "CANCELLED", ...window };
-  }
-}
-
-/// Relative label for the fulfilment time: "dans 2 h", "il y a 30 min".
-export function dueLabel(value: string, now = new Date()): string {
-  const minutes = Math.round(
-    (new Date(value).getTime() - now.getTime()) / 60_000,
-  );
-  const abs = Math.abs(minutes);
-  const unit =
-    abs < 60
-      ? `${abs} min`
-      : abs < 48 * 60
-        ? `${Math.round(abs / 60)} h`
-        : `${Math.round(abs / (24 * 60))} j`;
-  return minutes >= 0 ? `dans ${unit}` : `il y a ${unit}`;
-}
 
 /// `/commandes` (UI-14): a status board over the queue, a table on desktop
 /// and day-grouped cards on phones, soonest due first.
@@ -114,7 +73,13 @@ export function OrdersPage() {
   const board = (
     boards.some((item) => item.value === state.board) ? state.board : "todo"
   ) as Board;
-  const period = periodFromParams(state, "today");
+  const presets = presetsFor(board);
+  const stored = periodFromParams(state, defaultPeriod);
+  // A window the tab does not offer (a link, or a tab change) falls back
+  // to every date instead of filtering by something the user cannot see.
+  const period = presets.includes(stored.preset)
+    ? stored
+    : { preset: defaultPeriod, from: "", to: "" };
   const range = periodRange(period);
   const scope = {
     customerId: state.customerId || undefined,
@@ -126,7 +91,7 @@ export function OrdersPage() {
     sort: {
       field: "requestedFulfillmentAt",
       direction:
-        board === "completed" || board === "cancelled" ? "desc" : "asc",
+        closedBoards.includes(board) || board === "all" ? "desc" : "asc",
     },
     ...scope,
     ...boardQuery(board, range),
@@ -135,18 +100,13 @@ export function OrdersPage() {
   // tab: it describes the whole queue the user is looking at.
   const summary = useOrdersSummary({
     ...scope,
-    ...(range.from
-      ? { dueAfter: new Date(`${range.from}T00:00:00+01:00`).toISOString() }
-      : {}),
-    ...(range.to
-      ? { dueBefore: new Date(`${range.to}T23:59:59.999+01:00`).toISOString() }
-      : {}),
+    ...(board === "overdue" ? {} : windowOf(range)),
   });
   const rows = query.data?.items ?? [];
   const activeCount =
     (state.customerId ? 1 : 0) +
     (state.q ? 1 : 0) +
-    (period.preset !== "today" ? 1 : 0);
+    (period.preset !== defaultPeriod ? 1 : 0);
   const count = (value: number | undefined) => value ?? 0;
 
   const columns: DataTableColumn<Order>[] = [
@@ -170,8 +130,11 @@ export function OrdersPage() {
             {formatDate(row.original.requestedFulfillmentAt)}{" "}
             {formatTime(row.original.requestedFulfillmentAt)}
           </span>
-          {row.original.status !== "COMPLETED" &&
-          row.original.status !== "CANCELLED" ? (
+          {isLate(row.original) ? (
+            <Badge tone="danger">
+              {`En retard · ${dueLabel(row.original.requestedFulfillmentAt)}`}
+            </Badge>
+          ) : openOrderStatuses.includes(row.original.status) ? (
             <span className={styles.muted}>
               {dueLabel(row.original.requestedFulfillmentAt)}
             </span>
@@ -268,7 +231,17 @@ export function OrdersPage() {
       <Tabs<Board>
         label="File des commandes"
         value={board}
-        onValueChange={(next) => setState({ board: next, page: 1 })}
+        onValueChange={(next) =>
+          setState({
+            board: next,
+            page: 1,
+            // A window the next tab does not offer is dropped for good, so
+            // it does not come back two tabs later.
+            ...(presetsFor(next).includes(period.preset)
+              ? {}
+              : periodToParams({ preset: defaultPeriod, from: "", to: "" })),
+          })
+        }
         items={boards.map((item) => ({
           value: item.value,
           label: item.label,
@@ -277,6 +250,8 @@ export function OrdersPage() {
       />
       {board !== "overdue" ? (
         <PeriodFilter
+          label="Retrait"
+          presets={presets}
           value={period}
           onChange={(next) => setState({ ...periodToParams(next), page: 1 })}
         />
@@ -293,7 +268,7 @@ export function OrdersPage() {
             q: "",
             customerId: "",
             customerName: "",
-            period: "today",
+            period: defaultPeriod,
             from: "",
             to: "",
             page: 1,
@@ -349,11 +324,19 @@ export function OrdersPage() {
                     </Link>
                     <span className={styles.muted}>
                       {order.reference} ·{" "}
-                      {formatTime(order.requestedFulfillmentAt)} ·{" "}
-                      {dueLabel(order.requestedFulfillmentAt)}
+                      {formatTime(order.requestedFulfillmentAt)}
+                      {openOrderStatuses.includes(order.status)
+                        ? ` · ${dueLabel(order.requestedFulfillmentAt)}`
+                        : ""}
+                      {` · reste ${formatMoney(remainingOf(order))}`}
                     </span>
                     <span className={styles.cardTop}>
-                      <StatusPill status={order.status} />
+                      <span className={styles.nameCell}>
+                        <StatusPill status={order.status} />
+                        {isLate(order) ? (
+                          <Badge tone="danger">En retard</Badge>
+                        ) : null}
+                      </span>
                       <OrderRowActions
                         order={order}
                         permissions={permissions}
@@ -379,7 +362,9 @@ export function OrdersPage() {
               ...(change.pageSize ? { pageSize: change.pageSize } : {}),
             })
           }
-          loading={query.isPending || query.isFetching}
+          // Not while refetching: the rows stay in place after an action
+          // instead of blinking into a skeleton.
+          loading={query.isPending}
           error={query.error}
           onRetry={() => void query.refetch()}
           empty={{

@@ -20,6 +20,7 @@ const routes = [
   "/fournisseurs",
   "/achats",
   "/achats/nouveau",
+  "/achats/course",
   "/paiements-fournisseurs",
   "/clients",
   "/commandes",

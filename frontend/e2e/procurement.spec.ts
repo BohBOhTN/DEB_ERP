@@ -29,7 +29,12 @@ test("creates and posts a purchase, then pays the supplier with allocations", as
   await page.getByRole("option", { name: "Sac de 50 kg" }).click();
   // The quantity formatter joins number and unit with a no-break space;
   // string matching normalises whitespace, a regex would not.
-  await expect(page.getByRole("main")).toContainText("= 200 kg · prix par kg");
+  // Issue 016: the quantity says what it amounts to in the base unit and
+  // the price says which unit it is for; nothing about the price sits
+  // under the quantity any more.
+  await expect(page.getByRole("main")).toContainText("= 200 kg");
+  await expect(page.getByRole("main")).toContainText("par kg");
+  await expect(page.getByRole("main")).not.toContainText("prix par");
   await page.getByRole("textbox", { name: "Prix unitaire 1" }).fill("1,25");
   await expect(
     page.getByRole("textbox", { name: "Total ligne 1" }),

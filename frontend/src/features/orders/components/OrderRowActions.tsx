@@ -5,6 +5,7 @@ import {
   Check,
   Eye,
   MoreHorizontal,
+  Pencil,
   Undo2,
 } from "lucide-react";
 import { useState } from "react";
@@ -71,6 +72,13 @@ export function OrderRowActions({ order, permissions }: OrderRowActionsProps) {
             label: "Voir",
             icon: <Eye />,
             onSelect: () => navigate(`/commandes/${order.id}`),
+          },
+          {
+            id: "edit",
+            label: "Modifier",
+            icon: <Pencil />,
+            onSelect: () => navigate(`/commandes/${order.id}/modifier`),
+            hidden: !actions.edit,
           },
           {
             id: "advance",

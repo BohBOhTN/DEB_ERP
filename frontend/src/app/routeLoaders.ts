@@ -24,6 +24,8 @@ export const loadPurchasesPage = () =>
   import("../features/procurement/pages/PurchasesPage.js");
 export const loadPurchaseEditorPage = () =>
   import("../features/procurement/pages/PurchaseEditorPage.js");
+export const loadShoppingTripPage = () =>
+  import("../features/procurement/pages/ShoppingTripPage.js");
 export const loadPurchaseDetailPage = () =>
   import("../features/procurement/pages/PurchaseDetailPage.js");
 export const loadSupplierPaymentsPage = () =>
@@ -36,6 +38,8 @@ export const loadOrdersPage = () =>
   import("../features/orders/pages/OrdersPage.js");
 export const loadOrderEditorPage = () =>
   import("../features/orders/pages/OrderEditorPage.js");
+export const loadOrderEditPage = () =>
+  import("../features/orders/pages/OrderEditPage.js");
 export const loadOrderDetailPage = () =>
   import("../features/orders/pages/OrderDetailPage.js");
 export const loadPos = () => import("../features/pos/pos.js");

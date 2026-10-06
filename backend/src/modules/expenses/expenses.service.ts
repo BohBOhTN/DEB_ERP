@@ -1,4 +1,9 @@
-import { ExpenseStatus, Prisma, type PrismaClient } from "@prisma/client";
+import {
+  ExpenseStatus,
+  PaymentMethod,
+  Prisma,
+  type PrismaClient,
+} from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
 import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { postingTransactionOptions } from "../../shared/idempotency.js";
@@ -39,11 +44,34 @@ export interface ExpenseListParams {
   sort?: SortSpec<"expenseDate" | "amountTnd">;
   categoryId?: string;
   status?: ExpenseStatus;
+  /// Issue 018: the expenses of one shopping trip, or of one store.
+  purchaseId?: string;
+  supplierId?: string;
   from?: Date;
   to?: Date;
   page: number;
   pageSize: number;
 }
+
+export interface CreateExpenseParams {
+  categoryId: string;
+  expenseDate: Date;
+  amountTnd: string;
+  description: string;
+  externalReference?: string;
+  notes?: string;
+  responsibleUserId?: string;
+  post?: boolean;
+}
+
+/// What an expense row carries beside its category: the store and the
+/// purchase of the shopping trip it was recorded on (issue 018), both
+/// null for a plain expense.
+const expenseInclude = {
+  category: true,
+  supplier: { select: { id: true, name: true } },
+  purchase: { select: { id: true, reference: true } },
+} as const;
 
 export class ExpensesService {
   public constructor(private readonly prisma: PrismaClient) {}
@@ -66,34 +94,46 @@ export class ExpensesService {
   }
 
   /// Categories with how many expenses use each (07 section 4.8), counted
-  /// by the database in the same query.
+  /// by the database in the same query, placed in their tree (issue 018):
+  /// a parent first, its sub-categories right under it, siblings by name,
+  /// the inactive ones last at every level. `path` reads "Fournitures ›
+  /// Emballage" so a picker can say where a category sits. The whole table
+  /// is read even when only the active rows are wanted: a path needs the
+  /// parents.
   public async listCategories(params: { isActive?: boolean }) {
     const categories = await this.prisma.expenseCategory.findMany({
-      where: {
-        ...(params.isActive === undefined ? {} : { isActive: params.isActive }),
-      },
       include: { _count: { select: { expenses: true } } },
       orderBy: [{ isActive: "desc" }, { name: "asc" }],
     });
 
-    return categories.map(({ _count, ...category }) => ({
-      ...category,
-      expenseCount: _count.expenses,
-    }));
+    return categoryTree(categories)
+      .filter(
+        (category) =>
+          params.isActive === undefined ||
+          category.isActive === params.isActive,
+      )
+      .map(({ _count, ...category }) => ({
+        ...category,
+        expenseCount: _count.expenses,
+      }));
   }
 
   public async createCategory(
-    params: { name: string; description?: string },
+    params: { name: string; description?: string; parentId?: string | null },
     actor: ExpenseActor,
   ) {
     const normalizedName = normalizeName(params.name);
     await this.assertCategoryNameAvailable(normalizedName);
+    const parent = params.parentId
+      ? await this.findActiveParentOrThrow(params.parentId)
+      : null;
 
     const category = await this.prisma.expenseCategory.create({
       data: {
         name: params.name.trim(),
         normalizedName,
         description: emptyToNull(params.description),
+        parentId: parent?.id ?? null,
         createdByUserId: actor.actorUserId,
         updatedByUserId: actor.actorUserId,
       },
@@ -111,13 +151,18 @@ export class ExpensesService {
   }
 
   /// EXP-002 and EXP-003: a category is renamed or deactivated, never deleted,
-  /// so historical expenses keep their category.
+  /// so historical expenses keep their category. Issue 018: it can be moved
+  /// under another one (`parentId`, null for the top level), never under
+  /// itself or one of its own sub-categories; an active sub-category keeps
+  /// its parent active, so a parent is deactivated only once its children
+  /// are, and a category comes back only under an active parent.
   public async updateCategory(
     categoryId: string,
     params: {
       version: number;
       name?: string;
       description?: string;
+      parentId?: string | null;
       isActive?: boolean;
     },
     actor: ExpenseActor,
@@ -125,9 +170,33 @@ export class ExpensesService {
     const existing = await this.findCategoryOrThrow(categoryId);
     const normalizedName =
       params.name !== undefined ? normalizeName(params.name) : undefined;
+    const isActive = params.isActive ?? existing.isActive;
+    const parentId =
+      params.parentId === undefined ? existing.parentId : params.parentId;
 
-    if ((params.isActive ?? existing.isActive) && normalizedName) {
+    if (isActive && normalizedName) {
       await this.assertCategoryNameAvailable(normalizedName, existing.id);
+    }
+
+    if (params.parentId !== undefined && params.parentId !== null) {
+      await this.assertParentAllowed(existing.id, params.parentId);
+    } else if (isActive && !existing.isActive && parentId) {
+      await this.findActiveParentOrThrow(parentId);
+    }
+
+    if (!isActive && existing.isActive) {
+      const activeChildren = await this.prisma.expenseCategory.count({
+        where: { parentId: existing.id, isActive: true },
+      });
+
+      if (activeChildren > 0) {
+        throw new AppError({
+          statusCode: 409,
+          code: "EXPENSE_CATEGORY_HAS_ACTIVE_CHILDREN",
+          message:
+            "Désactivez d'abord ses sous-catégories avant cette catégorie.",
+        });
+      }
     }
 
     const result = await this.prisma.expenseCategory.updateMany({
@@ -142,6 +211,7 @@ export class ExpensesService {
         ...(params.description !== undefined
           ? { description: emptyToNull(params.description) }
           : {}),
+        ...(params.parentId !== undefined ? { parentId: params.parentId } : {}),
         ...(params.isActive !== undefined ? { isActive: params.isActive } : {}),
         version: {
           increment: 1,
@@ -170,9 +240,7 @@ export class ExpensesService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.expense.findMany({
         where,
-        include: {
-          category: true,
-        },
+        include: expenseInclude,
         orderBy: orderByFor<
           "expenseDate" | "amountTnd",
           Prisma.ExpenseOrderByWithRelationInput
@@ -264,7 +332,7 @@ export class ExpensesService {
   public async getExpense(expenseId: string) {
     const expense = await this.prisma.expense.findUnique({
       where: { id: expenseId },
-      include: { category: true },
+      include: expenseInclude,
     });
 
     if (!expense) {
@@ -306,17 +374,20 @@ export class ExpensesService {
 
   /// EXP-004 to EXP-006. A new expense starts as a draft unless the caller
   /// posts it straight away.
-  public async createExpense(
-    params: {
-      categoryId: string;
-      expenseDate: Date;
-      amountTnd: string;
-      description: string;
-      externalReference?: string;
-      notes?: string;
-      responsibleUserId?: string;
-      post?: boolean;
-    },
+  public async createExpense(params: CreateExpenseParams, actor: ExpenseActor) {
+    return this.prisma.$transaction(
+      (tx) => this.createExpenseWith(tx, params, actor),
+      postingTransactionOptions,
+    );
+  }
+
+  /// The same recording inside a caller's transaction: a shopping trip
+  /// (issue 018) posts a purchase and the expenses bought with it together,
+  /// so an expense that fails takes the purchase down with it. Such an
+  /// expense remembers the store and the purchase and is paid on the spot.
+  public async createExpenseWith(
+    tx: Prisma.TransactionClient,
+    params: CreateExpenseParams & { supplierId?: string; purchaseId?: string },
     actor: ExpenseActor,
   ) {
     const amountTnd = parsePositiveMoney(params.amountTnd);
@@ -330,57 +401,56 @@ export class ExpensesService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const category = await tx.expenseCategory.findUnique({
-        where: {
-          id: params.categoryId,
-        },
+    const category = await tx.expenseCategory.findUnique({
+      where: {
+        id: params.categoryId,
+      },
+    });
+
+    if (!category || !category.isActive) {
+      throw new AppError({
+        statusCode: 400,
+        code: "ACTIVE_EXPENSE_CATEGORY_REQUIRED",
+        message: "Une catégorie de dépense active est obligatoire.",
       });
+    }
 
-      if (!category || !category.isActive) {
-        throw new AppError({
-          statusCode: 400,
-          code: "ACTIVE_EXPENSE_CATEGORY_REQUIRED",
-          message: "Une catégorie de dépense active est obligatoire.",
-        });
-      }
+    const expense = await tx.expense.create({
+      data: {
+        reference: await nextExpenseReference(tx),
+        categoryId: category.id,
+        status: params.post ? ExpenseStatus.POSTED : ExpenseStatus.DRAFT,
+        expenseDate: params.expenseDate,
+        amountTnd: amountTnd.toFixed(3),
+        description,
+        externalReference: emptyToNull(params.externalReference),
+        method: PaymentMethod.CASH,
+        notes: emptyToNull(params.notes),
+        supplierId: params.supplierId ?? null,
+        purchaseId: params.purchaseId ?? null,
+        responsibleUserId: params.responsibleUserId ?? actor.actorUserId,
+        ...(params.post
+          ? {
+              postedAt: params.expenseDate,
+              postedByUserId: actor.actorUserId,
+            }
+          : {}),
+        createdByUserId: actor.actorUserId,
+        updatedByUserId: actor.actorUserId,
+        correlationId: actor.correlationId,
+      },
+      include: expenseInclude,
+    });
 
-      const expense = await tx.expense.create({
-        data: {
-          reference: await nextExpenseReference(tx),
-          categoryId: category.id,
-          status: params.post ? ExpenseStatus.POSTED : ExpenseStatus.DRAFT,
-          expenseDate: params.expenseDate,
-          amountTnd: amountTnd.toFixed(3),
-          description,
-          externalReference: emptyToNull(params.externalReference),
-          notes: emptyToNull(params.notes),
-          responsibleUserId: params.responsibleUserId ?? actor.actorUserId,
-          ...(params.post
-            ? {
-                postedAt: params.expenseDate,
-                postedByUserId: actor.actorUserId,
-              }
-            : {}),
-          createdByUserId: actor.actorUserId,
-          updatedByUserId: actor.actorUserId,
-          correlationId: actor.correlationId,
-        },
-        include: {
-          category: true,
-        },
-      });
+    await auditWithClient(tx, {
+      actor,
+      action: params.post ? "expense.post" : "expense.create",
+      entity: "expense",
+      targetId: expense.id,
+      after: expense,
+    });
 
-      await auditWithClient(tx, {
-        actor,
-        action: params.post ? "expense.post" : "expense.create",
-        entity: "expense",
-        targetId: expense.id,
-        after: expense,
-      });
-
-      return { expense };
-    }, postingTransactionOptions);
+    return { expense };
   }
 
   public async updateExpense(
@@ -626,6 +696,59 @@ export class ExpensesService {
     return category;
   }
 
+  private async findActiveParentOrThrow(parentId: string) {
+    const parent = await this.prisma.expenseCategory.findUnique({
+      where: { id: parentId },
+    });
+
+    if (!parent || !parent.isActive) {
+      throw new AppError({
+        statusCode: 400,
+        code: "ACTIVE_PARENT_CATEGORY_REQUIRED",
+        message: "La catégorie parente doit exister et être active.",
+      });
+    }
+
+    return parent;
+  }
+
+  /// A category goes under an active category that is neither itself nor
+  /// one of its descendants: the chain of parents above the new parent is
+  /// walked up and must never meet the category being moved.
+  private async assertParentAllowed(categoryId: string, parentId: string) {
+    if (parentId === categoryId) {
+      throw new AppError({
+        statusCode: 400,
+        code: "EXPENSE_CATEGORY_PARENT_INVALID",
+        message: "Une catégorie ne peut pas être sa propre parente.",
+      });
+    }
+
+    await this.findActiveParentOrThrow(parentId);
+    const parentOf = new Map(
+      (
+        await this.prisma.expenseCategory.findMany({
+          select: { id: true, parentId: true },
+        })
+      ).map((row) => [row.id, row.parentId]),
+    );
+
+    let cursor: string | null | undefined = parentId;
+    const seen = new Set<string>();
+    while (cursor && !seen.has(cursor)) {
+      if (cursor === categoryId) {
+        throw new AppError({
+          statusCode: 400,
+          code: "EXPENSE_CATEGORY_PARENT_INVALID",
+          message:
+            "Une catégorie ne peut pas être placée sous l'une de ses sous-catégories.",
+        });
+      }
+      seen.add(cursor);
+      cursor = parentOf.get(cursor);
+    }
+  }
+
   private async assertCategoryNameAvailable(
     normalizedName: string,
     excludingCategoryId?: string,
@@ -659,15 +782,55 @@ export class ExpensesService {
   }
 }
 
+/// The categories in tree order with their depth and their path (issue
+/// 018). The rows arrive sorted as siblings should read; a parent absent
+/// from the rows, which the whole table never produces, puts its children
+/// at the top level rather than losing them.
+export function categoryTree<
+  TRow extends {
+    id: string;
+    name: string;
+    parentId: string | null;
+  },
+>(rows: TRow[]): Array<TRow & { depth: number; path: string }> {
+  const ids = new Set(rows.map((row) => row.id));
+  const childrenOf = new Map<string | null, TRow[]>();
+  for (const row of rows) {
+    const key = row.parentId && ids.has(row.parentId) ? row.parentId : null;
+    childrenOf.set(key, [...(childrenOf.get(key) ?? []), row]);
+  }
+
+  const ordered: Array<TRow & { depth: number; path: string }> = [];
+  const seen = new Set<string>();
+  const visit = (parentId: string | null, depth: number, prefix: string) => {
+    for (const row of childrenOf.get(parentId) ?? []) {
+      if (seen.has(row.id)) {
+        continue;
+      }
+      seen.add(row.id);
+      const path = prefix ? `${prefix} › ${row.name}` : row.name;
+      ordered.push({ ...row, depth, path });
+      visit(row.id, depth + 1, path);
+    }
+  };
+  visit(null, 0, "");
+
+  return ordered;
+}
+
 function buildExpenseWhere(params: {
   categoryId?: string;
   status?: ExpenseStatus;
+  purchaseId?: string;
+  supplierId?: string;
   from?: Date;
   to?: Date;
 }) {
   return {
     ...(params.categoryId ? { categoryId: params.categoryId } : {}),
     ...(params.status ? { status: params.status } : {}),
+    ...(params.purchaseId ? { purchaseId: params.purchaseId } : {}),
+    ...(params.supplierId ? { supplierId: params.supplierId } : {}),
     ...(params.from || params.to
       ? {
           expenseDate: {

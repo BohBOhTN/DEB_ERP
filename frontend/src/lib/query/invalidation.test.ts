@@ -55,6 +55,20 @@ describe("invalidation map", () => {
     expect(has("distribution.dispatch", roots.analytics)).toBe(false);
   });
 
+  // Issue 018: a shopping trip is a posted purchase and posted expenses.
+  it("refreshes what a shopping trip writes: purchase, stock and expenses", () => {
+    for (const root of [
+      roots.procurement,
+      roots.inventory,
+      roots.expenses,
+      roots.home,
+      roots.analytics,
+    ]) {
+      expect(has("procurement.shoppingTrip", root)).toBe(true);
+    }
+    expect(has("procurement.shoppingTrip", roots.customers)).toBe(false);
+  });
+
   it("keeps a customer rename away from stock and the till", () => {
     expect(has("customer.record", roots.customersList)).toBe(true);
     expect(has("customer.record", roots.inventory)).toBe(false);

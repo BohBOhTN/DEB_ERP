@@ -337,6 +337,192 @@ describe("ProcurementService payments settle purchases", () => {
       remainingDueTnd: "0.000",
     });
   });
+
+  // Issue 016, the client's case: a purchase paid partly at posting is
+  // cancelled, which gives the payment back; cancelling that payment
+  // afterwards must not give it back a second time.
+  describe("a payment of a cancelled purchase (issue 016)", () => {
+    const balanceOf = (prisma: PaymentPrismaDouble) =>
+      prisma.store.supplierLedgerEntries
+        .reduce(
+          (sum, entry) => sum.plus(entry.amountTnd),
+          new Prisma.Decimal(0),
+        )
+        .toFixed(3);
+    const actor = { actorUserId: "user-1" };
+    /// The fixture carries the ledger entry of the 100 TND paid when the
+    /// purchase was posted; these cases need its payment row as well.
+    function makeLedger() {
+      const prisma = new PaymentPrismaDouble();
+      prisma.store.supplierPayments.push({
+        id: "payment-initial",
+        supplierId: "supplier-1",
+        purchaseId: "purchase-1",
+        amountTnd: "100.000",
+        reversedAt: null,
+      });
+      return prisma;
+    }
+
+    it("marks the payment as taken back by the cancellation and refuses to reverse it", async () => {
+      const prisma = makeLedger();
+      const service = new ProcurementService(prisma as unknown as PrismaClient);
+
+      await service.cancelPurchase(
+        "purchase-1",
+        { idempotencyKey: "cancel-1", reason: "Livraison refusée" },
+        actor,
+      );
+
+      expect(balanceOf(prisma)).toBe("0.000");
+      expect(prisma.store.supplierPayments[0]).toMatchObject({
+        id: "payment-initial",
+        reversedByUserId: "user-1",
+        reversalReason: "Achat AC-000001 annulé : Livraison refusée",
+      });
+      expect(prisma.store.supplierPayments[0]?.reversedAt).toBeInstanceOf(Date);
+
+      await expect(
+        service.reverseSupplierPayment(
+          "payment-initial",
+          { idempotencyKey: "reverse-1", reason: "Erreur de saisie" },
+          actor,
+        ),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: "PAYMENT_ALREADY_REVERSED",
+      });
+      expect(balanceOf(prisma)).toBe("0.000");
+    });
+
+    it("refuses a payment whose purchase was cancelled before this rule existed", async () => {
+      const prisma = makeLedger();
+      const service = new ProcurementService(prisma as unknown as PrismaClient);
+      await service.cancelPurchase(
+        "purchase-1",
+        { idempotencyKey: "cancel-1", reason: "Livraison refusée" },
+        actor,
+      );
+      // An older cancellation left the payment row untouched.
+      Object.assign(prisma.store.supplierPayments[0] ?? {}, {
+        reversedAt: null,
+      });
+
+      await expect(
+        service.reverseSupplierPayment(
+          "payment-initial",
+          { idempotencyKey: "reverse-1", reason: "Erreur de saisie" },
+          actor,
+        ),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: "PAYMENT_DOCUMENT_CANCELLED",
+      });
+      expect(balanceOf(prisma)).toBe("0.000");
+    });
+
+    it("does not give back a payment cancelled before the purchase", async () => {
+      const prisma = makeLedger();
+      const service = new ProcurementService(prisma as unknown as PrismaClient);
+      const later = await service.createSupplierPayment(
+        {
+          idempotencyKey: "later-1",
+          supplierId: "supplier-1",
+          paidAt: new Date("2026-09-23T08:00:00.000Z"),
+          amountTnd: "50.000",
+        },
+        actor,
+      );
+      await service.reverseSupplierPayment(
+        later.payment.id,
+        { idempotencyKey: "reverse-1", reason: "Double saisie" },
+        actor,
+      );
+
+      await service.cancelPurchase(
+        "purchase-1",
+        { idempotencyKey: "cancel-1", reason: "Livraison refusée" },
+        actor,
+      );
+
+      // One reversal per payment: the user's for the later one, the
+      // cancellation's for the one taken at posting.
+      expect(
+        prisma.store.supplierLedgerEntries
+          .filter((entry) => entry.entryType === "PAYMENT_REVERSAL")
+          .map((entry) => [entry.paymentId, entry.amountTnd]),
+      ).toEqual([
+        ["payment-1", "50.000"],
+        ["payment-initial", "100.000"],
+      ]);
+      expect(balanceOf(prisma)).toBe("0.000");
+    });
+
+    it("gives back only the other share of a payment spread over two purchases", async () => {
+      const prisma = makeLedger();
+      prisma.store.purchases.push({
+        id: "purchase-2",
+        reference: "AC-000002",
+        supplierId: "supplier-1",
+        status: PurchaseStatus.POSTED,
+        purchaseDate: new Date("2026-09-21T08:00:00.000Z"),
+        totalTnd: "80.000",
+        paidAmountTnd: "0.000",
+        remainingDueTnd: "80.000",
+        dueDate: new Date("2026-10-05T08:00:00.000Z"),
+        paymentTerms: PurchasePaymentTerms.UNPAID,
+      });
+      prisma.store.supplierLedgerEntries.push({
+        id: "ledger-3",
+        supplierId: "supplier-1",
+        purchaseId: "purchase-2",
+        paymentId: null,
+        entryType: "PURCHASE_PAYABLE",
+        amountTnd: "80.000",
+      });
+      const service = new ProcurementService(prisma as unknown as PrismaClient);
+      // 150 settle the first purchase, the oldest; 50 go to the second.
+      const spread = await service.createSupplierPayment(
+        {
+          idempotencyKey: "spread-1",
+          supplierId: "supplier-1",
+          paidAt: new Date("2026-09-23T08:00:00.000Z"),
+          amountTnd: "200.000",
+        },
+        actor,
+      );
+
+      await service.cancelPurchase(
+        "purchase-1",
+        { idempotencyKey: "cancel-1", reason: "Livraison refusée" },
+        actor,
+      );
+
+      // The second purchase still owes 30: 80 less the 50 that stay paid.
+      expect(balanceOf(prisma)).toBe("30.000");
+      const payment = () =>
+        prisma.store.supplierPayments.find(
+          (row) => row.id === spread.payment.id,
+        );
+      // Still settling the second purchase: not marked as taken back.
+      expect(payment()?.reversedAt ?? null).toBeNull();
+
+      await service.reverseSupplierPayment(
+        spread.payment.id,
+        { idempotencyKey: "reverse-1", reason: "Erreur de saisie" },
+        actor,
+      );
+
+      expect(prisma.store.supplierLedgerEntries.at(-1)).toMatchObject({
+        entryType: "PAYMENT_REVERSAL",
+        purchaseId: "purchase-2",
+        paymentId: spread.payment.id,
+        amountTnd: "50.000",
+      });
+      expect(balanceOf(prisma)).toBe("80.000");
+      expect(payment()?.reversedAt).toBeInstanceOf(Date);
+    });
+  });
 });
 
 interface PaymentStore {
@@ -345,6 +531,7 @@ interface PaymentStore {
     id: string;
     supplierId: string;
     status: PurchaseStatus;
+    reference?: string | null;
     purchaseDate: Date;
     totalTnd: string;
     paidAmountTnd: string;
@@ -367,6 +554,8 @@ interface PaymentStore {
     amountTnd: string;
     reference?: string | null;
     reversedAt?: Date | null;
+    reversedByUserId?: string | null;
+    reversalReason?: string | null;
   }>;
   supplierPaymentAllocations: Array<{
     paymentId: string;
@@ -434,7 +623,12 @@ function makePaymentTransactionClient(store: PaymentStore) {
     },
     supplierLedgerEntry: {
       findMany: async (args: {
-        where: { supplierId?: string; purchaseId?: string; entryType?: string };
+        where: {
+          supplierId?: string;
+          purchaseId?: string;
+          paymentId?: { in: string[] };
+          entryType?: string | { in: string[] };
+        };
       }) =>
         store.supplierLedgerEntries.filter(
           (entry) =>
@@ -442,8 +636,13 @@ function makePaymentTransactionClient(store: PaymentStore) {
               entry.supplierId === args.where.supplierId) &&
             (args.where.purchaseId === undefined ||
               entry.purchaseId === args.where.purchaseId) &&
+            (args.where.paymentId === undefined ||
+              (entry.paymentId !== null &&
+                args.where.paymentId.in.includes(entry.paymentId))) &&
             (args.where.entryType === undefined ||
-              entry.entryType === args.where.entryType),
+              (typeof args.where.entryType === "string"
+                ? entry.entryType === args.where.entryType
+                : args.where.entryType.in.includes(entry.entryType))),
         ),
       // The service sums in SQL; the double mirrors a plain sum and a sum per
       // purchase id.
@@ -512,12 +711,26 @@ function makePaymentTransactionClient(store: PaymentStore) {
       create: async (args: {
         data: Omit<PaymentStore["supplierPayments"][number], "id">;
       }) => {
+        // The payment taken at posting is seeded; later ones count from 1.
+        const later = store.supplierPayments.filter(
+          (row) => row.id !== "payment-initial",
+        );
         const payment = {
           ...args.data,
-          id: `payment-${store.supplierPayments.length + 1}`,
+          id: `payment-${later.length + 1}`,
         };
         store.supplierPayments.push(payment);
         return payment;
+      },
+      updateMany: async (args: {
+        where: { id: { in: string[] }; reversedAt: null };
+        data: Partial<PaymentStore["supplierPayments"][number]>;
+      }) => {
+        const rows = store.supplierPayments.filter(
+          (row) => args.where.id.in.includes(row.id) && !row.reversedAt,
+        );
+        for (const row of rows) Object.assign(row, args.data);
+        return { count: rows.length };
       },
       findUnique: async (args: { where: { id: string } }) => {
         const payment = store.supplierPayments.find(
@@ -645,6 +858,7 @@ function createPaymentStore(): PaymentStore {
     purchases: [
       {
         id: "purchase-1",
+        reference: "AC-000001",
         supplierId: "supplier-1",
         status: PurchaseStatus.POSTED,
         purchaseDate: new Date("2026-09-20T08:00:00.000Z"),

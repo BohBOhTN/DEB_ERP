@@ -86,6 +86,10 @@ export interface OrderFilterParams {
   /// Section 18: overdue and upcoming orders. Only an order still awaiting
   /// fulfilment can be either; a completed or cancelled one is neither.
   dueState?: "OVERDUE" | "UPCOMING";
+  /// Issue 015: every order awaiting fulfilment, whatever its due time. An
+  /// order past its hour is still to treat, so the queue cannot be built
+  /// from `UPCOMING`.
+  open?: boolean;
   /// Reference or customer name.
   search?: string;
   asOf?: Date;
@@ -1176,7 +1180,7 @@ function orderListWhere(
 
   return {
     ...orderScopeWhere(params),
-    ...(params.dueState
+    ...(params.dueState || params.open
       ? { status: { in: [...awaitingFulfilment] } }
       : params.status
         ? { status: params.status }

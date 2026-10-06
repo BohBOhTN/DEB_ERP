@@ -144,6 +144,18 @@ export function usePostPurchase() {
   });
 }
 
+/// A trip writes a purchase and expenses at once (issue 018).
+export function usePostShoppingTrip() {
+  const invalidate = useInvalidateAfter("procurement.shoppingTrip");
+  return useMutation({
+    mutationFn: (input: {
+      body: api.ShoppingTripInput;
+      idempotencyKey: string;
+    }) => api.postShoppingTrip(input.body, input.idempotencyKey),
+    onSuccess: invalidate,
+  });
+}
+
 export function useCancelPurchase() {
   const invalidate = useInvalidateAfter("procurement.purchase");
   return useMutation({

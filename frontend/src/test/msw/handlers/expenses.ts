@@ -9,7 +9,9 @@ import {
   electricity,
   makeExpense,
   makeExpenseCategory,
+  packaging,
   rent,
+  supplies,
 } from "../../factories/expenses.js";
 import { makePage } from "../../factories/page.js";
 import { apiError, apiV1, ok } from "../envelope.js";
@@ -25,7 +27,7 @@ export function makeExpensesStore(
   overrides: Partial<ExpensesStore> = {},
 ): ExpensesStore {
   return {
-    categories: [electricity, rent],
+    categories: [electricity, rent, supplies, packaging],
     expenses: [
       makeExpense({
         id: "expense-1",
@@ -63,6 +65,28 @@ export function makeExpensesStore(
 let sequence = 100;
 const day = (value: string) => value.slice(0, 10);
 
+/// The tree the server answers (issue 018): parents first, children right
+/// under them, with their depth and path.
+export function categoryTree(
+  categories: ExpenseCategory[],
+  isActive?: boolean,
+): ExpenseCategory[] {
+  const ordered: ExpenseCategory[] = [];
+  const visit = (parentId: string | null, depth: number, prefix: string) => {
+    for (const category of categories.filter(
+      (row) => (row.parentId ?? null) === parentId,
+    )) {
+      const path = prefix ? `${prefix} › ${category.name}` : category.name;
+      ordered.push({ ...category, depth, path });
+      visit(category.id, depth + 1, path);
+    }
+  };
+  visit(null, 0, "");
+  return ordered.filter(
+    (row) => isActive === undefined || row.isActive === isActive,
+  );
+}
+
 function inRange(
   expense: Expense,
   from: string | null,
@@ -74,20 +98,25 @@ function inRange(
 
 export function expensesHandlers(store: ExpensesStore = makeExpensesStore()) {
   return [
-    http.get(`${apiV1}/expense-categories`, () =>
-      ok({
-        expenseCategories: store.categories.map((category) => ({
+    http.get(`${apiV1}/expense-categories`, ({ request }) => {
+      const isActive = new URL(request.url).searchParams.get("isActive");
+      return ok({
+        expenseCategories: categoryTree(
+          store.categories,
+          isActive === null ? undefined : isActive === "true",
+        ).map((category) => ({
           ...category,
           expenseCount: store.expenses.filter(
             (expense) => expense.categoryId === category.id,
           ).length,
         })),
-      }),
-    ),
+      });
+    }),
     http.post(`${apiV1}/expense-categories`, async ({ request }) => {
       const body = (await request.json()) as {
         name?: string;
         description?: string;
+        parentId?: string | null;
       };
       if (!body.name)
         return apiError(
@@ -101,6 +130,7 @@ export function expensesHandlers(store: ExpensesStore = makeExpensesStore()) {
         id: `xcat-${sequence}`,
         name: body.name,
         description: body.description ?? null,
+        parentId: body.parentId ?? null,
       });
       store.categories.push(category);
       return ok({ expenseCategory: category }, 201);
@@ -124,6 +154,18 @@ export function expensesHandlers(store: ExpensesStore = makeExpensesStore()) {
             "VERSION_CONFLICT",
             "Cette fiche a été modifiée. Rechargez puis réessayez.",
           );
+        // Issue 018: a parent is deactivated only once its sub-categories are.
+        if (
+          body.isActive === false &&
+          store.categories.some(
+            (row) => row.parentId === category.id && row.isActive,
+          )
+        )
+          return apiError(
+            409,
+            "EXPENSE_CATEGORY_HAS_ACTIVE_CHILDREN",
+            "Désactivez d'abord ses sous-catégories avant cette catégorie.",
+          );
         Object.assign(category, body, { version: category.version + 1 });
         return ok({ expenseCategory: category });
       },
@@ -132,6 +174,7 @@ export function expensesHandlers(store: ExpensesStore = makeExpensesStore()) {
       const url = new URL(request.url);
       const categoryId = url.searchParams.get("categoryId");
       const status = url.searchParams.get("status");
+      const purchaseId = url.searchParams.get("purchaseId");
       const from = url.searchParams.get("from");
       const to = url.searchParams.get("to");
       return ok(
@@ -141,6 +184,7 @@ export function expensesHandlers(store: ExpensesStore = makeExpensesStore()) {
               (expense) =>
                 (!categoryId || expense.categoryId === categoryId) &&
                 (!status || expense.status === status) &&
+                (!purchaseId || expense.purchaseId === purchaseId) &&
                 inRange(expense, from, to),
             )
             .sort((a, b) => b.expenseDate.localeCompare(a.expenseDate)),

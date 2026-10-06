@@ -23,6 +23,13 @@ export const openOrderStatuses: readonly OrderStatus[] = [
   "READY",
 ];
 
+/// What the server still lets a user edit (ORD-002): nothing once the
+/// preparation has started.
+export const editableOrderStatuses: readonly OrderStatus[] = [
+  "DRAFT",
+  "CONFIRMED",
+];
+
 /// The next plain status transition, per the lifecycle of the source of
 /// truth (section 12.3); completion and cancellation are separate commands.
 export const nextStatus: Partial<
@@ -41,6 +48,8 @@ export interface OrderActions {
   /// A ready order can go back to preparation (source of truth 12.3).
   resume?: { status: "PREPARING"; label: string };
   recordAdvance: boolean;
+  /// Pickup time, notes and lines of a draft or confirmed order.
+  edit: boolean;
   complete: boolean;
   cancel: boolean;
 }
@@ -68,6 +77,9 @@ export function orderActions(
       permissions.has("orders.update") &&
       permissions.has("customer_payments.create") &&
       Number(order.advanceBalanceTnd) < Number(order.totalTnd),
+    edit:
+      editableOrderStatuses.includes(order.status) &&
+      permissions.has("orders.update"),
     complete: open && permissions.has("orders.complete"),
     cancel: open && permissions.has("orders.cancel"),
   };

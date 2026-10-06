@@ -184,6 +184,11 @@ const errorCopy: Record<string, ErrorCopy> = {
     title: "Déjà annulé",
     description: "Ce paiement a déjà été annulé.",
   },
+  PAYMENT_DOCUMENT_CANCELLED: {
+    title: "Paiement déjà repris",
+    description:
+      "Le document de ce paiement a été annulé : son montant a déjà été repris par l'annulation.",
+  },
 
   // Procurement
   SUPPLIER_NOT_FOUND: {
@@ -213,6 +218,10 @@ const errorCopy: Record<string, ErrorCopy> = {
   PURCHASE_LINES_REQUIRED: {
     title: "Lignes manquantes",
     description: "Ajoutez au moins une ligne à l'achat.",
+  },
+  SHOPPING_TRIP_EMPTY: {
+    title: "Course vide",
+    description: "Ajoutez au moins une matière première ou une dépense.",
   },
   PURCHASE_UNIT_CONVERSION_REQUIRED: {
     title: "Conversion manquante",
@@ -604,6 +613,20 @@ const errorCopy: Record<string, ErrorCopy> = {
   ACTIVE_EXPENSE_CATEGORY_REQUIRED: {
     title: "Catégorie inactive",
     description: "Choisissez une catégorie de dépense active.",
+  },
+  ACTIVE_PARENT_CATEGORY_REQUIRED: {
+    title: "Catégorie parente inactive",
+    description: "La catégorie parente doit exister et être active.",
+  },
+  EXPENSE_CATEGORY_PARENT_INVALID: {
+    title: "Catégorie parente impossible",
+    description:
+      "Une catégorie ne peut pas être placée sous elle-même ni sous l'une de ses sous-catégories.",
+  },
+  EXPENSE_CATEGORY_HAS_ACTIVE_CHILDREN: {
+    title: "Sous-catégories actives",
+    description:
+      "Désactivez d'abord ses sous-catégories avant cette catégorie.",
   },
   EXPENSE_DESCRIPTION_REQUIRED: {
     title: "Libellé requis",

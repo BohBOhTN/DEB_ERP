@@ -169,6 +169,43 @@ describe("operational view queries", () => {
     });
   });
 
+  // Issue 015: the queue to treat is every open order, late or not. Without
+  // a window it carries no date bound at all, so an order due tomorrow and
+  // one due an hour ago are both listed.
+  it("lists every open order whatever its due time", async () => {
+    const prisma = new QueryCapturingPrisma();
+    const service = new OrdersService(prisma as unknown as PrismaClient);
+
+    await service.listOrders({ open: true, page: 1, pageSize: 25 });
+
+    expect(prisma.lastArgs.where).toEqual({
+      status: { in: ["DRAFT", "CONFIRMED", "PREPARING", "READY"] },
+    });
+  });
+
+  it("combines the open orders with a pickup window and a search", async () => {
+    const prisma = new QueryCapturingPrisma();
+    const service = new OrdersService(prisma as unknown as PrismaClient);
+    const dayStart = new Date("2026-09-22T23:00:00.000Z");
+    const dayEnd = new Date("2026-09-23T22:59:59.999Z");
+
+    await service.listOrders({
+      open: true,
+      dueAfter: dayStart,
+      dueBefore: dayEnd,
+      search: "CMD-0000",
+      page: 1,
+      pageSize: 25,
+    });
+
+    expect(prisma.lastArgs.where).toMatchObject({
+      status: { in: ["DRAFT", "CONFIRMED", "PREPARING", "READY"] },
+      // The window is the day asked for, not "from now on".
+      requestedFulfillmentAt: { gte: dayStart, lte: dayEnd },
+      OR: expect.any(Array),
+    });
+  });
+
   it("searches the queue by reference or customer name", async () => {
     const prisma = new QueryCapturingPrisma();
     const service = new OrdersService(prisma as unknown as PrismaClient);

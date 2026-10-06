@@ -767,6 +767,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/procurement/shopping-trips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record a shopping trip: a purchase posted and its expenses, together */
+        post: operations["procurement.postShoppingTrip"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/procurement/purchases/{purchaseId}/cancel": {
         parameters: {
             query?: never;
@@ -5537,6 +5554,102 @@ export interface operations {
             };
         };
     };
+    "procurement.postShoppingTrip": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Client-generated key (UUID recommended). The same key with the same body replays the first result; with another body it is refused. */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    supplierId: string;
+                    /** Format: date-time */
+                    tripDate: string;
+                    supplierReference?: string;
+                    notes?: string;
+                    purchase?: {
+                        /** @enum {string} */
+                        paymentTerms: "PAID" | "PARTIAL" | "UNPAID";
+                        /** @default 0 */
+                        paidAmountTnd?: string;
+                        /** Format: date-time */
+                        dueDate?: string;
+                        lines: {
+                            rawMaterialId: string;
+                            enteredUnitId: string;
+                            enteredQuantity: string;
+                            unitPriceTnd: string;
+                        }[];
+                    };
+                    /** @default [] */
+                    expenses?: {
+                        categoryId: string;
+                        description: string;
+                        amountTnd: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    /** @description `true` when the response is the stored result of an earlier call with the same key. */
+                    "Idempotency-Replayed"?: "true";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            [key: string]: unknown;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Validation failed (`VALIDATION_ERROR`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description State, uniqueness, or version conflict (`STATE_CONFLICT`, `VERSION_CONFLICT`, `IDEMPOTENCY_KEY_REUSED`, or a business rule code). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     "procurement.cancelPurchase": {
         parameters: {
             query?: never;
@@ -7661,6 +7774,7 @@ export interface operations {
                 dueBefore?: string;
                 dueAfter?: string;
                 dueState?: "OVERDUE" | "UPCOMING";
+                open?: "true" | "false";
                 q?: string;
                 search?: string;
                 page?: number;
@@ -7802,6 +7916,7 @@ export interface operations {
                 dueBefore?: string;
                 dueAfter?: string;
                 dueState?: "OVERDUE" | "UPCOMING";
+                open?: "true" | "false";
                 q?: string;
                 search?: string;
             };
@@ -9504,6 +9619,7 @@ export interface operations {
                 "application/json": {
                     name: string;
                     description?: string;
+                    parentId?: string | null;
                 };
             };
         };
@@ -9577,6 +9693,7 @@ export interface operations {
                     version: number;
                     name?: string;
                     description?: string;
+                    parentId?: string | null;
                     isActive?: boolean;
                 };
             };
@@ -9651,6 +9768,8 @@ export interface operations {
                 sort?: string;
                 categoryId?: string;
                 status?: "DRAFT" | "POSTED" | "CANCELLED";
+                purchaseId?: string;
+                supplierId?: string;
                 from?: string;
                 to?: string;
                 page?: number;

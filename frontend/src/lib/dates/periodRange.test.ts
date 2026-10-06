@@ -51,6 +51,28 @@ describe("periodRange", () => {
     ).toBe("last30");
   });
 
+  // Issue 015: a pickup date lies ahead, where "this week" never reaches.
+  it("resolves the windows of a date that lies ahead", () => {
+    expect(periodRange({ preset: "all", from: "", to: "" }, now)).toEqual({
+      from: "",
+      to: "",
+    });
+    expect(periodRange({ preset: "tomorrow", from: "", to: "" }, now)).toEqual({
+      from: "2026-09-25",
+      to: "2026-09-25",
+    });
+    expect(periodRange({ preset: "next7", from: "", to: "" }, now)).toEqual({
+      from: "2026-09-24",
+      to: "2026-09-30",
+    });
+    expect(
+      periodCaption(
+        periodRange({ preset: "all", from: "", to: "" }, now),
+        (value) => value,
+      ),
+    ).toBe("Toutes les dates");
+  });
+
   it("keeps a week and a month inside their calendar boundaries", () => {
     // Monday 5 October: the week is that single day so far.
     const monday = new Date("2026-10-05T08:00:00.000Z");

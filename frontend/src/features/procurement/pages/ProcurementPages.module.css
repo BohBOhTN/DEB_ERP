@@ -113,3 +113,29 @@
     top: var(--space-4);
   }
 }
+
+/* The form-level summary after a refused save: an error, not a note. */
+.formError {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+}
+
+/* Under each line editor of the trip: what the card adds up to. */
+.subtotal {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.subtotal strong {
+  color: var(--text-primary);
+}

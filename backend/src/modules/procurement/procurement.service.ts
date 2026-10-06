@@ -1,4 +1,5 @@
 import {
+  ExpenseStatus,
   InventoryItemType,
   InventoryMovementType,
   Prisma,
@@ -8,12 +9,18 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
-import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
+import {
+  businessDateOf,
+  orderByFor,
+  type SortSpec,
+} from "../../shared/listQuery.js";
+import { messages } from "../../shared/messages.js";
 import { runIdempotentCommand } from "../../shared/idempotency.js";
 import { planPaymentAllocations } from "../../shared/paymentAllocation.js";
 import { documentPaymentProjection } from "../../shared/paymentState.js";
 import { nextPurchaseReference } from "../../shared/references.js";
 import {
+  appliedPaymentEntries,
   balanceOf,
   balancesByKey,
   pageWithCursor,
@@ -84,6 +91,17 @@ export interface PurchaseLineInput {
   unitPriceTnd: string;
 }
 
+export interface PurchaseInput {
+  supplierId: string;
+  purchaseDate: Date;
+  supplierReference?: string;
+  paymentTerms: PurchasePaymentTerms;
+  paidAmountTnd: string;
+  dueDate?: Date;
+  notes?: string;
+  lines: PurchaseLineInput[];
+}
+
 export interface SupplierPaymentAllocationInput {
   purchaseId: string;
   amountTnd: string;
@@ -105,6 +123,12 @@ export interface ProcurementTransactionHooks {
     context: { scope?: string; purchaseId?: string },
   ) => Promise<void> | void;
 }
+
+/// The two entry types that say what a payment settles (issue 016).
+const paymentEntryTypes: SupplierLedgerEntryType[] = [
+  SupplierLedgerEntryType.PAYMENT,
+  SupplierLedgerEntryType.PAYMENT_REVERSAL,
+];
 
 export class ProcurementService {
   public constructor(
@@ -369,21 +393,20 @@ export class ProcurementService {
     );
   }
 
-  public async createPurchase(
-    params: {
-      supplierId: string;
-      purchaseDate: Date;
-      supplierReference?: string;
-      paymentTerms: PurchasePaymentTerms;
-      paidAmountTnd: string;
-      dueDate?: Date;
-      notes?: string;
-      lines: PurchaseLineInput[];
-    },
+  public async createPurchase(params: PurchaseInput, actor: ProcurementActor) {
+    return this.createPurchaseWith(this.prisma, params, actor);
+  }
+
+  /// The draft written through a caller's client, so a shopping trip (issue
+  /// 018) can create and post the purchase inside its own transaction.
+  public async createPurchaseWith(
+    client: PrismaClient | Prisma.TransactionClient,
+    params: PurchaseInput,
     actor: ProcurementActor,
   ) {
-    const supplier = await this.assertActiveSupplier(params.supplierId);
-    const lines = await this.buildPurchaseLines(params.lines, this.prisma);
+    assertPurchaseInput(params);
+    const supplier = await this.assertActiveSupplier(params.supplierId, client);
+    const lines = await this.buildPurchaseLines(params.lines, client);
     const total = sumDecimals(
       lines.map((line) => line.lineTotalTnd),
       3,
@@ -397,7 +420,7 @@ export class ProcurementService {
       dueDate: params.dueDate,
     });
 
-    const purchase = await this.prisma.purchase.create({
+    const purchase = await client.purchase.create({
       data: {
         supplierId: supplier.id,
         purchaseDate: params.purchaseDate,
@@ -431,7 +454,7 @@ export class ProcurementService {
       include: purchaseInclude,
     });
 
-    await this.audit({
+    await this.auditWithClient(client, {
       actor,
       action: "purchase.create",
       entity: "purchase",
@@ -458,6 +481,7 @@ export class ProcurementService {
     },
     actor: ProcurementActor,
   ) {
+    assertPurchaseInput(params);
     const supplier = await this.assertActiveSupplier(params.supplierId);
     const lines = await this.buildPurchaseLines(params.lines, this.prisma);
     const total = sumDecimals(
@@ -546,134 +570,144 @@ export class ProcurementService {
       `purchase.post.${purchaseId}`,
       params.idempotencyKey,
       { purchaseId },
-      async (tx) => {
-        const purchase = await this.findPurchaseOrThrow(purchaseId, tx);
-
-        if (purchase.status !== PurchaseStatus.DRAFT) {
-          throw new AppError({
-            statusCode: 409,
-            code: "PURCHASE_NOT_DRAFT",
-            message: "Seul un achat brouillon peut être confirmé.",
-          });
-        }
-
-        if (!purchase.supplier.isActive) {
-          throw new AppError({
-            statusCode: 400,
-            code: "ACTIVE_SUPPLIER_REQUIRED",
-            message: "Un fournisseur actif est requis.",
-          });
-        }
-
-        const location = await this.findMainLocation(tx);
-        const postedAt = new Date();
-        const updatedPurchase = await tx.purchase.update({
-          where: {
-            id: purchase.id,
-          },
-          data: {
-            reference: await nextPurchaseReference(tx),
-            status: PurchaseStatus.POSTED,
-            postedAt,
-            postedByUserId: actor.actorUserId,
-            correlationId: actor.correlationId,
-            updatedByUserId: actor.actorUserId,
-          },
-          include: purchaseInclude,
-        });
-        await this.afterTransactionStep("purchase_status_updated", {
-          purchaseId: purchase.id,
-        });
-
-        await tx.inventoryMovement.createMany({
-          data: purchase.lines.map((line) => ({
-            locationId: location.id,
-            itemType: InventoryItemType.RAW_MATERIAL,
-            rawMaterialId: line.rawMaterialId,
-            unitId: line.baseUnitId,
-            movementType: InventoryMovementType.PURCHASE_RECEIPT,
-            quantityDelta: line.normalizedQuantity,
-            itemNameSnapshot: line.rawMaterialNameSnapshot,
-            unitNameSnapshot: line.baseUnitNameSnapshot,
-            sourceType: "PURCHASE",
-            sourceId: purchase.id,
-            reason: "Achat fournisseur",
-            occurredAt: postedAt,
-            actorUserId: actor.actorUserId,
-            correlationId: actor.correlationId,
-          })),
-        });
-        await this.afterTransactionStep("purchase_stock_receipt_created", {
-          purchaseId: purchase.id,
-        });
-
-        await tx.supplierLedgerEntry.create({
-          data: {
-            supplierId: purchase.supplierId,
-            purchaseId: purchase.id,
-            entryType: SupplierLedgerEntryType.PURCHASE_PAYABLE,
-            amountTnd: purchase.totalTnd,
-            occurredAt: postedAt,
-            actorUserId: actor.actorUserId,
-            correlationId: actor.correlationId,
-          },
-        });
-        await this.afterTransactionStep("supplier_payable_created", {
-          purchaseId: purchase.id,
-        });
-
-        let payment = null;
-        if (new Prisma.Decimal(purchase.paidAmountTnd).greaterThan(0)) {
-          payment = await tx.supplierPayment.create({
-            data: {
-              supplierId: purchase.supplierId,
-              purchaseId: purchase.id,
-              amountTnd: purchase.paidAmountTnd,
-              paidAt: postedAt,
-              actorUserId: actor.actorUserId,
-              correlationId: actor.correlationId,
-            },
-          });
-          await this.afterTransactionStep("supplier_payment_created", {
-            purchaseId: purchase.id,
-          });
-          await tx.supplierLedgerEntry.create({
-            data: {
-              supplierId: purchase.supplierId,
-              purchaseId: purchase.id,
-              paymentId: payment.id,
-              entryType: SupplierLedgerEntryType.PAYMENT,
-              amountTnd: new Prisma.Decimal(purchase.paidAmountTnd)
-                .negated()
-                .toFixed(3),
-              occurredAt: postedAt,
-              actorUserId: actor.actorUserId,
-              correlationId: actor.correlationId,
-            },
-          });
-          await this.afterTransactionStep("supplier_payment_ledger_created", {
-            purchaseId: purchase.id,
-          });
-        }
-
-        await this.auditWithClient(tx, {
-          actor,
-          action: "purchase.post",
-          entity: "purchase",
-          targetId: purchase.id,
-          before: purchase,
-          after: updatedPurchase,
-        });
-        await this.afterTransactionStep("purchase_post_audit_created", {
-          purchaseId: purchase.id,
-        });
-
-        return {
-          purchase: updatedPurchase,
-          payment,
-        };
-      },
+      (tx) => this.postPurchaseWith(tx, purchaseId, actor),
     );
+  }
+
+  /// The posting effects inside a caller's transaction: stock receipt,
+  /// payable, payment at posting and its ledger entry, audit. The idempotent
+  /// command above wraps it for a purchase posted alone; a shopping trip
+  /// (issue 018) wraps it with the expenses bought on the same trip.
+  public async postPurchaseWith(
+    tx: Prisma.TransactionClient,
+    purchaseId: string,
+    actor: ProcurementActor,
+  ) {
+    const purchase = await this.findPurchaseOrThrow(purchaseId, tx);
+
+    if (purchase.status !== PurchaseStatus.DRAFT) {
+      throw new AppError({
+        statusCode: 409,
+        code: "PURCHASE_NOT_DRAFT",
+        message: "Seul un achat brouillon peut être confirmé.",
+      });
+    }
+
+    if (!purchase.supplier.isActive) {
+      throw new AppError({
+        statusCode: 400,
+        code: "ACTIVE_SUPPLIER_REQUIRED",
+        message: "Un fournisseur actif est requis.",
+      });
+    }
+
+    const location = await this.findMainLocation(tx);
+    const postedAt = new Date();
+    const updatedPurchase = await tx.purchase.update({
+      where: {
+        id: purchase.id,
+      },
+      data: {
+        reference: await nextPurchaseReference(tx),
+        status: PurchaseStatus.POSTED,
+        postedAt,
+        postedByUserId: actor.actorUserId,
+        correlationId: actor.correlationId,
+        updatedByUserId: actor.actorUserId,
+      },
+      include: purchaseInclude,
+    });
+    await this.afterTransactionStep("purchase_status_updated", {
+      purchaseId: purchase.id,
+    });
+
+    await tx.inventoryMovement.createMany({
+      data: purchase.lines.map((line) => ({
+        locationId: location.id,
+        itemType: InventoryItemType.RAW_MATERIAL,
+        rawMaterialId: line.rawMaterialId,
+        unitId: line.baseUnitId,
+        movementType: InventoryMovementType.PURCHASE_RECEIPT,
+        quantityDelta: line.normalizedQuantity,
+        itemNameSnapshot: line.rawMaterialNameSnapshot,
+        unitNameSnapshot: line.baseUnitNameSnapshot,
+        sourceType: "PURCHASE",
+        sourceId: purchase.id,
+        reason: "Achat fournisseur",
+        occurredAt: postedAt,
+        actorUserId: actor.actorUserId,
+        correlationId: actor.correlationId,
+      })),
+    });
+    await this.afterTransactionStep("purchase_stock_receipt_created", {
+      purchaseId: purchase.id,
+    });
+
+    await tx.supplierLedgerEntry.create({
+      data: {
+        supplierId: purchase.supplierId,
+        purchaseId: purchase.id,
+        entryType: SupplierLedgerEntryType.PURCHASE_PAYABLE,
+        amountTnd: purchase.totalTnd,
+        occurredAt: postedAt,
+        actorUserId: actor.actorUserId,
+        correlationId: actor.correlationId,
+      },
+    });
+    await this.afterTransactionStep("supplier_payable_created", {
+      purchaseId: purchase.id,
+    });
+
+    let payment = null;
+    if (new Prisma.Decimal(purchase.paidAmountTnd).greaterThan(0)) {
+      payment = await tx.supplierPayment.create({
+        data: {
+          supplierId: purchase.supplierId,
+          purchaseId: purchase.id,
+          amountTnd: purchase.paidAmountTnd,
+          paidAt: postedAt,
+          actorUserId: actor.actorUserId,
+          correlationId: actor.correlationId,
+        },
+      });
+      await this.afterTransactionStep("supplier_payment_created", {
+        purchaseId: purchase.id,
+      });
+      await tx.supplierLedgerEntry.create({
+        data: {
+          supplierId: purchase.supplierId,
+          purchaseId: purchase.id,
+          paymentId: payment.id,
+          entryType: SupplierLedgerEntryType.PAYMENT,
+          amountTnd: new Prisma.Decimal(purchase.paidAmountTnd)
+            .negated()
+            .toFixed(3),
+          occurredAt: postedAt,
+          actorUserId: actor.actorUserId,
+          correlationId: actor.correlationId,
+        },
+      });
+      await this.afterTransactionStep("supplier_payment_ledger_created", {
+        purchaseId: purchase.id,
+      });
+    }
+
+    await this.auditWithClient(tx, {
+      actor,
+      action: "purchase.post",
+      entity: "purchase",
+      targetId: purchase.id,
+      before: purchase,
+      after: updatedPurchase,
+    });
+    await this.afterTransactionStep("purchase_post_audit_created", {
+      purchaseId: purchase.id,
+    });
+
+    return {
+      purchase: updatedPurchase,
+      payment,
+    };
   }
 
   public async cancelPurchase(
@@ -754,31 +788,79 @@ export class ProcurementService {
           },
         });
 
-        // Every payment applied to the purchase comes back, the one taken at
-        // posting and any later règlement allocated to it, each against its
-        // own payment so the supplier statement still adds up.
-        const appliedPayments = await tx.supplierLedgerEntry.findMany({
-          where: {
-            purchaseId: purchase.id,
-            entryType: SupplierLedgerEntryType.PAYMENT,
-          },
-        });
+        // Every payment still applied to the purchase comes back, the one
+        // taken at posting and any later règlement allocated to it, each
+        // against its own payment so the supplier statement still adds up.
+        // "Still applied" is the net of payments and reversals (issue
+        // 016): a payment cancelled before the purchase is not given back
+        // a second time.
+        const applied = appliedPaymentEntries(
+          await tx.supplierLedgerEntry.findMany({
+            where: {
+              purchaseId: purchase.id,
+              entryType: { in: paymentEntryTypes },
+            },
+          }),
+          (entry) => entry.paymentId ?? "",
+        );
 
-        if (appliedPayments.length > 0) {
+        if (applied.length > 0) {
           await tx.supplierLedgerEntry.createMany({
-            data: appliedPayments.map((entry) => ({
+            data: applied.map(({ entry, appliedTnd }) => ({
               supplierId: purchase.supplierId,
               purchaseId: purchase.id,
               paymentId: entry.paymentId,
               entryType: SupplierLedgerEntryType.PAYMENT_REVERSAL,
-              amountTnd: new Prisma.Decimal(entry.amountTnd)
-                .negated()
-                .toFixed(3),
+              amountTnd: appliedTnd.toFixed(3),
               occurredAt: cancelledAt,
               actorUserId: actor.actorUserId,
               correlationId: actor.correlationId,
             })),
           });
+        }
+
+        // A payment with nothing left applied anywhere has been taken back
+        // whole by this cancellation: it is marked reversed, so the
+        // payments page shows it as cancelled and offers no second
+        // reversal. One spread over other purchases keeps its other shares.
+        const paymentIds = [
+          ...new Set(
+            applied
+              .map(({ entry }) => entry.paymentId)
+              .filter((id): id is string => Boolean(id)),
+          ),
+        ];
+
+        if (paymentIds.length > 0) {
+          const stillSettling = new Set(
+            appliedPaymentEntries(
+              await tx.supplierLedgerEntry.findMany({
+                where: {
+                  paymentId: { in: paymentIds },
+                  entryType: { in: paymentEntryTypes },
+                },
+              }),
+              (entry) => entry.paymentId ?? "",
+            ).map(({ entry }) => entry.paymentId),
+          );
+          const takenBack = paymentIds.filter((id) => !stillSettling.has(id));
+
+          if (takenBack.length > 0) {
+            await tx.supplierPayment.updateMany({
+              where: { id: { in: takenBack }, reversedAt: null },
+              data: {
+                reversedAt: cancelledAt,
+                reversedByUserId: actor.actorUserId,
+                reversalReason: `${[
+                  "Achat",
+                  updatedPurchase.reference,
+                  "annulé",
+                ]
+                  .filter(Boolean)
+                  .join(" ")} : ${reason}`,
+              },
+            });
+          }
         }
 
         await this.auditWithClient(tx, {
@@ -1034,6 +1116,10 @@ export class ProcurementService {
         where,
         include: {
           supplier: true,
+          // The purchase a payment taken at posting belongs to: the screen
+          // offers no cancellation once that purchase is cancelled (issue
+          // 016).
+          purchase: { select: { id: true, reference: true, status: true } },
           allocations: {
             include: {
               purchase: true,
@@ -1251,17 +1337,32 @@ export class ProcurementService {
 
         await lockSupplier(tx, payment.supplierId);
         const reversedAt = new Date();
-        const paymentEntries = payment.ledgerEntries.filter(
-          (entry) => entry.entryType === SupplierLedgerEntryType.PAYMENT,
+        // Only what the payment still settles comes back (issue 016): the
+        // share of a purchase cancelled since has already been returned by
+        // that cancellation.
+        const applied = appliedPaymentEntries(
+          payment.ledgerEntries.filter((entry) =>
+            paymentEntryTypes.includes(entry.entryType),
+          ),
+          (entry) => entry.purchaseId ?? "",
         );
 
+        if (applied.length === 0) {
+          throw new AppError({
+            statusCode: 409,
+            code: "PAYMENT_DOCUMENT_CANCELLED",
+            message:
+              "Ce paiement est lié à un achat annulé : il a déjà été repris par l'annulation.",
+          });
+        }
+
         await tx.supplierLedgerEntry.createMany({
-          data: paymentEntries.map((entry) => ({
+          data: applied.map(({ entry, appliedTnd }) => ({
             supplierId: payment.supplierId,
             purchaseId: entry.purchaseId,
             paymentId: payment.id,
             entryType: SupplierLedgerEntryType.PAYMENT_REVERSAL,
-            amountTnd: new Prisma.Decimal(entry.amountTnd).negated().toFixed(3),
+            amountTnd: appliedTnd.toFixed(3),
             occurredAt: reversedAt,
             actorUserId: actor.actorUserId,
             correlationId: actor.correlationId,
@@ -1280,8 +1381,8 @@ export class ProcurementService {
         await this.refreshPurchaseProjections(
           tx,
           payment.supplierId,
-          paymentEntries
-            .map((entry) => entry.purchaseId)
+          applied
+            .map(({ entry }) => entry.purchaseId)
             .filter((id): id is string => Boolean(id)),
         );
 
@@ -1314,9 +1415,19 @@ export class ProcurementService {
   }
 
   public async getPurchase(purchaseId: string) {
-    const purchase = await this.prisma.purchase.findUnique({
+    return this.getPurchaseWith(this.prisma, purchaseId);
+  }
+
+  /// The detail with its payment state and, since issue 018, the other
+  /// goods bought on the same shopping trip: every linked expense with its
+  /// state, and the total of the posted ones.
+  public async getPurchaseWith(
+    client: PrismaClient | Prisma.TransactionClient,
+    purchaseId: string,
+  ) {
+    const purchase = await client.purchase.findUnique({
       where: { id: purchaseId },
-      include: purchaseInclude,
+      include: purchaseDetailInclude,
     });
 
     if (!purchase) {
@@ -1327,7 +1438,7 @@ export class ProcurementService {
       });
     }
 
-    const balance = await this.prisma.supplierLedgerEntry.aggregate({
+    const balance = await client.supplierLedgerEntry.aggregate({
       where: { purchaseId },
       _sum: { amountTnd: true },
     });
@@ -1335,6 +1446,12 @@ export class ProcurementService {
 
     return {
       ...purchase,
+      expensesTotalTnd: sumDecimals(
+        purchase.expenses
+          .filter((expense) => expense.status === ExpenseStatus.POSTED)
+          .map((expense) => new Prisma.Decimal(expense.amountTnd)),
+        3,
+      ).toFixed(3),
       balanceTnd: balanceTnd.toFixed(3),
       paymentState: derivePaymentState(purchase, balanceTnd),
     };
@@ -1358,8 +1475,11 @@ export class ProcurementService {
     return supplier;
   }
 
-  private async assertActiveSupplier(supplierId: string) {
-    const supplier = await this.prisma.supplier.findFirst({
+  private async assertActiveSupplier(
+    supplierId: string,
+    client: PrismaClient | Prisma.TransactionClient = this.prisma,
+  ) {
+    const supplier = await client.supplier.findFirst({
       where: {
         id: supplierId,
         isActive: true,
@@ -1420,7 +1540,7 @@ export class ProcurementService {
   }
 
   private async auditWithClient(
-    client: Prisma.TransactionClient,
+    client: PrismaClient | Prisma.TransactionClient,
     params: {
       actor: ProcurementActor;
       action: string;
@@ -1479,7 +1599,7 @@ export class ProcurementService {
     );
 
     return Promise.all(
-      lines.map(async (line) => {
+      lines.map(async (line, index) => {
         const rawMaterial = rawMaterialById.get(line.rawMaterialId);
 
         if (!rawMaterial) {
@@ -1520,6 +1640,15 @@ export class ProcurementService {
         const lineTotalTnd = normalizedQuantity
           .mul(unitPriceTnd)
           .toDecimalPlaces(3);
+
+        // A quantity and a price can both be positive and still round to
+        // nothing; the table refuses a line of zero.
+        if (!lineTotalTnd.greaterThan(0)) {
+          throw invalidPurchase({
+            [`lines.${index}.unitPriceTnd`]:
+              "Le total de la ligne doit être supérieur à zéro.",
+          });
+        }
 
         return {
           rawMaterialId: rawMaterial.id,
@@ -1783,7 +1912,85 @@ const purchaseInclude = {
   lines: true,
   payments: true,
   ledgerEntries: true,
-} as const;
+} satisfies Prisma.PurchaseInclude;
+
+const purchaseDetailInclude = {
+  ...purchaseInclude,
+  expenses: {
+    select: {
+      id: true,
+      reference: true,
+      description: true,
+      amountTnd: true,
+      status: true,
+      category: { select: { id: true, name: true } },
+    },
+    orderBy: [{ createdAt: "asc" }],
+  },
+} satisfies Prisma.PurchaseInclude;
+
+function invalidPurchase(fieldErrors: Record<string, string>): AppError {
+  return new AppError({
+    statusCode: 400,
+    code: "VALIDATION_ERROR",
+    message: messages.VALIDATION_ERROR,
+    fieldErrors,
+  });
+}
+
+const positiveQuantityPattern = /^\d+(\.\d{1,6})?$/;
+const positiveMoneyPattern = /^\d+(\.\d{1,3})?$/;
+
+/// What a purchase form can get wrong, checked before any lookup and
+/// answered all at once on the fields concerned (issue 016): a date in the
+/// future, a due date before the purchase, a material on two lines, a
+/// quantity or a unit price that is not strictly positive.
+export function assertPurchaseInput(
+  params: {
+    purchaseDate: Date;
+    dueDate?: Date;
+    lines: PurchaseLineInput[];
+  },
+  now = new Date(),
+): void {
+  const fieldErrors: Record<string, string> = {};
+  const purchaseDay = businessDateOf(params.purchaseDate);
+
+  if (purchaseDay > businessDateOf(now)) {
+    fieldErrors.purchaseDate =
+      "La date d'achat ne peut pas être dans le futur.";
+  }
+
+  if (params.dueDate && businessDateOf(params.dueDate) < purchaseDay) {
+    fieldErrors.dueDate = "L'échéance ne peut pas précéder la date d'achat.";
+  }
+
+  const firstLineOf = new Map<string, number>();
+  params.lines.forEach((line, index) => {
+    if (firstLineOf.has(line.rawMaterialId)) {
+      fieldErrors[`lines.${index}.rawMaterialId`] =
+        "Cette matière première est déjà sur une autre ligne.";
+    } else {
+      firstLineOf.set(line.rawMaterialId, index);
+    }
+
+    const quantity = line.enteredQuantity.trim();
+    if (!positiveQuantityPattern.test(quantity) || Number(quantity) <= 0) {
+      fieldErrors[`lines.${index}.enteredQuantity`] =
+        "La quantité doit être supérieure à zéro.";
+    }
+
+    const price = line.unitPriceTnd.trim();
+    if (!positiveMoneyPattern.test(price) || Number(price) <= 0) {
+      fieldErrors[`lines.${index}.unitPriceTnd`] =
+        "Le prix unitaire doit être supérieur à zéro.";
+    }
+  });
+
+  if (Object.keys(fieldErrors).length > 0) {
+    throw invalidPurchase(fieldErrors);
+  }
+}
 
 function parseQuantity(value: string): Prisma.Decimal {
   const trimmed = value.trim();

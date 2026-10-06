@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { Plus, ShoppingBasket } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   DataTable,
@@ -136,17 +136,31 @@ export function PurchasesPage() {
         title="Achats"
         description="Les achats de matières premières, leur paiement et leur échéance."
         actions={
-          <PermissionGate
-            permissions={permissions}
-            permission="purchases.create"
-          >
-            <Button
-              leftIcon={<Plus />}
-              onClick={() => navigate("/achats/nouveau")}
+          <>
+            <PermissionGate
+              permissions={permissions}
+              permission="purchases.create"
             >
-              Nouvel achat
-            </Button>
-          </PermissionGate>
+              <Button
+                leftIcon={<Plus />}
+                onClick={() => navigate("/achats/nouveau")}
+              >
+                Nouvel achat
+              </Button>
+            </PermissionGate>
+            <PermissionGate
+              permissions={permissions}
+              allOf={["purchases.create", "purchases.post", "expenses.create"]}
+            >
+              <Button
+                variant="secondary"
+                leftIcon={<ShoppingBasket />}
+                onClick={() => navigate("/achats/course")}
+              >
+                Nouvelle course
+              </Button>
+            </PermissionGate>
+          </>
         }
       />
       <FilterBar

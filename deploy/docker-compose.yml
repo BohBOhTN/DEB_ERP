@@ -1,13 +1,18 @@
-# The production stack on the VPS, read by `deploy/remote-deploy.sh` from
-# /opt/dar-el-barka. Values come from `.env` (image tag, port, registry owner)
-# and the API's configuration from `backend.env`, both written by the deploy
-# from GitHub secrets. Postgres is not part of this stack: the API joins the
-# database's own network, `pg-network`, and the database keeps accepting
-# internal connections only.
+# One stack on the VPS, read by `deploy/remote-deploy.sh` from its folder:
+# /opt/dar-el-barka for production, /opt/dar-el-barka-staging for staging
+# (issue 017). Values come from `.env` (image tag, port, registry owner,
+# stack name) and the API's configuration from `backend.env`, both written
+# by the deploy from the secrets of the GitHub environment. Postgres is not
+# part of this stack: the API joins the database's own network,
+# `pg-network`, and the database keeps accepting internal connections only.
+#
+# Two stacks live side by side: the folder gives each its compose project
+# (its own `app` network and its own media volume) and `STACK_NAME` its
+# container names, `deb-*` for production, `deb-staging-*` for staging.
 services:
   backend:
     image: ghcr.io/${REGISTRY_OWNER}/dar-el-barka-backend:${IMAGE_TAG}
-    container_name: deb-backend
+    container_name: ${STACK_NAME:-deb}-backend
     restart: unless-stopped
     init: true
     env_file: backend.env
@@ -49,7 +54,7 @@ services:
 
   frontend:
     image: ghcr.io/${REGISTRY_OWNER}/dar-el-barka-frontend:${IMAGE_TAG}
-    container_name: deb-frontend
+    container_name: ${STACK_NAME:-deb}-frontend
     restart: unless-stopped
     depends_on:
       backend:

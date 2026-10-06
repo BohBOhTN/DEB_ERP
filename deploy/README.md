@@ -73,6 +73,90 @@ Enable it, then let certbot add the certificate and the redirect:
 `sudo certbot --nginx -d <domain>`. The 6 MB body limit is what a 5 MB
 photo upload needs once the multipart envelope is counted.
 
+## Staging: `testing.darelbarka.work`
+
+A second stack runs beside production on the same VPS (issue 017), from
+`/opt/dar-el-barka-staging`, with its own containers (`deb-staging-backend`,
+`deb-staging-frontend`), its own Docker network and media volume, its own
+port on the loopback and its own database in `postgres-prod`. The branch
+`staging` deploys to it: a push runs the CI `quality` job, then the deploy,
+with no approval step. `main` keeps deploying to production behind the
+reviewer.
+
+| Stack      | Branch    | Folder                      | Containers      | Port   | Database                | Image tag |
+| ---------- | --------- | --------------------------- | --------------- | ------ | ----------------------- | --------- |
+| production | `main`    | `/opt/dar-el-barka`         | `deb-*`         | `8081` | `dar_el_baraka`         | `latest`  |
+| staging    | `staging` | `/opt/dar-el-barka-staging` | `deb-staging-*` | `8082` | `dar_el_baraka_staging` | `staging` |
+
+### One-time setup
+
+1. **DNS**: an `A` record `testing.darelbarka.work` to the VPS address.
+2. **Folders**, owned by the deploy user:
+   `sudo mkdir -p /opt/dar-el-barka-staging /opt/dar-el-barka-backups`,
+   `sudo chown <deploy-user>: /opt/dar-el-barka-staging /opt/dar-el-barka-backups`.
+3. **The staging role** in `postgres-prod`, with a password of its own
+   (the database itself is created by the copy in step 6):
+
+   ```
+   docker exec -it postgres-prod psql -U postgres -c "CREATE ROLE dar_el_baraka_staging_user LOGIN PASSWORD '<password>'"
+   ```
+
+4. **GitHub**: an environment named `staging`, without a required
+   reviewer, with the same secrets as `production` except:
+
+| Secret        | Staging value                                                                                                                                                                                                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_PORT` | `8082` (required: the deploy refuses a staging stack without it, `8081` is production's)                                                                                                                                                                                                            |
+| `PUBLIC_URL`  | `https://testing.darelbarka.work`                                                                                                                                                                                                                                                                   |
+| `BACKEND_ENV` | production's, with `DATABASE_URL=postgresql://dar_el_baraka_staging_user:<password>@postgres-prod:5432/dar_el_baraka_staging?schema=public&connection_limit=10&pool_timeout=10`, `CORS_ALLOWED_ORIGINS=https://testing.darelbarka.work`, `SESSION_COOKIE_NAME=deb_staging_session`, `TRUST_PROXY=2` |
+
+`VPS_SSH_HOST`, `VPS_SSH_USER`, `VPS_SSH_KEY` and `VPS_SSH_PORT` are the
+same as production's. The deploy refuses a staging stack whose
+`DATABASE_URL` does not name a database containing `staging`, so a
+secret copied from production cannot point staging at real data.
+
+5. **The host site**: the block of the previous section with
+   `server_name testing.darelbarka.work;` and
+   `proxy_pass http://127.0.0.1:8082;`, enabled the same way, then
+   `sudo certbot --nginx -d testing.darelbarka.work`.
+6. **The data**: copy production into staging (next section). The first
+   deploy needs the database to exist.
+7. **The branch**: `git push origin main:staging` creates it from `main`
+   and triggers the first staging deploy.
+
+### Copying production into staging
+
+`refresh-staging-db.sh` is copied to both stack folders by every deploy;
+before the first one, take it from the repository. Run it on the VPS:
+
+```
+cd /opt/dar-el-barka-staging
+COPY_MEDIA=1 ./refresh-staging-db.sh
+```
+
+It dumps `dar_el_baraka` to `/opt/dar-el-barka-backups/<name>-<date>.dump`
+(a backup of production worth keeping, readable by its owner only), asks
+for confirmation, recreates `dar_el_baraka_staging` from the dump owned by
+the staging role, clears the sessions, and with `COPY_MEDIA=1` copies the
+product photos to the staging volume. Production is only read. The script
+refuses a target database without `staging` in its name. Run it again
+whenever staging should start over from production's current data.
+
+Staging then holds real customers and the real users with their real
+passwords: keep the address among the people who test.
+
+### Working with the branches
+
+- A fix or a feature branch is merged into `staging` first and tried on
+  `testing.darelbarka.work`; once accepted, `staging` is merged into
+  `main`, which deploys production after the reviewer's approval.
+- `Run workflow` on the Actions page deploys any branch by hand to the
+  stack chosen (`staging` by default); with an `image_tag` it redeploys an
+  image built earlier.
+- A migration reaches staging first. Staging and production share the
+  Postgres server but not the database, so a bad migration on staging
+  leaves production's data alone.
+
 ## Product photos
 
 The API writes the photos to `MEDIA_ROOT` (`/data/media` in the container),
@@ -84,16 +168,17 @@ compose file, so `BACKEND_ENV` needs no line for it.
 ## Each deploy
 
 A push to `main` runs the CI `quality` job, then waits for the reviewer's
-approval on the `production` environment, then builds the images tagged
-with the commit, copies this folder to the VPS and runs
+approval on the `production` environment (a push to `staging` deploys to
+the staging stack without that wait), then builds the images tagged with
+the commit, copies this folder to the VPS and runs
 `remote-deploy.sh`, which writes the configuration, pulls, applies the
 pending migrations from a one-off container, restarts the stack and waits
 for the API's readiness. If the API never becomes ready, the script puts
 the previous image back and the run is red.
 
 `Run workflow` on the Actions page deploys the current commit of any
-branch by hand; with an `image_tag`, it redeploys an image built earlier
-(a rollback).
+branch by hand to the stack chosen, staging unless production is picked;
+with an `image_tag`, it redeploys an image built earlier (a rollback).
 
 ## First admin
 

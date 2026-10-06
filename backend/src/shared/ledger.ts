@@ -54,3 +54,38 @@ export const statementDefaults = {
   limit: 50,
   maxLimit: 200,
 } as const;
+
+/// What payments still settle, from the `PAYMENT` and `PAYMENT_REVERSAL`
+/// entries of a party ledger (issue 016). A payment reduces a balance with
+/// a negative entry and a reversal gives it back with a positive one, so a
+/// group whose sum is negative is still applied by that much, and a group
+/// at zero has already been taken back. Reversing "the `PAYMENT` entries"
+/// instead of this net is how a payment came back twice: once when its
+/// purchase was cancelled, once when the payment itself was cancelled.
+///
+/// Entries are grouped by `keyOf` (the document for one payment, the
+/// payment for one document); each group answers with its first entry, for
+/// the columns a reversal copies, and the amount still applied (positive).
+export function appliedPaymentEntries<
+  TEntry extends { amountTnd: Prisma.Decimal | string },
+>(
+  entries: TEntry[],
+  keyOf: (entry: TEntry) => string,
+): Array<{ entry: TEntry; appliedTnd: Prisma.Decimal }> {
+  const groups = new Map<string, { entry: TEntry; net: Prisma.Decimal }>();
+
+  for (const entry of entries) {
+    const key = keyOf(entry);
+    const group = groups.get(key);
+
+    if (group) {
+      group.net = group.net.plus(entry.amountTnd);
+    } else {
+      groups.set(key, { entry, net: new Prisma.Decimal(entry.amountTnd) });
+    }
+  }
+
+  return [...groups.values()]
+    .filter((group) => group.net.lessThan(0))
+    .map((group) => ({ entry: group.entry, appliedTnd: group.net.negated() }));
+}

@@ -208,6 +208,19 @@ async function createTestApp(permissionKeys: string[]) {
     }),
   };
 
+  const shoppingTripService = {
+    post: vi.fn().mockResolvedValue({
+      purchase: { id: "purchase-9", status: "POSTED" },
+      expenses: [{ id: "expense-9", status: "POSTED" }],
+      totals: {
+        purchaseTnd: "250.000",
+        expensesTnd: "12.500",
+        totalTnd: "262.500",
+        paidTodayTnd: "112.500",
+      },
+    }),
+  };
+
   const app = createApp({
     allowedOrigins: ["http://localhost:5173"],
     healthCheck: async () => ({
@@ -232,6 +245,7 @@ async function createTestApp(permissionKeys: string[]) {
     },
     procurement: {
       procurementService: procurementService as never,
+      shoppingTripService: shoppingTripService as never,
     },
   });
 
@@ -247,8 +261,40 @@ async function createTestApp(permissionKeys: string[]) {
     app,
     cookie: login.headers["set-cookie"],
     procurementService,
+    shoppingTripService,
   };
 }
+
+const tripPermissions = [
+  "purchases.create",
+  "purchases.post",
+  "expenses.create",
+];
+const tripBody = {
+  supplierId: "supplier-1",
+  tripDate: "2026-10-05T08:00:00.000Z",
+  supplierReference: "T-1234",
+  purchase: {
+    paymentTerms: "PARTIAL",
+    paidAmountTnd: "100.000",
+    dueDate: "2026-10-20T08:00:00.000Z",
+    lines: [
+      {
+        rawMaterialId: "raw-material-1",
+        enteredUnitId: "unit-kg",
+        enteredQuantity: "10",
+        unitPriceTnd: "25.000",
+      },
+    ],
+  },
+  expenses: [
+    {
+      categoryId: "category-1",
+      description: "Sachets plastiques",
+      amountTnd: "12.500",
+    },
+  ],
+};
 
 describe("procurement routes", () => {
   it("rejects anonymous supplier access", async () => {
@@ -499,6 +545,90 @@ describe("procurement routes", () => {
       expect.objectContaining({
         actorUserId: "user-1",
       }),
+    );
+  });
+
+  // Issue 018: the trip posts a purchase and creates expenses, so it needs
+  // what each of those needs; one permission short is a refusal.
+  it.each(tripPermissions)(
+    "refuses a shopping trip without %s",
+    async (missing) => {
+      const { app, cookie, shoppingTripService } = await createTestApp(
+        tripPermissions.filter((key) => key !== missing),
+      );
+
+      const response = await request(app)
+        .post("/api/procurement/shopping-trips")
+        .set("Cookie", cookie)
+        .set("Idempotency-Key", "trip-1")
+        .send(tripBody)
+        .expect(403);
+
+      expect(response.body.error.code).toBe("PERMISSION_DENIED");
+      expect(shoppingTripService.post).not.toHaveBeenCalled();
+    },
+  );
+
+  it("requires an idempotency key to post a shopping trip", async () => {
+    const { app, cookie, shoppingTripService } =
+      await createTestApp(tripPermissions);
+
+    const response = await request(app)
+      .post("/api/procurement/shopping-trips")
+      .set("Cookie", cookie)
+      .send(tripBody)
+      .expect(400);
+
+    expect(response.body.error.code).toBe("IDEMPOTENCY_KEY_REQUIRED");
+    expect(shoppingTripService.post).not.toHaveBeenCalled();
+  });
+
+  it("posts a shopping trip with the three permissions", async () => {
+    const { app, cookie, shoppingTripService } =
+      await createTestApp(tripPermissions);
+
+    const response = await request(app)
+      .post("/api/procurement/shopping-trips")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "trip-1")
+      .send(tripBody)
+      .expect(201);
+
+    expect(response.body.data).toMatchObject({
+      purchase: { id: "purchase-9" },
+      expenses: [{ id: "expense-9" }],
+      totals: { totalTnd: "262.500" },
+    });
+    expect(shoppingTripService.post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: "trip-1",
+        supplierId: "supplier-1",
+        tripDate: new Date("2026-10-05T08:00:00.000Z"),
+        purchase: expect.objectContaining({
+          paymentTerms: "PARTIAL",
+          paidAmountTnd: "100.000",
+          lines: tripBody.purchase.lines,
+        }),
+        expenses: tripBody.expenses,
+      }),
+      expect.objectContaining({ actorUserId: "user-1" }),
+    );
+  });
+
+  it("defaults a shopping trip to no expense lines", async () => {
+    const { app, cookie, shoppingTripService } =
+      await createTestApp(tripPermissions);
+
+    await request(app)
+      .post("/api/procurement/shopping-trips")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "trip-2")
+      .send({ ...tripBody, expenses: undefined })
+      .expect(201);
+
+    expect(shoppingTripService.post).toHaveBeenCalledWith(
+      expect.objectContaining({ expenses: [] }),
+      expect.anything(),
     );
   });
 

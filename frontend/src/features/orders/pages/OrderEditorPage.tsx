@@ -164,7 +164,7 @@ export function OrderEditorPage() {
       >
         <div className={styles.editorMain}>
           {summary ? (
-            <div role="alert" className={styles.muted}>
+            <div role="alert" className={styles.formError}>
               <strong>{summary.title}</strong> {summary.description}
             </div>
           ) : null}

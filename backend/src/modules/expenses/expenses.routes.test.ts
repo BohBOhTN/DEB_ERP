@@ -201,6 +201,24 @@ describe("expenses routes", () => {
     );
   });
 
+  it("lists the expenses of one shopping trip (issue 018)", async () => {
+    const { app, cookie, expensesService } = await createTestApp([
+      "expenses.view",
+    ]);
+
+    await request(app)
+      .get("/api/expenses?purchaseId=purchase-1&supplierId=supplier-1")
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(expensesService.listExpenses).toHaveBeenCalledWith(
+      expect.objectContaining({
+        purchaseId: "purchase-1",
+        supplierId: "supplier-1",
+      }),
+    );
+  });
+
   it("reads totals with expenses.view", async () => {
     const { app, cookie, expensesService } = await createTestApp([
       "expenses.view",

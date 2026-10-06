@@ -1,9 +1,31 @@
 import type { DocumentStatus } from "../../../components/ui/StatusPill/StatusPill.js";
 import type {
   PurchasePaymentTerms,
+  SupplierPayment,
   SupplierPaymentState,
   SupplierStatement,
 } from "../procurement.api.js";
+
+/// Why a payment cannot be cancelled by hand (issue 016): it already was,
+/// or every purchase it settled has been cancelled, which took the money
+/// back. `null` when the action is offered.
+export function paymentLock(
+  payment: Pick<SupplierPayment, "reversedAt" | "purchase" | "allocations">,
+): "reversed" | "purchaseCancelled" | null {
+  if (payment.reversedAt) {
+    return "reversed";
+  }
+
+  const purchases = [
+    payment.purchase,
+    ...payment.allocations.map((allocation) => allocation.purchase),
+  ].filter((purchase) => purchase !== undefined && purchase !== null);
+
+  return purchases.length > 0 &&
+    purchases.every((purchase) => purchase.status === "CANCELLED")
+    ? "purchaseCancelled"
+    : null;
+}
 
 export const paymentTermsLabels: Record<PurchasePaymentTerms, string> = {
   PAID: "Payé",

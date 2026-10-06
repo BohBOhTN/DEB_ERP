@@ -64,11 +64,65 @@ interface Payment {
   }>;
 }
 
+/// An expense recorded on a shopping trip (issue 018), as the purchase
+/// page and the expense list read it.
+interface TripExpense {
+  id: string;
+  reference: string;
+  categoryId: string;
+  status: "POSTED";
+  expenseDate: string;
+  amountTnd: string;
+  description: string;
+  externalReference: string | null;
+  method: "CASH";
+  notes: string | null;
+  responsibleUserId: string;
+  postedAt: string;
+  cancelledAt: null;
+  cancellationReason: null;
+  version: number;
+  createdAt: string;
+  category: { id: string; name: string };
+  supplierId: string;
+  purchaseId: string | null;
+  supplier: { id: string; name: string };
+  purchase: { id: string; reference: string | null } | null;
+}
+
 export interface ProcurementState {
   suppliers: Supplier[];
   purchases: Purchase[];
   payments: Payment[];
+  expenses: TripExpense[];
 }
+
+/// The expense categories a trip can file its other goods under: a parent
+/// and its sub-category, as the server lists them (issue 018).
+const expenseCategories = [
+  {
+    id: "xcat-3",
+    name: "Fournitures",
+    description: null,
+    parentId: null,
+    depth: 0,
+    path: "Fournitures",
+    isActive: true,
+    version: 1,
+    expenseCount: 0,
+  },
+  {
+    id: "xcat-4",
+    name: "Emballage",
+    description: null,
+    parentId: "xcat-3",
+    depth: 1,
+    path: "Fournitures › Emballage",
+    isActive: true,
+    version: 1,
+    expenseCount: 0,
+  },
+];
 
 const kg = {
   id: "unit-kg",
@@ -126,6 +180,7 @@ export function makeProcurementState(): ProcurementState {
     ],
     purchases: [],
     payments: [],
+    expenses: [],
   };
 }
 
@@ -281,6 +336,133 @@ export async function handleProcurement(
 
   if (path === "/catalog/raw-materials")
     return (route.fulfill(page([flour])), true);
+  if (path === "/expense-categories")
+    return (route.fulfill(envelope({ expenseCategories })), true);
+
+  // Issue 018: the trip posts the purchase and records its expenses at once.
+  if (path === "/procurement/shopping-trips" && method === "POST") {
+    if (!route.request().headers()["idempotency-key"])
+      return (
+        route.fulfill(
+          failure(
+            400,
+            "IDEMPOTENCY_KEY_REQUIRED",
+            "Une clé d'idempotence est requise.",
+          ),
+        ),
+        true
+      );
+    const input = body() as {
+      supplierId: string;
+      tripDate: string;
+      supplierReference?: string;
+      notes?: string;
+      purchase?: Record<string, unknown>;
+      expenses: Array<{
+        categoryId: string;
+        description: string;
+        amountTnd: string;
+      }>;
+    };
+    let purchase: Purchase | null = null;
+    if (input.purchase) {
+      purchase = buildPurchase({
+        supplierId: input.supplierId,
+        purchaseDate: input.tripDate,
+        supplierReference: input.supplierReference,
+        notes: input.notes,
+        ...input.purchase,
+      });
+      state.purchases.unshift(purchase);
+      sequence += 1;
+      Object.assign(purchase, {
+        status: "POSTED",
+        reference: `AC-${String(sequence).padStart(6, "0")}`,
+        postedAt: new Date().toISOString(),
+      });
+      if (Number(purchase.paidAmountTnd) > 0) {
+        state.payments.unshift({
+          id: `payment-${sequence}`,
+          supplierId: purchase.supplierId,
+          amountTnd: purchase.paidAmountTnd,
+          method: "CASH",
+          paidAt: purchase.postedAt as string,
+          reference: null,
+          notes: null,
+          allocations: [
+            {
+              id: `alloc-${sequence}`,
+              paymentId: `payment-${sequence}`,
+              purchaseId: purchase.id,
+              amountTnd: purchase.paidAmountTnd,
+            },
+          ],
+        });
+      }
+    }
+    const supplier = state.suppliers.find(
+      (row) => row.id === input.supplierId,
+    ) as Supplier;
+    const posted = purchase;
+    const expenses = input.expenses.map((line) => {
+      sequence += 1;
+      const category = expenseCategories.find(
+        (row) => row.id === line.categoryId,
+      ) ?? { id: line.categoryId, name: "Catégorie" };
+      const expense: TripExpense = {
+        id: `expense-${sequence}`,
+        reference: `DEP-${String(sequence).padStart(6, "0")}`,
+        categoryId: line.categoryId,
+        status: "POSTED",
+        expenseDate: new Date(input.tripDate).toISOString(),
+        amountTnd: money(Number(line.amountTnd)),
+        description: line.description,
+        externalReference: input.supplierReference ?? null,
+        method: "CASH",
+        notes: null,
+        responsibleUserId: "user-1",
+        postedAt: new Date().toISOString(),
+        cancelledAt: null,
+        cancellationReason: null,
+        version: 1,
+        createdAt: new Date().toISOString(),
+        category: { id: category.id, name: category.name },
+        supplierId: supplier.id,
+        purchaseId: posted?.id ?? null,
+        supplier: { id: supplier.id, name: supplier.name },
+        purchase: posted
+          ? { id: posted.id, reference: posted.reference }
+          : null,
+      };
+      state.expenses.unshift(expense);
+      return expense;
+    });
+    const expensesTnd = expenses.reduce(
+      (sum, expense) => sum + Number(expense.amountTnd),
+      0,
+    );
+    const purchaseTnd = Number(purchase?.totalTnd ?? 0);
+    return (
+      route.fulfill(
+        envelope(
+          {
+            purchase: purchase ? withState(state, purchase) : null,
+            expenses,
+            totals: {
+              purchaseTnd: money(purchaseTnd),
+              expensesTnd: money(expensesTnd),
+              totalTnd: money(purchaseTnd + expensesTnd),
+              paidTodayTnd: money(
+                Number(purchase?.paidAmountTnd ?? 0) + expensesTnd,
+              ),
+            },
+          },
+          201,
+        ),
+      ),
+      true
+    );
+  }
   if (path === "/catalog/raw-materials/raw-1")
     return (route.fulfill(envelope({ rawMaterial: flour })), true);
 
@@ -500,8 +682,24 @@ export async function handleProcurement(
         true
       );
     }
+    const linked = state.expenses.filter(
+      (expense) => expense.purchaseId === purchase.id,
+    );
     return (
-      route.fulfill(envelope({ purchase: withState(state, purchase) })),
+      route.fulfill(
+        envelope({
+          purchase: {
+            ...withState(state, purchase),
+            expenses: linked,
+            expensesTotalTnd: money(
+              linked.reduce(
+                (sum, expense) => sum + Number(expense.amountTnd),
+                0,
+              ),
+            ),
+          },
+        }),
+      ),
       true
     );
   }
@@ -609,6 +807,9 @@ export async function mockProcurement(
     handleProcurement(route, state),
   );
   await page.route("**/api/v1/catalog/raw-materials**", (route) =>
+    handleProcurement(route, state),
+  );
+  await page.route("**/api/v1/expense-categories**", (route) =>
     handleProcurement(route, state),
   );
 }

@@ -394,9 +394,13 @@ export async function handleCustomersOrders(
   if (path === "/orders" && method === "GET") {
     const status = url.searchParams.get("status");
     const dueState = url.searchParams.get("dueState");
+    const open = url.searchParams.get("open") === "true";
     const now = Date.now();
     const rows = state.orders
       .filter((order) => !status || order.status === status)
+      .filter(
+        (order) => !open || !["COMPLETED", "CANCELLED"].includes(order.status),
+      )
       .filter(
         (order) =>
           !dueState ||

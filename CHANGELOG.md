@@ -4,6 +4,65 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Issue 016, Achats: cancelling a purchase paid in part and then
+  cancelling its payment (or the reverse order) gave the payment back
+  twice and left a supplier balance nobody owed. A cancellation now takes
+  back what is still applied and marks the payment as cancelled; a
+  payment whose purchase is cancelled offers no cancellation and the API
+  refuses it (`PAYMENT_DOCUMENT_CANCELLED`). The same rule guards the
+  customer and distributor payments.
+- Issue 016, Achats: the purchase form refuses a material on two lines, a
+  zero unit price or line total, a date in the future and a due date
+  before the purchase, each on its field, with a summary of the errors;
+  the server refuses the same with field errors instead of a generic
+  failure. A line's picker no longer offers what another line holds, in
+  purchases, orders, dispatches and distributor sales.
+- Issue 016, Achats: no more "Prix par kg" under the quantity; with a
+  unit other than the base one the quantity shows its base equivalent and
+  the price shows its unit.
+- Issue 015, Commandes: the queue opened on the orders not yet due, today
+  only, and its other periods looked backwards, so orders for tomorrow or
+  past their hour were hidden and every figure read 0. `À traiter` is now
+  every open order, late ones flagged, over every date by default; open
+  tabs offer `Demain` and `7 jours`; a `Toutes` tab lists every state.
+
+### Added
+
+- Issue 018, Achats: `Nouvelle course` (`/achats/course`), one page for
+  what was bought at a store in one go: the raw materials, which become a
+  posted purchase (stock, supplier account, payment at posting), and the
+  other goods such as bags or napkins, which become expenses posted on
+  the spot and linked to the store and the purchase. One button, one
+  confirmation stating stock, debt, payment and expenses, one
+  transaction on the server (`POST /procurement/shopping-trips`). A trip
+  may hold expenses alone or raw materials alone. Reached from the quick
+  actions of `Accueil` (`Course fournisseur`), from `Achats` and from
+  `Dépenses`. The purchase page lists the other goods of its trip; an
+  expense names its store and links its purchase; the expense list can be
+  narrowed to one trip.
+- Issue 018, Dépenses: categories nest. A category takes a parent
+  (`Catégorie parente`), the list shows the tree, every picker prints the
+  path ("Fournitures › Emballage"), a parent is deactivated only once its
+  sub-categories are.
+- Issue 017, staging: a second stack on the VPS for
+  `testing.darelbarka.work`, deployed by a push to the `staging` branch
+  without an approval step, with its own containers, network, media
+  volume, port and database. `deploy/refresh-staging-db.sh` dumps
+  production to a dated backup and rebuilds the staging database (and
+  photos) from it. The deploy refuses a staging stack that names the
+  production database. A manual run now chooses its stack, staging by
+  default.
+- Issue 015, Commandes: `Modifier` on a draft or confirmed order, from its
+  row or its page: pickup time, notes and lines.
+
+## [2.2.0] - 2026-10-04
+
+The analytics module the owner asked for after the release of 2.1.0 (issue
+014, `DEC-V2-006`) and the till session history made findable. No
+migration; one new permission, `analytics.view`.
+
 ### Added
 
 - Issue 014, Analyses: a read-only analytics module on the history the

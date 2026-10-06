@@ -19,6 +19,7 @@ import {
   loadSupplierDetailPage,
   loadPurchasesPage,
   loadPurchaseEditorPage,
+  loadShoppingTripPage,
   loadPurchaseDetailPage,
   loadSupplierPaymentsPage,
   loadCustomersPage,
@@ -26,6 +27,7 @@ import {
   loadOrdersPage,
   loadOrderEditorPage,
   loadOrderDetailPage,
+  loadOrderEditPage,
   loadPos,
   loadDistributorsPage,
   loadDistributorDetailPage,
@@ -92,6 +94,9 @@ const PurchasesPage = lazy(() =>
 const PurchaseEditorPage = lazy(() =>
   loadPurchaseEditorPage().then((m) => ({ default: m.PurchaseEditorPage })),
 );
+const ShoppingTripPage = lazy(() =>
+  loadShoppingTripPage().then((m) => ({ default: m.ShoppingTripPage })),
+);
 const PurchaseDetailPage = lazy(() =>
   loadPurchaseDetailPage().then((m) => ({ default: m.PurchaseDetailPage })),
 );
@@ -112,6 +117,9 @@ const OrderEditorPage = lazy(() =>
 );
 const OrderDetailPage = lazy(() =>
   loadOrderDetailPage().then((m) => ({ default: m.OrderDetailPage })),
+);
+const OrderEditPage = lazy(() =>
+  loadOrderEditPage().then((m) => ({ default: m.OrderEditPage })),
 );
 const CaissePage = lazy(() =>
   loadPos().then((m) => ({ default: m.CaissePage })),
@@ -344,6 +352,15 @@ export const routes: RouteObject[] = [
             handle: { title: "Nouvel achat" },
           },
           {
+            path: "/achats/course",
+            element: (
+              <Guarded anyOf={["purchases.create"]}>
+                <ShoppingTripPage />
+              </Guarded>
+            ),
+            handle: { title: "Nouvelle course" },
+          },
+          {
             path: "/achats/:purchaseId",
             element: (
               <Guarded anyOf={["purchases.view"]}>
@@ -414,6 +431,15 @@ export const routes: RouteObject[] = [
               </Guarded>
             ),
             handle: { title: "Commande" },
+          },
+          {
+            path: "/commandes/:orderId/modifier",
+            element: (
+              <Guarded anyOf={["orders.update"]}>
+                <OrderEditPage />
+              </Guarded>
+            ),
+            handle: { title: "Modifier la commande" },
           },
           {
             path: "/caisse",
