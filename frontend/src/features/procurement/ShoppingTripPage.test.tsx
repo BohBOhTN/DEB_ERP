@@ -5,9 +5,14 @@ import { RouterProvider } from "react-router-dom";
 import { beforeAll, describe, expect, it } from "vitest";
 import { AppProviders, createQueryClient } from "../../app/providers";
 import { createTestRouter } from "../../app/router";
+import { makeProduct, makeResaleProduct } from "../../test/factories/catalog";
 import { makeUser } from "../../test/factories/user";
 import { apiError, apiV1 } from "../../test/msw/envelope";
 import { authHandlers } from "../../test/msw/handlers/auth";
+import {
+  catalogHandlers,
+  makeCatalogStore,
+} from "../../test/msw/handlers/catalog";
 import {
   expensesHandlers,
   makeExpensesStore,
@@ -199,7 +204,7 @@ describe("Shopping trip", () => {
     await fillBags();
     // Nothing to pay the supplier for: the terms card is gone.
     expect(
-      screen.queryByText("Paiement des matières premières"),
+      screen.queryByText("Paiement des marchandises"),
     ).not.toBeInTheDocument();
 
     await userEvent.click(
@@ -209,7 +214,7 @@ describe("Shopping trip", () => {
       name: /Valider la course/,
     });
     expect(confirm).toHaveTextContent(
-      "Aucune matière première : ni stock ni dette fournisseur.",
+      "Aucune marchandise : ni stock ni dette fournisseur.",
     );
     expect(confirm).toHaveTextContent("1 dépense pour 12,500 TND");
     await userEvent.click(
@@ -252,7 +257,9 @@ describe("Shopping trip", () => {
       "Le formulaire contient des erreurs.",
     );
     expect(
-      screen.getByText("Ajoutez au moins une matière première ou une dépense."),
+      screen.getByText(
+        "Ajoutez au moins une matière première, un produit de revente ou une dépense.",
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText("Choisissez un fournisseur.")).toBeInTheDocument();
     expect(requests.of("/procurement/shopping-trips")).toBe(0);
@@ -319,6 +326,207 @@ describe("Shopping trip", () => {
     expect(
       screen.getByText("Une catégorie de dépense active est obligatoire."),
     ).toBeInTheDocument();
+  });
+
+  // Issue 020: a card for the products bought to be resold, between the
+  // raw materials and the other goods; both go on one purchase.
+  describe("resold products (issue 020)", () => {
+    const withProducts = [...tripPermissions, "products.view"];
+    const goods = () =>
+      within(screen.getByRole("group", { name: "Produits de revente" }));
+
+    function mockResaleCatalog() {
+      server.use(
+        ...catalogHandlers(
+          makeCatalogStore({
+            products: [
+              makeProduct({ id: "product-1", name: "Pain complet" }),
+              makeResaleProduct(),
+            ],
+          }),
+        ),
+      );
+    }
+
+    async function fillWater() {
+      await userEvent.click(
+        goods().getByRole("button", { name: "Ajouter une ligne" }),
+      );
+      await userEvent.click(
+        goods().getByRole("combobox", { name: "Produit de revente 1" }),
+      );
+      await userEvent.type(
+        screen.getByPlaceholderText("Rechercher produit de revente"),
+        "eau",
+      );
+      await userEvent.click(await screen.findByText("Eau 1,5 L"));
+      await userEvent.type(
+        goods().getByRole("textbox", { name: "Quantité 1" }),
+        "24",
+      );
+      await userEvent.type(
+        goods().getByRole("textbox", { name: "Prix unitaire 1" }),
+        "0,85",
+      );
+    }
+
+    it("records flour, bottles to resell and bags in one validation", async () => {
+      const { expenses, procurement } = mockStores();
+      mockResaleCatalog();
+      renderAt("/achats/course", withProducts);
+
+      await screen.findByRole("heading", { level: 1, name: "Nouvelle course" });
+      // The three cards, in the order of the ticket.
+      expect(
+        screen
+          .getAllByRole("group")
+          .map((group) => group.getAttribute("aria-label")),
+      ).toEqual(["Matières premières", "Produits de revente", "Autres achats"]);
+      await pickSupplier();
+      await fillFlour();
+      await fillWater();
+      // The picker of this card offers resold products only.
+      expect(screen.queryByText("Pain complet")).not.toBeInTheDocument();
+      await fillBags();
+
+      const totals = screen.getByRole("complementary", { name: "Totaux" });
+      expect(totals).toHaveTextContent("Matières premières12,000 TND");
+      expect(totals).toHaveTextContent("Produits de revente20,400 TND");
+      expect(totals).toHaveTextContent("Autres achats12,500 TND");
+      expect(totals).toHaveTextContent("Total de la course44,900 TND");
+      expect(totals).toHaveTextContent("Paiement des marchandises");
+      expect(totals).toHaveTextContent(
+        "Sortie de caisse aujourd'hui44,900 TND",
+      );
+
+      await userEvent.click(
+        screen.getByRole("button", { name: "Valider la course" }),
+      );
+      const confirm = await screen.findByRole("alertdialog", {
+        name: /Valider la course/,
+      });
+      expect(confirm).toHaveTextContent(
+        "Stock : +10 kg Farine T55, +24 pièce Eau 1,5 L.",
+      );
+      expect(confirm).toHaveTextContent(
+        "Paiement enregistré sur l'achat : 32,400 TND.",
+      );
+      expect(confirm).toHaveTextContent(
+        "Sortie de caisse aujourd'hui : 44,900 TND.",
+      );
+      await userEvent.click(
+        within(confirm).getByRole("button", { name: "Valider" }),
+      );
+
+      expect(await screen.findByText("Course validée")).toBeInTheDocument();
+      const posted = procurement.purchases[0];
+      expect(posted).toMatchObject({ status: "POSTED", totalTnd: "32.400" });
+      expect(posted?.lines).toEqual([
+        expect.objectContaining({ rawMaterialId: "raw-1", productId: null }),
+        expect.objectContaining({
+          productId: "product-water",
+          rawMaterialId: null,
+          enteredUnitId: "unit-piece",
+          lineTotalTnd: "20.400",
+        }),
+      ]);
+      expect(expenses.expenses[0]).toMatchObject({
+        description: "Sachets plastiques",
+        purchaseId: posted?.id,
+      });
+    });
+
+    it("records a trip of resold products alone", async () => {
+      const { expenses, procurement } = mockStores();
+      mockResaleCatalog();
+      renderAt("/achats/course", withProducts);
+
+      await screen.findByRole("heading", { level: 1, name: "Nouvelle course" });
+      await pickSupplier();
+      await userEvent.click(
+        screen.getByRole("button", { name: "Retirer la ligne 1" }),
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Retirer la dépense 1" }),
+      );
+      await fillWater();
+      await userEvent.click(
+        screen.getByRole("button", { name: "Valider la course" }),
+      );
+      const confirm = await screen.findByRole("alertdialog", {
+        name: /Valider la course/,
+      });
+      expect(confirm).toHaveTextContent("Stock : +24 pièce Eau 1,5 L.");
+      await userEvent.click(
+        within(confirm).getByRole("button", { name: "Valider" }),
+      );
+
+      expect(await screen.findByText("Course validée")).toBeInTheDocument();
+      expect(procurement.purchases[0]?.lines).toEqual([
+        expect.objectContaining({ productId: "product-water" }),
+      ]);
+      expect(
+        expenses.expenses.every((expense) => expense.purchaseId === null),
+      ).toBe(true);
+    });
+
+    it("shows a refusal about a resold product in its own card", async () => {
+      mockStores();
+      mockResaleCatalog();
+      server.use(
+        http.post(`${apiV1}/procurement/shopping-trips`, () =>
+          apiError(
+            400,
+            "VALIDATION_ERROR",
+            "Les données saisies sont invalides.",
+            {
+              "purchase.lines.1.productId":
+                "Ce produit n'est plus à la revente.",
+            },
+          ),
+        ),
+      );
+      renderAt("/achats/course", withProducts);
+
+      await screen.findByRole("heading", { level: 1, name: "Nouvelle course" });
+      await pickSupplier();
+      await fillFlour();
+      await fillWater();
+      await userEvent.click(
+        screen.getByRole("button", { name: "Retirer la dépense 1" }),
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Valider la course" }),
+      );
+      await userEvent.click(
+        within(
+          await screen.findByRole("alertdialog", { name: /Valider la course/ }),
+        ).getByRole("button", { name: "Valider" }),
+      );
+
+      // Line 1 of the purchase is line 1 of the second card.
+      expect(
+        await goods().findByText("Ce produit n'est plus à la revente."),
+      ).toBeInTheDocument();
+      expect(
+        within(
+          screen.getByRole("group", { name: "Matières premières" }),
+        ).queryByText("Ce produit n'est plus à la revente."),
+      ).not.toBeInTheDocument();
+    });
+
+    it("hides the card from a buyer who cannot list the products", async () => {
+      mockStores();
+      renderAt("/achats/course");
+
+      await screen.findByRole("heading", { level: 1, name: "Nouvelle course" });
+      expect(
+        screen.queryByRole("group", { name: "Produits de revente" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("group", { name: "Matières premières" }),
+      ).toBeInTheDocument();
+    });
   });
 
   it("asks for the three permissions", async () => {

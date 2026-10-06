@@ -65,14 +65,27 @@ const tripApiToForm: Array<[pattern: RegExp, formPath: string]> = [
   [/^purchase\.lines\.(\d+)\.unitPriceTnd$/, "lines.$1.unitPriceTnd"],
 ];
 
+/// `rawMaterialCount` is how many raw-material lines the request carried
+/// before its resold-product lines (issue 020): line N of the purchase is
+/// line N of the first card, or line N − count of the second.
 export function toTripFormFieldErrors(
   fieldErrors: Record<string, string>,
+  rawMaterialCount = Number.POSITIVE_INFINITY,
 ): Record<string, string> {
   return Object.fromEntries(
     Object.entries(fieldErrors).map(([path, message]) => {
       const rule = tripApiToForm.find(([pattern]) => pattern.test(path));
+      const mapped = rule ? path.replace(rule[0], rule[1]) : path;
+      const line = /^lines\.(\d+)\.(.+)$/.exec(mapped);
 
-      return [rule ? path.replace(rule[0], rule[1]) : path, message];
+      if (line && Number(line[1]) >= rawMaterialCount) {
+        return [
+          `productLines.${Number(line[1]) - rawMaterialCount}.${line[2]}`,
+          message,
+        ];
+      }
+
+      return [mapped, message];
     }),
   );
 }
