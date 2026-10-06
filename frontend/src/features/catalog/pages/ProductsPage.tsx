@@ -34,7 +34,12 @@ import {
 } from "../components/catalogTable.js";
 import styles from "./CatalogPages.module.css";
 
-const defaults = { ...listDefaults, categoryId: "", stockable: "" };
+const defaults = {
+  ...listDefaults,
+  categoryId: "",
+  stockable: "",
+  resale: "",
+};
 
 /// `/produits` (UI-10): the product list with search, filters and sort in
 /// the URL, creation and edition dialogs, activation with an impact block.
@@ -55,11 +60,13 @@ export function ProductsPage() {
     isActive: activeFilter(state.isActive),
     ...(state.categoryId ? { categoryId: state.categoryId } : {}),
     ...(state.stockable ? { isStockable: state.stockable === "true" } : {}),
+    ...(state.resale ? { isResale: state.resale === "true" } : {}),
   } as Parameters<typeof useProducts>[0]);
   const activeCount =
     (state.isActive !== "true" ? 1 : 0) +
     (state.categoryId ? 1 : 0) +
-    (state.stockable ? 1 : 0);
+    (state.stockable ? 1 : 0) +
+    (state.resale ? 1 : 0);
 
   const columns: DataTableColumn<Product>[] = [
     {
@@ -82,6 +89,7 @@ export function ProductsPage() {
           )}
           <span>{row.original.name}</span>
           <Badge tone="neutral">{row.original.category.name}</Badge>
+          {row.original.isResale ? <Badge tone="accent">Revente</Badge> : null}
         </span>
       ),
     },
@@ -163,7 +171,13 @@ export function ProductsPage() {
         searchPlaceholder="Rechercher un produit"
         activeCount={activeCount}
         onReset={() =>
-          setState({ isActive: "true", categoryId: "", stockable: "", page: 1 })
+          setState({
+            isActive: "true",
+            categoryId: "",
+            stockable: "",
+            resale: "",
+            page: 1,
+          })
         }
         filters={
           <>
@@ -206,6 +220,19 @@ export function ProductsPage() {
               options={[
                 { value: "true", label: "Stock suivi" },
                 { value: "false", label: "Sans stock" },
+              ]}
+            />
+            <Select
+              aria-label="Origine"
+              placeholder="Fabriqué ou revente"
+              clearable
+              value={state.resale || null}
+              onValueChange={(value) =>
+                setState({ resale: value ?? "", page: 1 })
+              }
+              options={[
+                { value: "true", label: "Produits de revente" },
+                { value: "false", label: "Fabriqués ici" },
               ]}
             />
           </>

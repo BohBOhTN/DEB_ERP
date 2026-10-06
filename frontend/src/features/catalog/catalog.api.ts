@@ -35,6 +35,9 @@ export interface Product {
   /// Issue #64: the photo's path under `/media`, null without one.
   imageUrl: string | null;
   isStockable: boolean;
+  /// Issue 019: bought from a supplier to be resold; always stock-tracked,
+  /// offered on purchase lines, its cost follows the last purchase price.
+  isResale: boolean;
   isActive: boolean;
   notes: string | null;
   version: number;
@@ -72,6 +75,8 @@ export interface CatalogListQuery {
   q?: string;
   sort?: SortSpec;
   isActive?: boolean;
+  /// Products only (issue 019): the ones bought to be resold.
+  isResale?: boolean;
 }
 
 const listQuery = (query: CatalogListQuery) => ({
@@ -97,6 +102,7 @@ export interface ProductInput {
   salePriceTnd: string;
   approximateCostTnd?: string | null;
   isStockable: boolean;
+  isResale?: boolean;
   code?: string;
   barcode?: string;
   notes?: string;

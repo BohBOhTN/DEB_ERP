@@ -112,6 +112,78 @@ describe("Produits", () => {
     ).toBeInTheDocument();
   });
 
+  // Issue 019: a product bought to be resold is always stock-tracked; the
+  // list says which products are resold and filters on it.
+  it("flags a product for resale, locks its stock switch on, and filters the list on it", async () => {
+    const store = makeCatalogStore();
+    server.use(...catalogHandlers(store));
+    renderAt("/produits");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Nouveau produit" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Nouveau produit" });
+    await userEvent.type(within(dialog).getByLabelText(/^Nom/), "Eau 1,5 L");
+    await userEvent.click(
+      within(dialog).getByRole("combobox", { name: /Catégorie/ }),
+    );
+    await userEvent.click(await screen.findByRole("option", { name: "Pains" }));
+    await userEvent.click(
+      within(dialog).getByRole("combobox", { name: /Unité de base/ }),
+    );
+    await userEvent.click(await screen.findByRole("option", { name: /Pièce/ }));
+    await userEvent.type(
+      within(dialog).getByRole("textbox", { name: /Prix de vente/ }),
+      "1,2",
+    );
+    const stockable = within(dialog).getByRole("switch", { name: /Stockable/ });
+    await userEvent.click(stockable);
+    expect(stockable).not.toBeChecked();
+    await userEvent.click(
+      within(dialog).getByRole("switch", { name: /Produit de revente/ }),
+    );
+    expect(stockable).toBeChecked();
+    expect(stockable).toBeDisabled();
+    expect(
+      within(dialog).getByText("Toujours suivi pour un produit de revente."),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Enregistrer" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(store.products.at(-1)).toMatchObject({
+      name: "Eau 1,5 L",
+      isResale: true,
+      isStockable: true,
+    });
+    const table = screen.getByRole("table", { name: "Produits" });
+    const row = (await within(table).findByText("Eau 1,5 L")).closest(
+      "tr",
+    ) as HTMLElement;
+    expect(within(row).getByText("Revente")).toBeInTheDocument();
+    expect(within(table).getAllByText("Revente")).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Origine" }));
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Produits de revente" }),
+    );
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("table", { name: "Produits" })).queryByText(
+          "Pain complet",
+        ),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      within(screen.getByRole("table", { name: "Produits" })).getByText(
+        "Eau 1,5 L",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("shows the reload prompt on a stale version (AS-V2-15)", async () => {
     const store = makeCatalogStore();
     server.use(...catalogHandlers(store));
