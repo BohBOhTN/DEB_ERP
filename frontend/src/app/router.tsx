@@ -9,6 +9,7 @@ import { Skeleton } from "../components/ui/Skeleton/Skeleton.js";
 import {
   loadLoginPage,
   loadProductsPage,
+  loadPriceTagsPage,
   loadProductDetailPage,
   loadRawMaterialsPage,
   loadRawMaterialDetailPage,
@@ -61,6 +62,9 @@ const LoginPage = lazy(() =>
 );
 const ProductsPage = lazy(() =>
   loadProductsPage().then((m) => ({ default: m.ProductsPage })),
+);
+const PriceTagsPage = lazy(() =>
+  loadPriceTagsPage().then((m) => ({ default: m.PriceTagsPage })),
 );
 const ProductDetailPage = lazy(() =>
   loadProductDetailPage().then((m) => ({ default: m.ProductDetailPage })),
@@ -260,6 +264,15 @@ export const routes: RouteObject[] = [
               </Guarded>
             ),
             handle: { title: "Produits" },
+          },
+          {
+            path: "/produits/etiquettes",
+            element: (
+              <Guarded anyOf={["products.view"]}>
+                <PriceTagsPage />
+              </Guarded>
+            ),
+            handle: { title: "Étiquettes de prix" },
           },
           {
             path: "/produits/:productId",

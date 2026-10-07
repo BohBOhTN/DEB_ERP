@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { Plus, Tag } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -155,14 +155,23 @@ export function ProductsPage() {
         title="Produits"
         description="Les produits vendus en caisse et en commande."
         actions={
-          <PermissionGate
-            permissions={permissions}
-            permission="products.create"
-          >
-            <Button leftIcon={<Plus />} onClick={() => setEditing("new")}>
-              Nouveau produit
+          <>
+            <Button
+              variant="secondary"
+              leftIcon={<Tag />}
+              onClick={() => navigate("/produits/etiquettes")}
+            >
+              Étiquettes
             </Button>
-          </PermissionGate>
+            <PermissionGate
+              permissions={permissions}
+              permission="products.create"
+            >
+              <Button leftIcon={<Plus />} onClick={() => setEditing("new")}>
+                Nouveau produit
+              </Button>
+            </PermissionGate>
+          </>
         }
       />
       <FilterBar

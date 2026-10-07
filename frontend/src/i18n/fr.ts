@@ -12,6 +12,7 @@ export const fr = {
   productCategories: "Catégories de produits",
   rawMaterials: "Matières premières",
   categoriesAndUnits: "Catégories et unités",
+  priceTags: "Étiquettes",
   units: "Unités",
   stock: "Stock",
   stockMovements: "Mouvements",
