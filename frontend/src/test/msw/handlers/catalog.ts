@@ -133,6 +133,7 @@ function page<T extends { name: string; isActive: boolean }>(
   const q = url.searchParams.get("q")?.toLowerCase() ?? "";
   const isActive = url.searchParams.get("isActive");
   const isResale = url.searchParams.get("isResale");
+  const categoryId = url.searchParams.get("categoryId");
   const pageNumber = Number(url.searchParams.get("page") ?? "1");
   const pageSize = Number(url.searchParams.get("pageSize") ?? "25");
   const matching = rows.filter(
@@ -141,7 +142,11 @@ function page<T extends { name: string; isActive: boolean }>(
       (isActive === null || String(row.isActive) === isActive) &&
       // Issue 019: the purchase picker asks for the resold products only.
       (isResale === null ||
-        String((row as { isResale?: boolean }).isResale ?? false) === isResale),
+        String((row as { isResale?: boolean }).isResale ?? false) ===
+          isResale) &&
+      // Issue 024: the tag picker filters by category.
+      (categoryId === null ||
+        (row as { categoryId?: string }).categoryId === categoryId),
   );
   const start = (pageNumber - 1) * pageSize;
 

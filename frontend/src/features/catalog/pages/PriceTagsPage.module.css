@@ -1,0 +1,189 @@
+/* Issue 024: the price tags page (DEC-V2-014). */
+.layout {
+  display: grid;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (min-width: 1100px) {
+  .layout {
+    grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  }
+}
+
+.side {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* Grid items keep an automatic minimum width: let the cards shrink to the
+ * column so a 360 px phone has no horizontal scroll. */
+.side > * {
+  min-width: 0;
+}
+
+.cardHeader {
+  padding: var(--space-4) var(--space-4) var(--space-3);
+}
+
+.filters {
+  padding: 0 var(--space-4) var(--space-3);
+}
+
+.list {
+  border-top: 1px solid var(--border-default);
+}
+
+.listSkeleton {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.row > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rowMeta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.rowPrice {
+  flex: none;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.pickedName {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copies {
+  width: 72px;
+  flex: none;
+}
+
+.more {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-3);
+}
+
+.hint {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.format {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-2);
+}
+
+.format .hint {
+  padding: 0;
+  padding-bottom: var(--space-2);
+}
+
+.dimensions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.preview {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.summary {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* The scaled box keeps its layout height; the stack is given the drawn
+ * height from script so the page does not scroll past white space. */
+.stack {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.scaled {
+  display: grid;
+  gap: calc(var(--space-4) / var(--sheet-scale, 1));
+  width: 210mm;
+  transform: scale(var(--sheet-scale, 1));
+  transform-origin: top left;
+}
+
+.sheet {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md);
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+@media print {
+  .layout {
+    display: block;
+  }
+
+  .preview {
+    display: block;
+  }
+
+  .stack,
+  .scaled {
+    display: block;
+    width: auto;
+    height: auto !important;
+    overflow: visible;
+    transform: none;
+  }
+
+  .sheet {
+    margin: 0;
+    box-shadow: none;
+    break-after: page;
+  }
+
+  .sheet:last-child {
+    break-after: auto;
+  }
+}

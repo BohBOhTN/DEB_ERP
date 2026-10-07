@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { tier } from "../../lib/query/cachePolicy.js";
 import {
   invalidateAfter,
@@ -48,6 +53,20 @@ export function useProducts(query: CatalogListQuery) {
     queryKey: catalogKeys.products(query),
     queryFn: () => api.listProducts(query),
     placeholderData: (previous) => previous,
+    ...tier("list"),
+  });
+}
+
+/// Issue 024: the tag picker reads the products a page of 100 at a time
+/// and asks for the next page on demand; the key is kept under the
+/// `products` entity so the same invalidation refreshes it.
+export function useProductPages(query: Omit<CatalogListQuery, "page">) {
+  return useInfiniteQuery({
+    queryKey: ["catalog", "products", "pages", query] as const,
+    queryFn: ({ pageParam }) => api.listProducts({ ...query, page: pageParam }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.page < lastPage.pageCount ? lastPage.page + 1 : undefined,
     ...tier("list"),
   });
 }

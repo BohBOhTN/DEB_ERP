@@ -15,6 +15,7 @@ const routes = [
   "/analyses?tab=purchases",
   "/analyses?tab=distributors",
   "/produits",
+  "/produits/etiquettes",
   "/matieres-premieres",
   "/catalogue/parametres",
   "/stock",
