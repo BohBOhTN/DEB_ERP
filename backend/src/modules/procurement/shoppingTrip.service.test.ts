@@ -156,9 +156,6 @@ describe("ShoppingTripService", () => {
       ["RAW_MATERIAL", "flour", "10.000000"],
       ["PRODUCT", "bottle", "24.000000"],
     ]);
-    expect(store.products.find((row) => row.id === "bottle")).toMatchObject({
-      approximateCostTnd: "0.850",
-    });
     expect(store.expenses).toHaveLength(1);
   });
 

@@ -126,6 +126,8 @@ async function createTestApp(permissionKeys: string[]) {
       name: "Baguette",
       imageKey: null,
     }),
+    getProductPriceHistory: vi.fn(),
+    getRawMaterialPriceHistory: vi.fn(),
     listProducts: vi.fn().mockResolvedValue({
       items: [
         {
@@ -382,6 +384,62 @@ describe("catalog routes", () => {
     expect(catalogService.listProducts).toHaveBeenLastCalledWith(
       expect.objectContaining({ isResale: true, isActive: true }),
     );
+  });
+
+  // Issue 023: the prices of an item over time, the purchases behind the
+  // purchases permission.
+  it("serves a product's price history, with the purchases only alongside purchases.view", async () => {
+    const withoutPurchases = await createTestApp(["products.view"]);
+    withoutPurchases.catalogService.getProductPriceHistory = vi
+      .fn()
+      .mockResolvedValue({ salePrices: [], purchasePrices: null });
+    await request(withoutPurchases.app)
+      .get("/api/catalog/products/product-1/price-history")
+      .set("Cookie", withoutPurchases.cookie)
+      .expect(200);
+    expect(
+      withoutPurchases.catalogService.getProductPriceHistory,
+    ).toHaveBeenCalledWith("product-1", { withPurchases: false });
+
+    const withPurchases = await createTestApp([
+      "products.view",
+      "purchases.view",
+    ]);
+    withPurchases.catalogService.getProductPriceHistory = vi
+      .fn()
+      .mockResolvedValue({ salePrices: [], purchasePrices: [] });
+    const response = await request(withPurchases.app)
+      .get("/api/catalog/products/product-1/price-history")
+      .set("Cookie", withPurchases.cookie)
+      .expect(200);
+    expect(response.body.data.priceHistory).toEqual({
+      salePrices: [],
+      purchasePrices: [],
+    });
+    expect(
+      withPurchases.catalogService.getProductPriceHistory,
+    ).toHaveBeenCalledWith("product-1", { withPurchases: true });
+  });
+
+  it("keeps a raw material's price history behind purchases.view as well", async () => {
+    const denied = await createTestApp(["raw_materials.view"]);
+    await request(denied.app)
+      .get("/api/catalog/raw-materials/raw-1/price-history")
+      .set("Cookie", denied.cookie)
+      .expect(403);
+
+    const allowed = await createTestApp([
+      "raw_materials.view",
+      "purchases.view",
+    ]);
+    allowed.catalogService.getRawMaterialPriceHistory = vi
+      .fn()
+      .mockResolvedValue({ rawMaterialId: "raw-1", purchasePrices: [] });
+    const response = await request(allowed.app)
+      .get("/api/catalog/raw-materials/raw-1/price-history")
+      .set("Cookie", allowed.cookie)
+      .expect(200);
+    expect(response.body.data.priceHistory.purchasePrices).toEqual([]);
   });
 
   it("creates raw materials when the user has raw_materials.create", async () => {
