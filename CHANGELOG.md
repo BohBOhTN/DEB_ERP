@@ -4,6 +4,13 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-10-07
+
+The products bought to be resold (issues 019 and 020, `DEC-V2-010`), the
+analyses of purchases and of the distributor channel (021, `DEC-V2-011`),
+the `Total charges` figure (022, `DEC-V2-012`) and the price history that
+replaces any automatic cost (023, `DEC-V2-013`). Two additive migrations.
+
 ### Changed
 
 - Issue 022, Accueil: the tile `Total charges` replaces `Encaissé en
