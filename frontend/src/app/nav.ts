@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   ShoppingCart,
   Store,
+  Tag,
   Tags,
   Truck,
   UserCog,
@@ -178,6 +179,14 @@ export const navItems: readonly NavItem[] = [
     icon: Wheat,
     path: "/matieres-premieres",
     permissions: ["raw_materials.view"],
+    group: navGroups.catalogue,
+  },
+  {
+    id: "priceTags",
+    label: fr.priceTags,
+    icon: Tag,
+    path: "/produits/etiquettes",
+    permissions: ["products.view"],
     group: navGroups.catalogue,
   },
   {

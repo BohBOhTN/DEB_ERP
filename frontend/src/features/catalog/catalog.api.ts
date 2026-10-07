@@ -36,7 +36,7 @@ export interface Product {
   imageUrl: string | null;
   isStockable: boolean;
   /// Issue 019: bought from a supplier to be resold; always stock-tracked,
-  /// offered on purchase lines, its cost follows the last purchase price.
+  /// offered on purchase lines. Its cost stays the owner's figure (023).
   isResale: boolean;
   isActive: boolean;
   notes: string | null;
@@ -77,6 +77,8 @@ export interface CatalogListQuery {
   isActive?: boolean;
   /// Products only (issue 019): the ones bought to be resold.
   isResale?: boolean;
+  /// Products only: one category.
+  categoryId?: string;
 }
 
 const listQuery = (query: CatalogListQuery) => ({

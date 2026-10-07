@@ -20,6 +20,18 @@ premières` and `Achats produits de revente`. The tiles for the sales
 
 ### Added
 
+- Issue 024, Étiquettes: a page `Étiquettes de prix` under `Catalogue`
+  (and a button on `Produits`) to pick products by search, category and
+  origin, give each a number of copies, choose a tag format (three presets
+  or a free width and height in millimetres) and print A4 sheets of price
+  tags. The tags carry the logo, the bakery's name, the product's name
+  and its sale price in a navy band (per kilogramme or litre when the
+  unit is divisible), centred inside a double gold frame;
+  they are packed from the top-left corner with no gap, the leftover
+  strips filled with turned tags, so the waste gathers at the right and
+  the bottom. The page states the tags per sheet and the share of the
+  sheet used; `Imprimer` opens the print dialog on the sheets alone, A4
+  without margin (`DEC-V2-014`).
 - Issue 019, Produits: a product can be flagged `Produit de revente`,
   bought from a supplier to be resold as it is. Such a product is always
   stock-tracked (the stock switch locks on), carries a `Revente` badge in
