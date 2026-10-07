@@ -27,10 +27,15 @@ premières` and `Achats produits de revente`. The tiles for the sales
 - Issue 019, Achats: a purchase line buys a raw material or a product
   flagged for resale. The picker of `Nouvel achat` finds both and says
   which is which; a resold product is bought in its own unit. Posting
-  receives its stock and sets its cost to the price just paid, so its
-  margin follows what the supplier charged; cancelling takes the stock
-  back. The purchase page marks the resold lines. The API refuses a
+  receives its stock; cancelling takes it back. The purchase page marks
+  the resold lines. The API refuses a
   product not flagged for resale (`ACTIVE_RESALE_PRODUCT_REQUIRED`).
+- Issue 023, Produits: a tab `Prix` on a resold product shows the sale
+  prices it had beside the prices paid for it, purchase after purchase,
+  with the gap to the last price paid; the same tab on a raw material
+  shows how the price paid moved. A purchase never changes a product's
+  cost. Every change of a sale price is kept from now on; existing
+  products start with their current price.
 - Issue 020, Achats: `Nouvelle course` gains a card `Produits de revente`
   between the raw materials and the other purchases. The raw materials
   and the resold products of a trip are one purchase, paid on the same

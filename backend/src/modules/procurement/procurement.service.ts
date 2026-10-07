@@ -666,34 +666,6 @@ export class ProcurementService {
       purchaseId: purchase.id,
     });
 
-    // DEC-V2-010: what a resold product costs is what its supplier just
-    // charged for it. A product made here keeps the cost its owner typed.
-    for (const line of purchase.lines) {
-      if (!line.productId) {
-        continue;
-      }
-      const costed = await tx.product.updateMany({
-        where: { id: line.productId, isResale: true },
-        data: {
-          approximateCostTnd: line.unitPriceTnd,
-          version: { increment: 1 },
-          updatedByUserId: actor.actorUserId,
-        },
-      });
-      if (costed.count > 0) {
-        await this.auditWithClient(tx, {
-          actor,
-          action: "product.cost_from_purchase",
-          entity: "product",
-          targetId: line.productId,
-          after: {
-            approximateCostTnd: line.unitPriceTnd,
-            purchaseId: purchase.id,
-          },
-        });
-      }
-    }
-
     let payment = null;
     if (new Prisma.Decimal(purchase.paidAmountTnd).greaterThan(0)) {
       payment = await tx.supplierPayment.create({

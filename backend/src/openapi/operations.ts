@@ -312,6 +312,25 @@ const catalogOperations: ApiOperation[] = [
   }),
   operation({
     method: "get",
+    path: "/catalog/products/{productId}/price-history",
+    operationId: "catalog.productPriceHistory",
+    summary:
+      "Sale prices a product had and prices paid for it (purchases need purchases.view)",
+    tag: "catalog",
+    permissions: ["products.view"],
+    dataKey: "priceHistory",
+  }),
+  operation({
+    method: "get",
+    path: "/catalog/raw-materials/{rawMaterialId}/price-history",
+    operationId: "catalog.rawMaterialPriceHistory",
+    summary: "Prices paid for a raw material, per base unit, oldest first",
+    tag: "catalog",
+    permissions: ["raw_materials.view", "purchases.view"],
+    dataKey: "priceHistory",
+  }),
+  operation({
+    method: "get",
     path: "/catalog/raw-materials/{rawMaterialId}",
     operationId: "catalog.getRawMaterial",
     summary: "Raw material detail",

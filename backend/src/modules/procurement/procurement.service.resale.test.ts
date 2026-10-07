@@ -7,8 +7,9 @@ import {
 import { PurchasingPrismaDouble } from "./procurement.testDouble.js";
 
 /// Issue 019, DEC-V2-010: a purchase line buys a raw material or a product
-/// flagged for resale. A resold product is bought in its own unit, enters
-/// stock like a raw material, and its cost follows the price just paid.
+/// flagged for resale. A resold product is bought in its own unit and
+/// enters stock like a raw material. Its cost stays the owner's figure
+/// (issue 023): a purchase never rewrites it.
 const actor = { actorUserId: "user-1", correlationId: "corr-1" };
 const purchaseDate = new Date("2026-10-05T07:00:00.000Z");
 const dueDate = new Date("2026-10-20T00:00:00.000Z");
@@ -125,7 +126,7 @@ describe("purchases of resold products", () => {
     });
   });
 
-  it("receives the stock of both kinds and sets the resold product's cost to the price paid", async () => {
+  it("receives the stock of both kinds and leaves the resold product's cost alone", async () => {
     const { service, prisma } = makeService();
     const draft = await service.createPurchase(
       purchaseOf([flour, water]),
@@ -158,19 +159,14 @@ describe("purchases of resold products", () => {
       }),
     ]);
     expect(store.inventoryMovements[1]).not.toHaveProperty("rawMaterialId");
+    // Issue 023: the price paid is read from the purchase; the cost is the
+    // owner's figure and the product is not even touched.
     expect(store.products.find((row) => row.id === "bottle")).toMatchObject({
-      approximateCostTnd: "0.850",
-      version: 2,
-      updatedByUserId: "user-1",
-    });
-    // The product made here keeps the cost its owner typed.
-    expect(store.products.find((row) => row.id === "baguette")).toMatchObject({
-      approximateCostTnd: "0.150",
+      approximateCostTnd: null,
       version: 1,
     });
     expect(store.auditEvents.map((event) => event.action)).toEqual([
       "purchase.create",
-      "product.cost_from_purchase",
       "purchase.post",
     ]);
     expect(store.supplierLedgerEntries).toEqual([
@@ -181,30 +177,7 @@ describe("purchases of resold products", () => {
     ]);
   });
 
-  it("still receives the stock but leaves the cost when the flag was removed since the draft", async () => {
-    const { service, prisma } = makeService();
-    const draft = await service.createPurchase(purchaseOf([water]), actor);
-    const bottle = prisma
-      .snapshot()
-      .products.find((row) => row.id === "bottle");
-    if (bottle) bottle.isResale = false;
-
-    await service.postPurchase(draft.id, { idempotencyKey: "post-2" }, actor);
-
-    const store = prisma.snapshot();
-    expect(store.inventoryMovements).toHaveLength(1);
-    expect(store.products.find((row) => row.id === "bottle")).toMatchObject({
-      approximateCostTnd: null,
-      version: 1,
-    });
-    expect(
-      store.auditEvents.some(
-        (event) => event.action === "product.cost_from_purchase",
-      ),
-    ).toBe(false);
-  });
-
-  it("takes the product stock back when the purchase is cancelled, and keeps the cost", async () => {
+  it("takes the product stock back when the purchase is cancelled", async () => {
     const { service, prisma } = makeService();
     const draft = await service.createPurchase(
       purchaseOf([flour, water]),
@@ -235,9 +208,6 @@ describe("purchases of resold products", () => {
         reason: "Livraison refusée",
       }),
     ]);
-    expect(store.products.find((row) => row.id === "bottle")).toMatchObject({
-      approximateCostTnd: "0.850",
-    });
   });
 
   it("finds the purchases of a product through the list filter", async () => {

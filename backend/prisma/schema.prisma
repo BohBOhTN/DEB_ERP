@@ -189,8 +189,9 @@ model Product {
   imageUpdatedAt       DateTime?                   @map("image_updated_at")
   isStockable          Boolean                     @default(true) @map("is_stockable")
   /// Issue 019, DEC-V2-010: bought from a supplier to be resold as it is.
-  /// Such a product can sit on a purchase line, is always stock-tracked,
-  /// and its cost follows its last posted purchase price.
+  /// Such a product can sit on a purchase line and is always stock-tracked.
+  /// Its cost stays the owner's figure (issue 023); the prices paid are
+  /// read from the purchases themselves.
   isResale             Boolean                     @default(false) @map("is_resale")
   isActive             Boolean                     @default(true) @map("is_active")
   notes                String?
@@ -203,6 +204,7 @@ model Product {
   baseUnit             Unit                        @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
   inventoryMovements   InventoryMovement[]
   purchaseLines        PurchaseLine[]
+  salePriceHistory     ProductSalePriceHistory[]
   saleLines            SaleLine[]
   customerOrderLines   CustomerOrderLine[]
   distributorSaleLines DistributorSaleLine[]
@@ -219,6 +221,23 @@ model Product {
   @@index([code(ops: raw("gin_trgm_ops"))], type: Gin, map: "products_code_trgm_idx")
   @@index([barcode(ops: raw("gin_trgm_ops"))], type: Gin, map: "products_barcode_trgm_idx")
   @@map("products")
+}
+
+/// Issue 023, DEC-V2-013: every sale price a product ever had, with the
+/// moment it took effect, so its variation can be read beside the prices
+/// paid for it. One row per change; the first row is the price at
+/// creation (backfilled from the products for those that existed).
+model ProductSalePriceHistory {
+  id           String   @id @default(cuid())
+  productId    String   @map("product_id")
+  salePriceTnd Decimal  @map("sale_price_tnd") @db.Decimal(12, 3)
+  effectiveAt  DateTime @default(now()) @map("effective_at")
+  actorUserId  String   @map("actor_user_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, effectiveAt])
+  @@map("product_sale_price_history")
 }
 
 model RawMaterial {

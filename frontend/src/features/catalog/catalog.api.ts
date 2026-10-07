@@ -294,3 +294,50 @@ export async function updateUnit(
     await apiClient.patch<{ unit: Unit }>(`/catalog/units/${unitId}`, input)
   ).unit;
 }
+
+/// Issue 023, DEC-V2-013: one point per posted purchase line of an item,
+/// oldest first, the price per base unit.
+export interface PurchasePricePoint {
+  lineId: string;
+  purchaseId: string;
+  reference: string | null;
+  purchasedAt: string;
+  supplier: { id: string; name: string };
+  unitPriceTnd: string;
+  quantity: string;
+  unitName: string;
+}
+
+export interface ProductPriceHistory {
+  productId: string;
+  currentSalePriceTnd: string;
+  /// Every sale price the product had, oldest first.
+  salePrices: Array<{ id: string; salePriceTnd: string; effectiveAt: string }>;
+  /// `null` without `purchases.view`.
+  purchasePrices: PurchasePricePoint[] | null;
+}
+
+export interface RawMaterialPriceHistory {
+  rawMaterialId: string;
+  purchasePrices: PurchasePricePoint[];
+}
+
+export async function getProductPriceHistory(
+  productId: string,
+): Promise<ProductPriceHistory> {
+  return (
+    await apiClient.get<{ priceHistory: ProductPriceHistory }>(
+      `/catalog/products/${productId}/price-history`,
+    )
+  ).priceHistory;
+}
+
+export async function getRawMaterialPriceHistory(
+  rawMaterialId: string,
+): Promise<RawMaterialPriceHistory> {
+  return (
+    await apiClient.get<{ priceHistory: RawMaterialPriceHistory }>(
+      `/catalog/raw-materials/${rawMaterialId}/price-history`,
+    )
+  ).priceHistory;
+}
