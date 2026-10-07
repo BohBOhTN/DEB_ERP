@@ -4,6 +4,8 @@
 export const loadLoginPage = () => import("../features/auth/LoginPage.js");
 export const loadProductsPage = () =>
   import("../features/catalog/pages/ProductsPage.js");
+export const loadPriceTagsPage = () =>
+  import("../features/catalog/pages/PriceTagsPage.js");
 export const loadProductDetailPage = () =>
   import("../features/catalog/pages/ProductDetailPage.js");
 export const loadRawMaterialsPage = () =>

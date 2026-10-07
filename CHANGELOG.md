@@ -4,6 +4,27 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-10-08
+
+The price tags (issue 024, `DEC-V2-014`): products picked from the
+catalogue, printed on A4 sheets packed without waste, in a tag design
+reworked after the owner's first look. Frontend only, no migration.
+
+### Added
+
+- Issue 024, Étiquettes: a page `Étiquettes de prix` under `Catalogue`
+  (and a button on `Produits`) to pick products by search, category and
+  origin, give each a number of copies, choose a tag format (three presets
+  or a free width and height in millimetres) and print A4 sheets of price
+  tags. The tags carry the logo, the bakery's name, the product's name
+  and its sale price in a navy band (per kilogramme or litre when the
+  unit is divisible), centred inside a double gold frame;
+  they are packed from the top-left corner with no gap, the leftover
+  strips filled with turned tags, so the waste gathers at the right and
+  the bottom. The page states the tags per sheet and the share of the
+  sheet used; `Imprimer` opens the print dialog on the sheets alone, A4
+  without margin (`DEC-V2-014`).
+
 ## [2.4.0] - 2026-10-07
 
 The products bought to be resold (issues 019 and 020, `DEC-V2-010`), the

@@ -1,0 +1,179 @@
+/*
+ * Issue 024: the price tag (DEC-V2-014). Every length is in millimetres
+ * scaled by --tag-scale (1 at 70 × 40 mm) so the sheet prints true to
+ * size and the preview is the same box scaled down. Colours are forced on
+ * print: the cream, the gold and the navy must survive "no background
+ * graphics".
+ */
+.slot {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.tag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: calc(1.6mm * var(--tag-scale));
+  background: var(--brand-cream);
+  color: var(--brand-navy);
+  /* The cut guide: a hairline shared by two neighbouring tags. */
+  outline: 0.2mm solid var(--brand-sand);
+  outline-offset: -0.1mm;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.slot[data-rotated="true"] .tag {
+  left: 100%;
+  transform: rotate(90deg);
+  transform-origin: top left;
+}
+
+/* Double frame: a gold border and a finer line just inside it. */
+.frame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+  height: 100%;
+  padding: calc(1.4mm * var(--tag-scale)) calc(2.2mm * var(--tag-scale))
+    calc(1.6mm * var(--tag-scale));
+  border: calc(0.4mm * var(--tag-scale)) solid var(--brand-gold);
+  border-radius: calc(2.2mm * var(--tag-scale));
+  outline: calc(0.15mm * var(--tag-scale)) solid var(--brand-gold);
+  outline-offset: calc(-1.2mm * var(--tag-scale));
+}
+
+.brand {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: calc(1.8mm * var(--tag-scale));
+  max-width: 100%;
+}
+
+.logoRing {
+  display: inline-flex;
+  flex: none;
+  padding: calc(0.5mm * var(--tag-scale));
+  border: calc(0.3mm * var(--tag-scale)) solid var(--brand-gold);
+  border-radius: 50%;
+  background: var(--brand-cream);
+}
+
+.logo {
+  display: block;
+  width: calc(8.6mm * var(--tag-scale));
+  height: calc(8.6mm * var(--tag-scale));
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: calc(4mm * var(--tag-scale));
+  line-height: 1;
+  color: var(--brand-gold);
+  white-space: nowrap;
+}
+
+/* A rule broken by a diamond, between the brand and the product. */
+.ornament {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: calc(1mm * var(--tag-scale));
+  width: 70%;
+  margin: calc(1mm * var(--tag-scale)) 0;
+}
+
+.rule {
+  flex: 1 1 auto;
+  height: calc(0.18mm * var(--tag-scale));
+  background: var(--brand-gold);
+}
+
+.diamond {
+  flex: none;
+  width: calc(1.3mm * var(--tag-scale));
+  height: calc(1.3mm * var(--tag-scale));
+  background: var(--brand-gold);
+  transform: rotate(45deg);
+}
+
+/* The name takes the room between the ornament and the price and sits in
+ * the middle of it; two lines at most. */
+.nameBox {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+}
+
+.name {
+  display: -webkit-box;
+  flex: 0 1 auto;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 600;
+  font-size: calc(4.6mm * var(--tag-scale));
+  line-height: 1.15;
+  text-align: center;
+  color: var(--brand-navy);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+/* The price: a navy band with cream figures, the decimals smaller and
+ * the currency in gold. */
+.price {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  justify-content: center;
+  gap: calc(1.2mm * var(--tag-scale));
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: calc(1.2mm * var(--tag-scale)) 0 0;
+  padding: calc(1.1mm * var(--tag-scale)) calc(3.5mm * var(--tag-scale))
+    calc(1.3mm * var(--tag-scale));
+  border-radius: calc(5mm * var(--tag-scale));
+  background: var(--brand-navy);
+  color: var(--brand-cream);
+  white-space: nowrap;
+}
+
+.amount {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: calc(6.4mm * var(--tag-scale));
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.decimals {
+  font-size: 0.62em;
+  font-weight: 600;
+}
+
+.currency {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: calc(2.6mm * var(--tag-scale));
+  line-height: 1;
+  color: var(--brand-gold-100);
+  letter-spacing: 0.06em;
+}
