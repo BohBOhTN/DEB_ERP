@@ -82,6 +82,7 @@ export function makeProduct(overrides: Partial<Product> = {}): Product {
     approximateCostTnd: null,
     imageUrl: null,
     isStockable: true,
+    isResale: false,
     isActive: true,
     notes: null,
     version: 1,
@@ -120,4 +121,24 @@ export function makeRawMaterial(
     ],
     ...overrides,
   };
+}
+
+/// Issue 019: a product bought from a supplier to be resold as it is.
+export const drinksCategory: Category = {
+  id: "category-drinks",
+  name: "Boissons",
+  description: null,
+  isActive: true,
+};
+
+export function makeResaleProduct(overrides: Partial<Product> = {}): Product {
+  return makeProduct({
+    id: "product-water",
+    name: "Eau 1,5 L",
+    categoryId: drinksCategory.id,
+    category: drinksCategory,
+    salePriceTnd: "1.200",
+    isResale: true,
+    ...overrides,
+  });
 }

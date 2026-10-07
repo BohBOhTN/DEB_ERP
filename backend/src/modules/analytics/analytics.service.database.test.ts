@@ -4,8 +4,11 @@ import {
   ExpenseStatus,
   PosSessionStatus,
   PrismaClient,
+  PurchasePaymentTerms,
+  PurchaseStatus,
   SalePaymentState,
   SaleStatus,
+  SupplierLedgerEntryType,
 } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PosService } from "../pos/pos.service.js";
@@ -38,6 +41,9 @@ const everything = new Set([
   "margin.view",
   "orders.view",
   "customers.view",
+  "purchases.view",
+  "distributors.view",
+  "distribution.balances.view",
 ]);
 /// Tunis was UTC+1 all year in 2001; 5 March 2001 is a Monday.
 const march = resolvePeriod({ from: "2001-03-01", to: "2001-03-31" });
@@ -129,6 +135,29 @@ suite("AnalyticsService on PostgreSQL", () => {
       uncostedLinesCount: 2,
     });
   }, 60_000);
+
+  // Issue 022: the charges of March are its 12.500 of expenses and the
+  // 16.000 of flour bought; the 19.200 of croissants bought to be resold
+  // are shown on their own.
+  it("adds the purchases by kind and the charges to the overview", async () => {
+    const overview = await service.getOverview({
+      period: march,
+      permissions: everything,
+    });
+
+    expect(overview.purchases).toEqual({
+      rawMaterialsTnd: "16.000",
+      previousRawMaterialsTnd: "3.000",
+      resaleTnd: "19.200",
+      previousResaleTnd: "0.000",
+    });
+    expect(overview.charges).toEqual({
+      totalTnd: "28.500",
+      previousTotalTnd: "3.000",
+      expensesTnd: "12.500",
+      rawMaterialsTnd: "16.000",
+    });
+  });
 
   it("buckets a long window by month", async () => {
     const overview = await service.getOverview({
@@ -300,6 +329,147 @@ suite("AnalyticsService on PostgreSQL", () => {
       ],
     });
   }, 60_000);
+
+  // Issue 021: purchases by kind. March holds flour bought twice at two
+  // prices and croissants bought to be resold; a cancelled purchase and a
+  // February one stay out of the window.
+  it("splits the purchases between raw materials and resold products", async () => {
+    const purchases = await service.getPurchases({
+      period: march,
+      permissions: everything,
+    });
+
+    expect(purchases.totals).toEqual({
+      totalTnd: "35.200",
+      previousTotalTnd: "3.000",
+      rawMaterialsTnd: "16.000",
+      previousRawMaterialsTnd: "3.000",
+      resaleTnd: "19.200",
+      previousResaleTnd: "0.000",
+      purchasesCount: 2,
+      previousPurchasesCount: 1,
+      // 29.200 owed less 9.200 paid at posting, plus 6.000 unpaid.
+      remainingDueTnd: "26.000",
+    });
+    expect(
+      purchases.trend.filter(
+        (row) => row.rawMaterialsTnd !== "0.000" || row.resaleTnd !== "0.000",
+      ),
+    ).toEqual([
+      { bucket: "2001-03-06", rawMaterialsTnd: "10.000", resaleTnd: "19.200" },
+      { bucket: "2001-03-20", rawMaterialsTnd: "6.000", resaleTnd: "0.000" },
+    ]);
+    expect(purchases.trend).toHaveLength(31);
+    expect(purchases.suppliers).toEqual([
+      {
+        supplierId: seeded.supplier.id,
+        name: seeded.supplier.name,
+        purchasesCount: 2,
+        totalTnd: "35.200",
+        rawMaterialsTnd: "16.000",
+        resaleTnd: "19.200",
+      },
+    ]);
+    expect(purchases.rawMaterials).toEqual([
+      expect.objectContaining({
+        rawMaterialId: seeded.flour.id,
+        quantity: "15.000",
+        totalTnd: "16.000",
+        purchasesCount: 2,
+        averagePriceTnd: "1.067",
+        firstPriceTnd: "1.000",
+        lastPriceTnd: "1.200",
+        priceChangePercent: 20,
+      }),
+    ]);
+    // Bought 24, sold 27 over the window on the three channels: 4 and 3 at
+    // the till, 20 through the settlement.
+    expect(purchases.resaleProducts).toEqual([
+      expect.objectContaining({
+        productId: seeded.croissant.id,
+        quantity: "24.000",
+        totalTnd: "19.200",
+        purchasesCount: 1,
+        averagePriceTnd: "0.800",
+        lastPriceTnd: "0.800",
+        soldQuantity: "27.000",
+        soldRevenueTnd: "34.500",
+        salePriceTnd: "1.500",
+        unitMarginTnd: "0.700",
+      }),
+    ]);
+
+    const withoutMargin = await service.getPurchases({
+      period: march,
+      permissions: new Set(["analytics.view", "purchases.view"]),
+    });
+    expect(withoutMargin.resaleProducts[0]?.unitMarginTnd).toBeNull();
+  });
+
+  // Issue 021: the distributor channel. One direct sale of 50 and one
+  // settlement of thirty croissants, twenty sold and ten returned.
+  it("reads the distributor channel: revenue, returns and products", async () => {
+    const distributors = await service.getDistributors({
+      period: march,
+      permissions: everything,
+    });
+
+    expect(distributors.totals).toMatchObject({
+      revenueTnd: "74.000",
+      previousRevenueTnd: "0.000",
+      directTnd: "50.000",
+      consignmentTnd: "24.000",
+      documentsCount: 2,
+      previousDocumentsCount: 0,
+      activeCount: 1,
+      returnRatePercent: 33,
+    });
+    expect(
+      distributors.trend.filter(
+        (row) => row.directTnd !== "0.000" || row.consignmentTnd !== "0.000",
+      ),
+    ).toEqual([
+      { bucket: "2001-03-07", directTnd: "50.000", consignmentTnd: "0.000" },
+      { bucket: "2001-03-08", directTnd: "0.000", consignmentTnd: "24.000" },
+    ]);
+    expect(distributors.distributors).toEqual([
+      expect.objectContaining({
+        distributorId: seeded.distributor.id,
+        revenueTnd: "74.000",
+        directTnd: "50.000",
+        consignmentTnd: "24.000",
+        documentsCount: 2,
+        soldQuantity: "20.000",
+        returnedQuantity: "10.000",
+        returnRatePercent: 33,
+        balanceTnd: "0.000",
+      }),
+    ]);
+    expect(distributors.products).toEqual([
+      expect.objectContaining({
+        productId: seeded.baguette.id,
+        quantity: "50.000",
+        revenueTnd: "50.000",
+        returnedQuantity: "0.000",
+        returnRatePercent: null,
+        marginTnd: null,
+      }),
+      expect.objectContaining({
+        productId: seeded.croissant.id,
+        quantity: "20.000",
+        revenueTnd: "24.000",
+        returnedQuantity: "10.000",
+        returnRatePercent: 33,
+      }),
+    ]);
+
+    const withoutBalances = await service.getDistributors({
+      period: march,
+      permissions: new Set(["analytics.view", "distributors.view"]),
+    });
+    expect(withoutBalances.totals.balanceTnd).toBeNull();
+    expect(withoutBalances.distributors[0]?.balanceTnd).toBeNull();
+  });
 
   it("describes a till session: totals of the history, hours and best products", async () => {
     const pos = new PosService(prisma);
@@ -700,6 +870,146 @@ async function seedHistory(prisma: PrismaClient) {
     },
   });
 
+  // Issue 021: purchases. The croissant is flagged for resale and bought
+  // beside flour; flour is bought again later at a higher price.
+  await prisma.product.update({
+    where: { id: croissant.id },
+    data: { isResale: true },
+  });
+  const supplier = await prisma.supplier.create({
+    data: {
+      name: `Fournisseur ${runId}`,
+      normalizedName: `fournisseur ${runId}`,
+      ...by,
+    },
+  });
+  const flour = await prisma.rawMaterial.create({
+    data: {
+      name: `Farine ${runId}`,
+      normalizedName: `farine ${runId}`,
+      baseUnitId: unit.id,
+      ...by,
+    },
+  });
+  const purchase = async (input: {
+    purchaseDate: string;
+    cancelled?: boolean;
+    paidTnd?: string;
+    lines: Array<{
+      item: { rawMaterialId: string } | { productId: string };
+      name: string;
+      quantity: string;
+      unitPriceTnd: string;
+    }>;
+  }) => {
+    const purchaseDate = new Date(input.purchaseDate);
+    const total = input.lines
+      .reduce(
+        (sum, line) => sum + Number(line.quantity) * Number(line.unitPriceTnd),
+        0,
+      )
+      .toFixed(3);
+    const paid = input.paidTnd ?? "0.000";
+    const created = await prisma.purchase.create({
+      data: {
+        supplierId: supplier.id,
+        purchaseDate,
+        status: input.cancelled
+          ? PurchaseStatus.CANCELLED
+          : PurchaseStatus.POSTED,
+        paymentTerms:
+          Number(paid) > 0
+            ? PurchasePaymentTerms.PARTIAL
+            : PurchasePaymentTerms.UNPAID,
+        dueDate: new Date("2001-04-30T00:00:00.000Z"),
+        totalTnd: total,
+        paidAmountTnd: paid,
+        remainingDueTnd: (Number(total) - Number(paid)).toFixed(3),
+        postedAt: purchaseDate,
+        postedByUserId: user.id,
+        // A cancelled purchase carries its cancellation, as the table
+        // demands (`purchases_cancelled_metadata_check`).
+        ...(input.cancelled
+          ? {
+              cancelledAt: purchaseDate,
+              cancelledByUserId: user.id,
+              cancellationReason: "Livraison refusée",
+            }
+          : {}),
+        ...by,
+        lines: {
+          create: input.lines.map((line) => ({
+            ...line.item,
+            enteredUnitId: unit.id,
+            baseUnitId: unit.id,
+            enteredQuantity: line.quantity,
+            conversionFactorToBase: "1",
+            normalizedQuantity: line.quantity,
+            unitPriceTnd: line.unitPriceTnd,
+            lineTotalTnd: (
+              Number(line.quantity) * Number(line.unitPriceTnd)
+            ).toFixed(3),
+            rawMaterialNameSnapshot: line.name,
+            enteredUnitNameSnapshot: unit.name,
+            baseUnitNameSnapshot: unit.name,
+          })),
+        },
+      },
+    });
+    const entry = (entryType: SupplierLedgerEntryType, amountTnd: string) =>
+      prisma.supplierLedgerEntry.create({
+        data: {
+          supplierId: supplier.id,
+          purchaseId: created.id,
+          entryType,
+          amountTnd,
+          occurredAt: purchaseDate,
+          actorUserId: user.id,
+        },
+      });
+    await entry(SupplierLedgerEntryType.PURCHASE_PAYABLE, total);
+    if (Number(paid) > 0) {
+      await entry(SupplierLedgerEntryType.PAYMENT, `-${paid}`);
+    }
+    if (input.cancelled) {
+      await entry(SupplierLedgerEntryType.PURCHASE_REVERSAL, `-${total}`);
+    }
+    return created;
+  };
+  const flourLine = (quantity: string, unitPriceTnd: string) => ({
+    item: { rawMaterialId: flour.id },
+    name: flour.name,
+    quantity,
+    unitPriceTnd,
+  });
+  // The window before March (29 January to 28 February).
+  await purchase({
+    purchaseDate: "2001-02-20T00:00:00.000Z",
+    lines: [flourLine("3", "1.000")],
+  });
+  await purchase({
+    purchaseDate: "2001-03-06T00:00:00.000Z",
+    paidTnd: "9.200",
+    lines: [
+      flourLine("10", "1.000"),
+      {
+        item: { productId: croissant.id },
+        name: croissant.name,
+        quantity: "24",
+        unitPriceTnd: "0.800",
+      },
+    ],
+  });
+  await purchase({
+    purchaseDate: "2001-03-20T00:00:00.000Z",
+    lines: [flourLine("5", "1.200")],
+  });
+  await purchase({
+    purchaseDate: "2001-03-21T00:00:00.000Z",
+    cancelled: true,
+    lines: [flourLine("100", "1.000")],
+  });
+
   return {
     user,
     unit,
@@ -713,6 +1023,8 @@ async function seedHistory(prisma: PrismaClient) {
     session,
     distributor,
     expenseCategory,
+    supplier,
+    flour,
   };
 }
 
@@ -723,6 +1035,13 @@ async function cleanUp(prisma: PrismaClient, seeded: Seeded | undefined) {
 
   const customerIds = [seeded.amel.id, seeded.bechir.id];
   const byDistributor = { distributorId: seeded.distributor.id };
+  const bySupplier = { supplierId: seeded.supplier.id };
+
+  // Ledger entries hold their purchase; lines follow it by cascade.
+  await prisma.supplierLedgerEntry.deleteMany({ where: bySupplier });
+  await prisma.purchase.deleteMany({ where: bySupplier });
+  await prisma.supplier.delete({ where: { id: seeded.supplier.id } });
+  await prisma.rawMaterial.delete({ where: { id: seeded.flour.id } });
 
   // Orders reference sales with ON DELETE RESTRICT, so orders go first;
   // lines follow their documents by cascade.

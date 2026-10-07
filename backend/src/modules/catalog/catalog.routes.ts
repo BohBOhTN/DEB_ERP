@@ -43,6 +43,10 @@ export const productListQuerySchema = listQuerySchema.extend({
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
+  isResale: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
 });
 
 export const createUnitSchema = z.object({
@@ -138,6 +142,7 @@ export const createProductSchema = z.object({
     .regex(/^\d+(\.\d{1,3})?$/),
   approximateCostTnd: approximateCostSchema,
   isStockable: z.boolean(),
+  isResale: z.boolean().optional(),
   notes: z.string().optional(),
 });
 
@@ -155,6 +160,7 @@ export const updateProductSchema = z.object({
     .optional(),
   approximateCostTnd: approximateCostSchema,
   isStockable: z.boolean().optional(),
+  isResale: z.boolean().optional(),
   notes: z.string().optional(),
 });
 
@@ -566,6 +572,47 @@ export function catalogRouter(params: {
             product: presentProduct(response, product),
           }),
         );
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  // Issue 023: the prices of an item over time. The purchases of a product
+  // belong to the purchases permission; a raw material's history is all
+  // purchases, so it needs both permissions.
+  router.get(
+    "/products/:productId/price-history",
+    requirePermission("products.view"),
+    async (request, response, next) => {
+      try {
+        const user = response.locals.currentUser as {
+          effectivePermissions: string[];
+        };
+        const priceHistory = await params.catalogService.getProductPriceHistory(
+          parseRouteParam(request.params.productId),
+          {
+            withPurchases: user.effectivePermissions.includes("purchases.view"),
+          },
+        );
+        response.json(okFor(response, { priceHistory }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/raw-materials/:rawMaterialId/price-history",
+    requirePermission("raw_materials.view"),
+    requirePermission("purchases.view"),
+    async (request, response, next) => {
+      try {
+        const priceHistory =
+          await params.catalogService.getRawMaterialPriceHistory(
+            parseRouteParam(request.params.rawMaterialId),
+          );
+        response.json(okFor(response, { priceHistory }));
       } catch (error) {
         next(error);
       }

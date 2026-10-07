@@ -47,6 +47,7 @@ import {
   toTripFormFieldErrors,
 } from "../purchaseFormErrors.js";
 import {
+  baseUnitSymbolOf,
   newPurchaseLine,
   PurchaseLineEditor,
   type PurchaseEditorLine,
@@ -68,6 +69,8 @@ function emptyDefaults(): ShoppingTripFormInput {
     paidAmountTnd: "",
     dueDate: "",
     lines: [newPurchaseLine()],
+    // The resold products start empty: most trips buy none.
+    productLines: [],
     expenses: [newExpenseLine()],
   };
 }
@@ -78,10 +81,10 @@ const tripPermissions = [
   "expenses.create",
 ] as const;
 
-/// `/achats/course` (issue 018, DEC-V2-009): what was bought at one store,
-/// the raw materials and the rest, validated together. The raw materials
-/// become a posted purchase (stock, supplier account); the other goods
-/// become posted expenses, paid on the spot. One page, one button.
+/// `/achats/course` (issues 018 and 020, DEC-V2-009): what was bought at
+/// one store, validated together. The raw materials and the products to
+/// resell become one posted purchase (stock, supplier account); the other
+/// goods become posted expenses, paid on the spot. One page, one button.
 export function ShoppingTripPage() {
   const permissions = useSessionPermissions();
   const navigate = useNavigate();
@@ -106,17 +109,24 @@ export function ShoppingTripPage() {
   }, [summary]);
 
   const lines = (form.watch("lines") ?? []) as PurchaseEditorLine[];
+  const productLines = (form.watch("productLines") ??
+    []) as PurchaseEditorLine[];
   const expenseLines = (form.watch("expenses") ?? []) as ExpenseEditorLine[];
   const supplier = form.watch("supplier");
   const paymentTerms = form.watch("paymentTerms") ?? "PAID";
   const paidAmountTnd = form.watch("paidAmountTnd") ?? "";
   const dueDate = form.watch("dueDate") ?? "";
-  const purchaseTnd = purchaseTotal(lines);
+  const rawMaterialsTnd = purchaseTotal(lines);
+  const resaleTnd = purchaseTotal(productLines);
+  // One purchase holds both: they are paid together.
+  const purchaseTnd = rawMaterialsTnd.plus(resaleTnd);
+  const hasGoods = lines.length + productLines.length > 0;
   const expensesTnd = expensesTotal(expenseLines);
-  const paidOnPurchase =
-    lines.length > 0
-      ? paidFor(paymentTerms, purchaseTnd.toFixed(3), paidAmountTnd)
-      : new Decimal(0);
+  const paidOnPurchase = hasGoods
+    ? paidFor(paymentTerms, purchaseTnd.toFixed(3), paidAmountTnd)
+    : new Decimal(0);
+  // The resold products are read from the product list (issue 019).
+  const canBuyProducts = permissions.has("products.view");
   const paidToday = paidOnPurchase.plus(expensesTnd);
 
   if (!tripPermissions.every((key) => permissions.has(key))) {
@@ -130,6 +140,7 @@ export function ShoppingTripPage() {
   }
 
   const lineErrors = purchaseLineErrors(errors.lines);
+  const productLineErrors = purchaseLineErrors(errors.productLines);
   const expenseErrors = expenseLineErrors(errors.expenses);
 
   const refused = (invalid: unknown) =>
@@ -233,21 +244,56 @@ export function ShoppingTripPage() {
               control={form.control}
               name="lines"
               render={({ field }) => (
-                <PurchaseLineEditor
-                  lines={(field.value ?? []) as PurchaseEditorLine[]}
-                  onChange={field.onChange}
-                  errors={lineErrors}
-                  disabled={busy}
-                />
+                // The three editors number their lines from 1 each: the
+                // group names which card a "Quantité 1" belongs to.
+                <div role="group" aria-label="Matières premières">
+                  <PurchaseLineEditor
+                    lines={(field.value ?? []) as PurchaseEditorLine[]}
+                    onChange={field.onChange}
+                    kinds={["RAW_MATERIAL"]}
+                    errors={lineErrors}
+                    disabled={busy}
+                  />
+                </div>
               )}
             />
             <p className={styles.subtotal}>
               <span>Sous-total matières premières</span>
               <strong className="tabular-nums">
-                {formatMoney(purchaseTnd.toFixed(3))}
+                {formatMoney(rawMaterialsTnd.toFixed(3))}
               </strong>
             </p>
           </Card>
+          {canBuyProducts ? (
+            <Card>
+              <CardHeader
+                as="h2"
+                title="Produits de revente"
+                description="Achetés pour être revendus tels quels : entrent en stock et dans le compte du fournisseur."
+              />
+              <Controller
+                control={form.control}
+                name="productLines"
+                render={({ field }) => (
+                  <div role="group" aria-label="Produits de revente">
+                    <PurchaseLineEditor
+                      lines={(field.value ?? []) as PurchaseEditorLine[]}
+                      onChange={field.onChange}
+                      kinds={["PRODUCT"]}
+                      errors={productLineErrors}
+                      disabled={busy}
+                    />
+                  </div>
+                )}
+              />
+              <p className={styles.subtotal}>
+                <span>Sous-total produits de revente</span>
+                <strong className="tabular-nums">
+                  {formatMoney(resaleTnd.toFixed(3))}
+                </strong>
+              </p>
+            </Card>
+          ) : null}
           <Card>
             <CardHeader
               as="h2"
@@ -258,13 +304,15 @@ export function ShoppingTripPage() {
               control={form.control}
               name="expenses"
               render={({ field }) => (
-                <ExpenseLineEditor
-                  lines={(field.value ?? []) as ExpenseEditorLine[]}
-                  onChange={field.onChange}
-                  categories={categories.data ?? []}
-                  errors={expenseErrors}
-                  disabled={busy}
-                />
+                <div role="group" aria-label="Autres achats">
+                  <ExpenseLineEditor
+                    lines={(field.value ?? []) as ExpenseEditorLine[]}
+                    onChange={field.onChange}
+                    categories={categories.data ?? []}
+                    errors={expenseErrors}
+                    disabled={busy}
+                  />
+                </div>
               )}
             />
             <p className={styles.subtotal}>
@@ -283,9 +331,18 @@ export function ShoppingTripPage() {
               items={[
                 {
                   label: "Matières premières",
-                  value: formatMoney(purchaseTnd.toFixed(3)),
+                  value: formatMoney(rawMaterialsTnd.toFixed(3)),
                   numeric: true,
                 },
+                ...(canBuyProducts
+                  ? [
+                      {
+                        label: "Produits de revente",
+                        value: formatMoney(resaleTnd.toFixed(3)),
+                        numeric: true,
+                      },
+                    ]
+                  : []),
                 {
                   label: "Autres achats",
                   value: formatMoney(expensesTnd.toFixed(3)),
@@ -300,12 +357,12 @@ export function ShoppingTripPage() {
               </strong>
             </div>
           </Card>
-          {lines.length > 0 ? (
+          {hasGoods ? (
             <Card>
               <CardHeader
                 as="h2"
-                title="Paiement des matières premières"
-                description="Les autres achats sont réglés sur place."
+                title="Paiement des marchandises"
+                description="Matières premières et produits de revente, un seul achat. Les autres achats sont réglés sur place."
               />
               <PurchaseTotalsCard
                 totalTnd={purchaseTnd.toFixed(3)}
@@ -371,10 +428,12 @@ export function ShoppingTripPage() {
               values={toConfirm}
               // The schema's output keeps the fields it declares; the base
               // unit symbol lives on the editor line, read by key.
-              baseUnitSymbol={(key) =>
-                lines.find((line) => line.key === key)?.rawMaterial?.baseUnit
-                  .symbol ?? ""
-              }
+              baseUnitSymbol={(key) => {
+                const line = [...lines, ...productLines].find(
+                  (candidate) => candidate.key === key,
+                );
+                return line ? baseUnitSymbolOf(line) : "";
+              }}
               categoryName={(id) => {
                 const category = (categories.data ?? []).find(
                   (row) => row.id === id,
@@ -408,7 +467,10 @@ export function ShoppingTripPage() {
             }
           } catch (error) {
             if (error instanceof ApiError && error.isValidation) {
-              const fieldErrors = toTripFormFieldErrors(error.fieldErrors);
+              const fieldErrors = toTripFormFieldErrors(
+                error.fieldErrors,
+                toConfirm.lines.length,
+              );
               applyFieldErrors(form.setError, fieldErrors);
               setSummary(errorSummary(Object.keys(fieldErrors).length));
               setToConfirm(null);
@@ -433,14 +495,15 @@ function TripImpact({
   baseUnitSymbol: (lineKey: string) => string;
   categoryName: (id: string) => string;
 }) {
-  const total = purchaseTotal(values.lines);
+  const goods = [...values.lines, ...values.productLines];
+  const total = purchaseTotal(goods);
   const paid =
-    values.lines.length > 0
+    goods.length > 0
       ? paidFor(values.paymentTerms, total.toFixed(3), values.paidAmountTnd)
       : new Decimal(0);
   const remaining = total.minus(paid);
   const expenses = expensesTotal(values.expenses);
-  const stock = values.lines
+  const stock = goods
     .map((line) => {
       const base = safeDecimal(line.quantity).times(
         safeDecimal(line.factorToBase || "1"),
@@ -451,7 +514,7 @@ function TripImpact({
 
   return (
     <ul>
-      {values.lines.length > 0 ? (
+      {goods.length > 0 ? (
         <>
           <li>Stock : {stock}.</li>
           <li>
@@ -471,7 +534,7 @@ function TripImpact({
           ) : null}
         </>
       ) : (
-        <li>Aucune matière première : ni stock ni dette fournisseur.</li>
+        <li>Aucune marchandise : ni stock ni dette fournisseur.</li>
       )}
       {values.expenses.length > 0 ? (
         <li>
@@ -501,7 +564,10 @@ function TripImpact({
 }
 
 function bodyFrom(values: ShoppingTripFormOutput): ShoppingTripInput {
-  const total = purchaseTotal(values.lines);
+  // Raw materials first, then the resold products: the order the error
+  // mapping relies on to send a refusal back to its card.
+  const goods = [...values.lines, ...values.productLines];
+  const total = purchaseTotal(goods);
   const paid = paidFor(
     values.paymentTerms,
     total.toFixed(3),
@@ -514,15 +580,17 @@ function bodyFrom(values: ShoppingTripFormOutput): ShoppingTripInput {
     supplierReference: values.supplierReference || undefined,
     notes: values.notes || undefined,
     purchase:
-      values.lines.length > 0
+      goods.length > 0
         ? {
             paymentTerms: values.paymentTerms,
             paidAmountTnd: paid.toFixed(3),
             dueDate: paid.lessThan(total)
               ? values.dueDate || undefined
               : undefined,
-            lines: values.lines.map((line) => ({
-              rawMaterialId: line.item?.value ?? "",
+            lines: goods.map((line) => ({
+              ...(line.kind === "PRODUCT"
+                ? { productId: line.item?.value ?? "" }
+                : { rawMaterialId: line.item?.value ?? "" }),
               enteredUnitId: line.unitId ?? "",
               enteredQuantity: line.quantity,
               unitPriceTnd: line.unitPriceTnd,

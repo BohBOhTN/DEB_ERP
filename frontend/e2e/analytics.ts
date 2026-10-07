@@ -1,8 +1,10 @@
 import {
   makeAnalyticsCustomers,
+  makeAnalyticsDistributors,
   makeAnalyticsFrequency,
   makeAnalyticsOverview,
   makeAnalyticsProducts,
+  makeAnalyticsPurchases,
 } from "../src/test/factories/analytics";
 
 /// Issue 014: the analyses as the shell mock answers them, from the same
@@ -18,6 +20,10 @@ export function analyticsResponse(path: string): unknown {
       return { products: makeAnalyticsProducts() };
     case "/analytics/customers":
       return { customers: makeAnalyticsCustomers() };
+    case "/analytics/purchases":
+      return { purchases: makeAnalyticsPurchases() };
+    case "/analytics/distributors":
+      return { distributors: makeAnalyticsDistributors() };
     default:
       return null;
   }

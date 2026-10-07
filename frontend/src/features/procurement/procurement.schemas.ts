@@ -26,10 +26,13 @@ export type SupplierFormOutput = z.output<typeof supplierSchema>;
 /// unit, as the backend computes `normalizedQuantity × unitPriceTnd`.
 export const purchaseLineSchema = z.object({
   key: z.string(),
+  /// Issue 019: what the picked item is, a raw material or a resold
+  /// product; it decides which id the request carries.
+  kind: z.enum(["RAW_MATERIAL", "PRODUCT"]).default("RAW_MATERIAL"),
   item: z
     .object({ value: z.string(), label: z.string() })
     .nullable()
-    .refine((item) => item !== null, "Choisissez une matière première."),
+    .refine((item) => item !== null, "Choisissez un article."),
   quantity: decimalString(6, { positive: true }),
   unitId: z.string().nullable().optional(),
   unitPriceTnd: tnd({ positive: true }),
@@ -54,24 +57,62 @@ const purchaseHeaderFields = {
   dueDate: z.string().default(""),
 };
 
+type RuleLine = {
+  kind?: "RAW_MATERIAL" | "PRODUCT";
+  item: { value: string } | null;
+  quantity: string;
+  unitPriceTnd: string;
+  factorToBase?: string;
+};
+
 type PurchaseRuleValues = {
   purchaseDate: string;
   paymentTerms: "PAID" | "PARTIAL" | "UNPAID";
   paidAmountTnd: string;
   dueDate: string;
-  lines: Array<{
-    item: { value: string } | null;
-    quantity: string;
-    unitPriceTnd: string;
-    factorToBase?: string;
-  }>;
+  lines: RuleLine[];
+  /// Issue 020: the resold products of a shopping trip, edited in their own
+  /// card and paid with the raw materials as one purchase.
+  productLines?: RuleLine[];
 };
 
+/// One line per item and a positive total, on the lines of one card.
+function addLineIssues(
+  lines: RuleLine[],
+  path: "lines" | "productLines",
+  context: z.RefinementCtx,
+): void {
+  const firstLineOf = new Map<string, number>();
+  lines.forEach((line, index) => {
+    const item = line.item?.value;
+    if (item && firstLineOf.has(item)) {
+      context.addIssue({
+        code: "custom",
+        path: [path, index, "item"],
+        message:
+          line.kind === "PRODUCT"
+            ? "Ce produit est déjà sur une autre ligne."
+            : "Cette matière première est déjà sur une autre ligne.",
+      });
+    } else if (item) {
+      firstLineOf.set(item, index);
+    }
+
+    if (!purchaseLineTotal(line).greaterThan(0)) {
+      context.addIssue({
+        code: "custom",
+        path: [path, index, "unitPriceTnd"],
+        message: "Le total de la ligne doit être supérieur à zéro.",
+      });
+    }
+  });
+}
+
 /// Issue 016: the rules the server enforces, said on the field before any
-/// request: no date in the future, one line per material, a positive line
+/// request: no date in the future, one line per item, a positive line
 /// total, the paid amount and the due date the terms call for. The payment
-/// rules apply only when there are lines: a trip of expenses alone has no
-/// purchase to pay (issue 018).
+/// rules apply only when there is something to pay the supplier for: a
+/// trip of expenses alone has no purchase (issue 018).
 function addPurchaseIssues(
   values: PurchaseRuleValues,
   context: z.RefinementCtx,
@@ -84,33 +125,15 @@ function addPurchaseIssues(
     });
   }
 
-  const firstLineOf = new Map<string, number>();
-  values.lines.forEach((line, index) => {
-    const material = line.item?.value;
-    if (material && firstLineOf.has(material)) {
-      context.addIssue({
-        code: "custom",
-        path: ["lines", index, "item"],
-        message: "Cette matière première est déjà sur une autre ligne.",
-      });
-    } else if (material) {
-      firstLineOf.set(material, index);
-    }
+  addLineIssues(values.lines, "lines", context);
+  addLineIssues(values.productLines ?? [], "productLines", context);
 
-    if (!purchaseLineTotal(line).greaterThan(0)) {
-      context.addIssue({
-        code: "custom",
-        path: ["lines", index, "unitPriceTnd"],
-        message: "Le total de la ligne doit être supérieur à zéro.",
-      });
-    }
-  });
-
-  if (values.lines.length === 0) {
+  const goods = [...values.lines, ...(values.productLines ?? [])];
+  if (goods.length === 0) {
     return;
   }
 
-  const total = purchaseTotal(values.lines);
+  const total = purchaseTotal(goods);
   const paid =
     values.paymentTerms === "PAID"
       ? total
@@ -173,22 +196,28 @@ export const expenseLineSchema = z.object({
   amountTnd: z.string().default(""),
 });
 
-/// The shopping trip (issue 018, DEC-V2-009): the purchase rules on the
-/// raw-material lines, the expense rules on the other lines, and at least
-/// one line of either kind. The raw-material lines may be empty, unlike a
-/// purchase of their own.
+/// The shopping trip (issues 018 and 020, DEC-V2-009): the purchase rules
+/// on the raw-material lines and on the resold-product lines, the expense
+/// rules on the other lines, and at least one line anywhere. Any of the
+/// three cards may be empty.
 export const shoppingTripSchema = z
   .object({
     ...purchaseHeaderFields,
     lines: z.array(purchaseLineSchema).default([]),
+    productLines: z.array(purchaseLineSchema).default([]),
     expenses: z.array(expenseLineSchema).default([]),
   })
   .superRefine((values, context) => {
-    if (values.lines.length === 0 && values.expenses.length === 0) {
+    if (
+      values.lines.length === 0 &&
+      values.productLines.length === 0 &&
+      values.expenses.length === 0
+    ) {
       context.addIssue({
         code: "custom",
         path: ["lines"],
-        message: "Ajoutez au moins une matière première ou une dépense.",
+        message:
+          "Ajoutez au moins une matière première, un produit de revente ou une dépense.",
       });
     }
 

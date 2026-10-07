@@ -21,9 +21,11 @@ import { ProductFormDialog } from "../components/ProductFormDialog.js";
 import { productMargin } from "../components/productMargin.js";
 import {
   HistoryTab,
+  PurchasesTab,
   MovementsTab,
   StockTab,
 } from "../components/detailTabs.js";
+import { PriceHistoryTab } from "../components/PriceHistoryTab.js";
 import { StockMovementDialog } from "../../inventory/components/StockMovementDialog.js";
 import { useBalances } from "../../inventory/inventory.queries.js";
 import styles from "./CatalogPages.module.css";
@@ -181,6 +183,12 @@ export function ProductDetailPage() {
                 label: "Stockable",
                 value: product.isStockable ? "Oui" : "Non",
               },
+              {
+                label: "Origine",
+                value: product.isResale
+                  ? "Produit de revente (acheté chez un fournisseur)"
+                  : "Fabriqué ici",
+              },
               { label: "Code", value: product.code },
               { label: "Code-barres", value: product.barcode },
               { label: "Créé le", value: formatDate(product.createdAt) },
@@ -208,6 +216,33 @@ export function ProductDetailPage() {
               label: "Mouvements",
               content: <MovementsTab itemId={product.id} />,
             },
+            // Issue 019: where the stock of a resold product came from.
+            ...(product.isResale && permissions.has("purchases.view")
+              ? [
+                  {
+                    value: "purchases",
+                    label: "Achats",
+                    content: <PurchasesTab productId={product.id} />,
+                  },
+                ]
+              : []),
+            // Issue 023: the prices paid beside the sale prices it had.
+            ...(product.isResale
+              ? [
+                  {
+                    value: "prices",
+                    label: "Prix",
+                    content: (
+                      <PriceHistoryTab
+                        item={{
+                          productId: product.id,
+                          unitSymbol: product.baseUnit.symbol,
+                        }}
+                      />
+                    ),
+                  },
+                ]
+              : []),
             {
               value: "history",
               label: "Historique",

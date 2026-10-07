@@ -1,9 +1,11 @@
 import type {
   AnalyticsCustomers,
+  AnalyticsDistributors,
   AnalyticsFrequency,
   AnalyticsOverview,
   AnalyticsPeriod,
   AnalyticsProducts,
+  AnalyticsPurchases,
   FrequencyBlock,
   FrequencyCell,
 } from "../../features/analytics/analytics.api.js";
@@ -67,6 +69,20 @@ export function makeAnalyticsOverview(
         uncostedLinesCount: 35,
       },
     },
+    // Issue 022: 1 140 of raw materials and 360 of goods to resell; the
+    // charges are the 900 of expenses plus the raw materials.
+    purchases: {
+      rawMaterialsTnd: "1140.000",
+      previousRawMaterialsTnd: "1000.000",
+      resaleTnd: "360.000",
+      previousResaleTnd: "200.000",
+    },
+    charges: {
+      totalTnd: "2040.000",
+      previousTotalTnd: "2000.000",
+      expensesTnd: "900.000",
+      rawMaterialsTnd: "1140.000",
+    },
     trend: Array.from({ length: 30 }, (_, index) => ({
       bucket: day(index),
       revenueTnd: index === 11 ? "410.000" : "150.000",
@@ -99,6 +115,18 @@ export function makeQuietOverview(): AnalyticsOverview {
     },
     expenses: { totalTnd: "0.000", previousTotalTnd: "0.000", byCategory: [] },
     margin: null,
+    purchases: {
+      rawMaterialsTnd: "0.000",
+      previousRawMaterialsTnd: "0.000",
+      resaleTnd: "0.000",
+      previousResaleTnd: "0.000",
+    },
+    charges: {
+      totalTnd: "0.000",
+      previousTotalTnd: "0.000",
+      expensesTnd: "0.000",
+      rawMaterialsTnd: "0.000",
+    },
     trend: Array.from({ length: 30 }, (_, index) => ({
       bucket: day(index),
       revenueTnd: "0.000",
@@ -277,6 +305,176 @@ export function makeAnalyticsCustomers(
         },
       ],
     },
+    ...overrides,
+  };
+}
+
+/// Issue 021: a September of purchases. Flour bought twice and getting
+/// dearer, sugar once, bottles of water bought to be resold.
+export function makeAnalyticsPurchases(
+  overrides: Partial<AnalyticsPurchases> = {},
+): AnalyticsPurchases {
+  return {
+    period: analyticsPeriod,
+    generatedAt: "2026-09-30T18:00:00.000Z",
+    totals: {
+      totalTnd: "1500.000",
+      previousTotalTnd: "1200.000",
+      rawMaterialsTnd: "1140.000",
+      previousRawMaterialsTnd: "1000.000",
+      resaleTnd: "360.000",
+      previousResaleTnd: "200.000",
+      purchasesCount: 6,
+      previousPurchasesCount: 5,
+      remainingDueTnd: "420.000",
+    },
+    trend: Array.from({ length: 30 }, (_, index) => ({
+      bucket: day(index),
+      rawMaterialsTnd:
+        index === 2 ? "600.000" : index === 16 ? "540.000" : "0.000",
+      resaleTnd: index === 9 ? "360.000" : "0.000",
+    })),
+    suppliers: [
+      {
+        supplierId: "supplier-1",
+        name: "Minoterie du Sud",
+        purchasesCount: 4,
+        totalTnd: "1140.000",
+        rawMaterialsTnd: "1140.000",
+        resaleTnd: "0.000",
+      },
+      {
+        supplierId: "supplier-2",
+        name: "Grossiste Boissons",
+        purchasesCount: 2,
+        totalTnd: "360.000",
+        rawMaterialsTnd: "0.000",
+        resaleTnd: "360.000",
+      },
+    ],
+    rawMaterials: [
+      {
+        rawMaterialId: "raw-1",
+        name: "Farine T55",
+        unitName: "Kilogramme",
+        quantity: "800.000",
+        totalTnd: "1000.000",
+        purchasesCount: 3,
+        averagePriceTnd: "1.250",
+        firstPriceTnd: "1.200",
+        lastPriceTnd: "1.320",
+        priceChangePercent: 10,
+        lastPurchasedAt: "2026-09-17T00:00:00.000Z",
+      },
+      {
+        rawMaterialId: "raw-2",
+        name: "Sucre",
+        unitName: "Kilogramme",
+        quantity: "100.000",
+        totalTnd: "140.000",
+        purchasesCount: 1,
+        averagePriceTnd: "1.400",
+        firstPriceTnd: "1.400",
+        lastPriceTnd: "1.400",
+        priceChangePercent: 0,
+        lastPurchasedAt: "2026-09-03T00:00:00.000Z",
+      },
+    ],
+    resaleProducts: [
+      {
+        productId: "product-water",
+        name: "Eau 1,5 L",
+        unitName: "Pièce",
+        quantity: "432.000",
+        totalTnd: "360.000",
+        purchasesCount: 2,
+        averagePriceTnd: "0.833",
+        lastPriceTnd: "0.850",
+        lastPurchasedAt: "2026-09-10T00:00:00.000Z",
+        soldQuantity: "380.000",
+        soldRevenueTnd: "456.000",
+        salePriceTnd: "1.200",
+        unitMarginTnd: "0.350",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+/// Issue 021: the distributor channel over the same September: two
+/// distributors, direct sales and consignment, a sixth of it returned.
+export function makeAnalyticsDistributors(
+  overrides: Partial<AnalyticsDistributors> = {},
+): AnalyticsDistributors {
+  return {
+    period: analyticsPeriod,
+    generatedAt: "2026-09-30T18:00:00.000Z",
+    totals: {
+      revenueTnd: "900.000",
+      previousRevenueTnd: "750.000",
+      directTnd: "540.000",
+      consignmentTnd: "360.000",
+      documentsCount: 9,
+      previousDocumentsCount: 7,
+      activeCount: 2,
+      returnRatePercent: 17,
+      balanceTnd: "210.000",
+    },
+    trend: Array.from({ length: 30 }, (_, index) => ({
+      bucket: day(index),
+      directTnd: index % 7 === 1 ? "108.000" : "0.000",
+      consignmentTnd: index % 10 === 4 ? "120.000" : "0.000",
+    })),
+    distributors: [
+      {
+        distributorId: "distributor-1",
+        name: "Épicerie du Port",
+        revenueTnd: "600.000",
+        directTnd: "360.000",
+        consignmentTnd: "240.000",
+        documentsCount: 6,
+        soldQuantity: "200.000",
+        returnedQuantity: "40.000",
+        returnRatePercent: 17,
+        lastActivityAt: "2026-09-28T09:00:00.000Z",
+        balanceTnd: "150.000",
+      },
+      {
+        distributorId: "distributor-2",
+        name: "Café Central",
+        revenueTnd: "300.000",
+        directTnd: "180.000",
+        consignmentTnd: "120.000",
+        documentsCount: 3,
+        soldQuantity: "100.000",
+        returnedQuantity: "20.000",
+        returnRatePercent: 17,
+        lastActivityAt: "2026-09-21T09:00:00.000Z",
+        balanceTnd: "60.000",
+      },
+    ],
+    products: [
+      {
+        productId: "baguette",
+        name: "Baguette",
+        unitName: "Pièce",
+        quantity: "540.000",
+        revenueTnd: "540.000",
+        returnedQuantity: "0.000",
+        returnRatePercent: null,
+        marginTnd: "324.000",
+      },
+      {
+        productId: "croissant",
+        name: "Croissant",
+        unitName: "Pièce",
+        quantity: "300.000",
+        revenueTnd: "360.000",
+        returnedQuantity: "60.000",
+        returnRatePercent: 17,
+        marginTnd: null,
+      },
+    ],
     ...overrides,
   };
 }

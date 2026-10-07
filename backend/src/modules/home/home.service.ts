@@ -14,6 +14,7 @@ import {
 } from "@prisma/client";
 import { sumOrZero } from "../../shared/ledger.js";
 import { marginFigures } from "../../shared/marginFigures.js";
+import { purchaseTotalsByKind } from "../../shared/purchaseFigures.js";
 import {
   businessDateOf,
   endOfBusinessDay,
@@ -57,6 +58,7 @@ export class HomeService {
       custody,
       recent,
       margin,
+      purchasesOfDay,
     ] = await Promise.all([
       can("pos.access")
         ? this.salesBlock(dayStart, dayEnd, previousStart, previousEnd)
@@ -79,7 +81,32 @@ export class HomeService {
       can("margin.view")
         ? this.marginBlock(dayStart, dayEnd, previousStart, previousEnd)
         : null,
+      // Issue 022: the raw materials bought on the day and the day before,
+      // for the charges; both permissions, like the two screens it sums.
+      can("expenses.view") && can("purchases.view")
+        ? Promise.all([
+            purchaseTotalsByKind(this.prisma, dayStart, dayEnd),
+            purchaseTotalsByKind(this.prisma, previousStart, previousEnd),
+          ])
+        : null,
     ]);
+    // DEC-V2-012: the charges of a day are its posted expenses plus the
+    // raw materials of its posted purchases, each for its full amount
+    // whether paid or not. Products bought to be resold are stock, not a
+    // charge.
+    const charges =
+      expenses && purchasesOfDay
+        ? {
+            dayTnd: new Prisma.Decimal(expenses.dayTnd)
+              .plus(purchasesOfDay[0].rawMaterialsTnd)
+              .toFixed(3),
+            expensesTnd: expenses.dayTnd,
+            rawMaterialsTnd: purchasesOfDay[0].rawMaterialsTnd.toFixed(3),
+            previousDayTnd: new Prisma.Decimal(expenses.previousDayTnd)
+              .plus(purchasesOfDay[1].rawMaterialsTnd)
+              .toFixed(3),
+          }
+        : null;
 
     return {
       date: day,
@@ -91,6 +118,7 @@ export class HomeService {
       orders,
       stock,
       expenses,
+      charges,
       custody,
       recent,
       margin,

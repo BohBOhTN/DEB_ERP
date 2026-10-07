@@ -183,7 +183,8 @@ export function assertShoppingTripInput(
     throw new AppError({
       statusCode: 400,
       code: "SHOPPING_TRIP_EMPTY",
-      message: "Ajoutez au moins une matière première ou une dépense.",
+      message:
+        "Ajoutez au moins une matière première, un produit de revente ou une dépense.",
     });
   }
 

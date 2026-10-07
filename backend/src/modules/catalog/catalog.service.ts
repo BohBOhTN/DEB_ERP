@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { Prisma } from "@prisma/client";
+import { Prisma, PurchaseStatus } from "@prisma/client";
 import { AppError } from "../../shared/appError.js";
 import { orderByFor, type SortSpec } from "../../shared/listQuery.js";
 import { normalizeName } from "../../shared/text.js";
@@ -35,6 +35,8 @@ export interface ProductListParams extends Omit<ListParams, "sort"> {
   >;
   categoryId?: string;
   isStockable?: boolean;
+  /// Issue 019: the products bought to be resold.
+  isResale?: boolean;
 }
 
 const defaultUnits = [
@@ -721,6 +723,7 @@ export class CatalogService {
       ...(params.isStockable === undefined
         ? {}
         : { isStockable: params.isStockable }),
+      ...(params.isResale === undefined ? {} : { isResale: params.isResale }),
       ...(normalizedSearch
         ? {
             OR: [
@@ -794,6 +797,7 @@ export class CatalogService {
       salePriceTnd: string;
       approximateCostTnd?: string | null;
       isStockable: boolean;
+      isResale?: boolean;
       notes?: string;
     },
     actor: CatalogActor,
@@ -813,10 +817,19 @@ export class CatalogService {
         baseUnitId: params.baseUnitId,
         salePriceTnd: params.salePriceTnd,
         approximateCostTnd: params.approximateCostTnd ?? null,
-        isStockable: params.isStockable,
+        // DEC-V2-010: a product bought to be resold is always stock-tracked.
+        isStockable: params.isResale ? true : params.isStockable,
+        isResale: params.isResale ?? false,
         notes: emptyToNull(params.notes),
         createdByUserId: actor.actorUserId,
         updatedByUserId: actor.actorUserId,
+        // Issue 023: the first price the product ever had.
+        salePriceHistory: {
+          create: {
+            salePriceTnd: params.salePriceTnd,
+            actorUserId: actor.actorUserId,
+          },
+        },
       },
       include: {
         category: true,
@@ -847,11 +860,15 @@ export class CatalogService {
       salePriceTnd?: string;
       approximateCostTnd?: string | null;
       isStockable?: boolean;
+      isResale?: boolean;
       notes?: string;
     },
     actor: CatalogActor,
   ) {
     const existing = await this.findProductOrThrow(productId);
+    // DEC-V2-010: resale forces stock tracking, whether the flag arrives
+    // with this update or was already on the product.
+    const isResale = params.isResale ?? existing.isResale;
     const normalizedName =
       params.name !== undefined ? normalizeName(params.name) : undefined;
 
@@ -892,9 +909,12 @@ export class CatalogService {
         ...(params.approximateCostTnd !== undefined
           ? { approximateCostTnd: params.approximateCostTnd }
           : {}),
-        ...(params.isStockable !== undefined
-          ? { isStockable: params.isStockable }
-          : {}),
+        ...(isResale
+          ? { isStockable: true }
+          : params.isStockable !== undefined
+            ? { isStockable: params.isStockable }
+            : {}),
+        ...(params.isResale !== undefined ? { isResale: params.isResale } : {}),
         ...(params.notes !== undefined
           ? { notes: emptyToNull(params.notes) }
           : {}),
@@ -907,6 +927,20 @@ export class CatalogService {
 
     assertVersionUpdated(result.count);
     const product = await this.findProductOrThrow(productId);
+
+    // Issue 023: a changed sale price is one more point of its history.
+    if (
+      params.salePriceTnd !== undefined &&
+      !new Prisma.Decimal(params.salePriceTnd).equals(existing.salePriceTnd)
+    ) {
+      await this.prisma.productSalePriceHistory.create({
+        data: {
+          productId: product.id,
+          salePriceTnd: params.salePriceTnd,
+          actorUserId: actor.actorUserId,
+        },
+      });
+    }
 
     await this.audit({
       actor,
@@ -978,6 +1012,77 @@ export class CatalogService {
     }
 
     return product;
+  }
+
+  /// Issue 023, DEC-V2-013: the prices of a product over time, as they
+  /// were paid (every posted purchase line, per base unit, oldest first)
+  /// and as they were set (every sale price it had). The purchase side
+  /// belongs to the purchases permission: `null` without it.
+  public async getProductPriceHistory(
+    productId: string,
+    options: { withPurchases: boolean },
+  ) {
+    const product = await this.findProductOrThrow(productId);
+    const [salePrices, purchasePrices] = await Promise.all([
+      this.prisma.productSalePriceHistory.findMany({
+        where: { productId },
+        orderBy: [{ effectiveAt: "asc" }, { createdAt: "asc" }],
+        select: { id: true, salePriceTnd: true, effectiveAt: true },
+      }),
+      options.withPurchases ? this.purchasePricesOf({ productId }) : null,
+    ]);
+
+    return {
+      productId: product.id,
+      currentSalePriceTnd: product.salePriceTnd,
+      salePrices,
+      purchasePrices,
+    };
+  }
+
+  public async getRawMaterialPriceHistory(rawMaterialId: string) {
+    await this.getRawMaterial(rawMaterialId);
+
+    return {
+      rawMaterialId,
+      purchasePrices: await this.purchasePricesOf({ rawMaterialId }),
+    };
+  }
+
+  /// One point per posted purchase line of the item, oldest first: the
+  /// price per base unit, the quantity, the supplier and the purchase.
+  private async purchasePricesOf(
+    item: { productId: string } | { rawMaterialId: string },
+  ) {
+    const lines = await this.prisma.purchaseLine.findMany({
+      where: { ...item, purchase: { status: PurchaseStatus.POSTED } },
+      orderBy: [{ purchase: { purchaseDate: "asc" } }, { createdAt: "asc" }],
+      select: {
+        id: true,
+        unitPriceTnd: true,
+        normalizedQuantity: true,
+        baseUnitNameSnapshot: true,
+        purchase: {
+          select: {
+            id: true,
+            reference: true,
+            purchaseDate: true,
+            supplier: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    return lines.map((line) => ({
+      lineId: line.id,
+      purchaseId: line.purchase.id,
+      reference: line.purchase.reference,
+      purchasedAt: line.purchase.purchaseDate,
+      supplier: line.purchase.supplier,
+      unitPriceTnd: line.unitPriceTnd,
+      quantity: line.normalizedQuantity,
+      unitName: line.baseUnitNameSnapshot,
+    }));
   }
 
   public async getRawMaterial(rawMaterialId: string) {

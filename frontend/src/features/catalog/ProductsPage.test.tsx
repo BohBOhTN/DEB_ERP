@@ -7,8 +7,10 @@ import { AppProviders, createQueryClient } from "../../app/providers";
 import { createTestRouter } from "../../app/router";
 import {
   makeCatalogStore,
+  makePurchasePrices,
   catalogHandlers,
 } from "../../test/msw/handlers/catalog";
+import { makeResaleProduct } from "../../test/factories/catalog";
 import { makeSimulation } from "../../test/factories/simulation";
 import { makeUser } from "../../test/factories/user";
 import {
@@ -19,7 +21,7 @@ import {
   makeSimulationStore,
   simulationHandlers,
 } from "../../test/msw/handlers/simulation";
-import { apiError, apiV1 } from "../../test/msw/envelope";
+import { apiError, apiV1, ok } from "../../test/msw/envelope";
 import { authHandlers } from "../../test/msw/handlers/auth";
 import { server } from "../../test/msw/server";
 import { mockViewport } from "../../test/viewport";
@@ -54,6 +56,7 @@ describe("Produits", () => {
     await Promise.all([
       import("./pages/ProductsPage"),
       import("./pages/ProductDetailPage"),
+      import("./pages/RawMaterialDetailPage"),
     ]);
   });
 
@@ -110,6 +113,228 @@ describe("Produits", () => {
         "Baguette tradition",
       ),
     ).toBeInTheDocument();
+  });
+
+  // Issue 019: a product bought to be resold is always stock-tracked; the
+  // list says which products are resold and filters on it.
+  it("flags a product for resale, locks its stock switch on, and filters the list on it", async () => {
+    const store = makeCatalogStore();
+    server.use(...catalogHandlers(store));
+    renderAt("/produits");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Nouveau produit" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Nouveau produit" });
+    await userEvent.type(within(dialog).getByLabelText(/^Nom/), "Eau 1,5 L");
+    await userEvent.click(
+      within(dialog).getByRole("combobox", { name: /Catégorie/ }),
+    );
+    await userEvent.click(await screen.findByRole("option", { name: "Pains" }));
+    await userEvent.click(
+      within(dialog).getByRole("combobox", { name: /Unité de base/ }),
+    );
+    await userEvent.click(await screen.findByRole("option", { name: /Pièce/ }));
+    await userEvent.type(
+      within(dialog).getByRole("textbox", { name: /Prix de vente/ }),
+      "1,2",
+    );
+    const stockable = within(dialog).getByRole("switch", { name: /Stockable/ });
+    await userEvent.click(stockable);
+    expect(stockable).not.toBeChecked();
+    await userEvent.click(
+      within(dialog).getByRole("switch", { name: /Produit de revente/ }),
+    );
+    expect(stockable).toBeChecked();
+    expect(stockable).toBeDisabled();
+    expect(
+      within(dialog).getByText("Toujours suivi pour un produit de revente."),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Enregistrer" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(store.products.at(-1)).toMatchObject({
+      name: "Eau 1,5 L",
+      isResale: true,
+      isStockable: true,
+    });
+    const table = screen.getByRole("table", { name: "Produits" });
+    const row = (await within(table).findByText("Eau 1,5 L")).closest(
+      "tr",
+    ) as HTMLElement;
+    expect(within(row).getByText("Revente")).toBeInTheDocument();
+    expect(within(table).getAllByText("Revente")).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Origine" }));
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Produits de revente" }),
+    );
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("table", { name: "Produits" })).queryByText(
+          "Pain complet",
+        ),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      within(screen.getByRole("table", { name: "Produits" })).getByText(
+        "Eau 1,5 L",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  // Issue 023, DEC-V2-013: a purchase never rewrites the cost; the prices
+  // paid and the sale prices are read on a Prix tab.
+  it("reads the prices paid and the sale prices of a resold product on its Prix tab", async () => {
+    server.use(
+      ...catalogHandlers(
+        makeCatalogStore({
+          products: [makeResaleProduct()],
+          purchasePrices: makePurchasePrices(),
+          salePrices: {
+            "product-water": [
+              {
+                id: "s1",
+                salePriceTnd: "1.000",
+                effectiveAt: "2026-08-20T08:00:00.000Z",
+              },
+              {
+                id: "s2",
+                salePriceTnd: "1.200",
+                effectiveAt: "2026-09-10T08:00:00.000Z",
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    renderAt("/produits/product-water", [
+      ...manager.effectivePermissions,
+      "purchases.view",
+      "margin.view",
+    ]);
+
+    await screen.findByRole("heading", { level: 1, name: "Eau 1,5 L" });
+    await userEvent.click(screen.getByRole("tab", { name: "Prix" }));
+
+    expect(await screen.findByText("Prix de vente actuel")).toBeInTheDocument();
+    expect(screen.getByText("1,200")).toBeInTheDocument();
+    // The gap to the last price paid, the owner's figure, with margin.view.
+    expect(
+      screen.getByText(/^0,350.TND au-dessus du dernier prix d'achat$/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Dernier prix d'achat")).toBeInTheDocument();
+    expect(screen.getByText("0,850")).toBeInTheDocument();
+    expect(
+      screen.getByText("le 01/10/2026 chez Minoterie du Sud"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("+6 %")).toBeInTheDocument();
+    expect(
+      screen.getByText("du premier au dernier des 3 achats"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Prix d'achat par achat" }),
+    ).toBeInTheDocument();
+    // The chart carries both series: the price paid and the price set.
+    expect(screen.getAllByText("Prix de vente").length).toBeGreaterThan(1);
+
+    const purchases = screen.getByRole("table", { name: "Prix d'achat" });
+    const rows = within(purchases).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(3);
+    // Most recent first, each linked to its purchase.
+    expect(rows[0]).toHaveTextContent("01/10/2026");
+    expect(
+      within(rows[0] as HTMLElement).getByRole("link", { name: "AC-000015" }),
+    ).toHaveAttribute("href", "/achats/purchase-w3");
+    const sales = screen.getByRole("table", { name: "Prix de vente" });
+    const saleRows = within(sales).getAllByRole("row").slice(1);
+    expect(saleRows).toHaveLength(2);
+    expect(saleRows[0]).toHaveTextContent("10/09/2026");
+    expect(
+      within(saleRows[0] as HTMLElement).getByText("En vigueur"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a resold product's sale prices alone when the purchases are withheld", async () => {
+    server.use(
+      ...catalogHandlers(
+        makeCatalogStore({
+          products: [makeResaleProduct()],
+          purchasePrices: makePurchasePrices(),
+        }),
+      ),
+    );
+    // Without purchases.view the server answers no purchase at all.
+    server.use(
+      http.get(`${apiV1}/catalog/products/:productId/price-history`, () =>
+        ok({
+          priceHistory: {
+            productId: "product-water",
+            currentSalePriceTnd: "1.200",
+            salePrices: [
+              {
+                id: "s1",
+                salePriceTnd: "1.200",
+                effectiveAt: "2026-09-01T08:00:00.000Z",
+              },
+            ],
+            purchasePrices: null,
+          },
+        }),
+      ),
+    );
+    renderAt("/produits/product-water");
+
+    await screen.findByRole("heading", { level: 1, name: "Eau 1,5 L" });
+    await userEvent.click(screen.getByRole("tab", { name: "Prix" }));
+
+    expect(await screen.findByText("Prix de vente actuel")).toBeInTheDocument();
+    expect(screen.getByText("1 prix depuis la création")).toBeInTheDocument();
+    expect(screen.queryByText("Dernier prix d'achat")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("table", { name: "Prix d'achat" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reads how the price paid for a raw material moved", async () => {
+    server.use(
+      ...catalogHandlers(
+        makeCatalogStore({ purchasePrices: makePurchasePrices() }),
+      ),
+    );
+    renderAt("/matieres-premieres/raw-1", [
+      ...manager.effectivePermissions,
+      "raw_materials.view",
+      "purchases.view",
+    ]);
+
+    await screen.findByRole("heading", { level: 1, name: "Farine T55" });
+    await userEvent.click(screen.getByRole("tab", { name: "Prix" }));
+
+    expect(await screen.findByText("Dernier prix d'achat")).toBeInTheDocument();
+    expect(screen.getByText("1,320")).toBeInTheDocument();
+    expect(screen.getByText("+10 %")).toBeInTheDocument();
+    expect(screen.queryByText("Prix de vente actuel")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("table", { name: "Prix d'achat" })).getAllByRole(
+        "row",
+      ),
+    ).toHaveLength(3);
+  });
+
+  it("offers no Prix tab on a raw material without purchases.view", async () => {
+    server.use(...catalogHandlers(makeCatalogStore()));
+    renderAt("/matieres-premieres/raw-1", [
+      ...manager.effectivePermissions,
+      "raw_materials.view",
+    ]);
+
+    await screen.findByRole("heading", { level: 1, name: "Farine T55" });
+    expect(screen.queryByRole("tab", { name: "Prix" })).not.toBeInTheDocument();
   });
 
   it("shows the reload prompt on a stale version (AS-V2-15)", async () => {

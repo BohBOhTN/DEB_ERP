@@ -32,6 +32,7 @@ import { movementTypeLabels } from "../../inventory/movementLabels.js";
 import {
   listAuditEvents,
   listPurchasesOf,
+  type PurchasedItem,
   type PurchaseRow,
 } from "../related.api.js";
 import styles from "../pages/CatalogPages.module.css";
@@ -199,11 +200,19 @@ export function HistoryTab({
   );
 }
 
-export function PurchasesTab({ rawMaterialId }: { rawMaterialId: string }) {
+/// The purchases of a raw material or of a resold product (issue 019).
+export function PurchasesTab(item: PurchasedItem) {
   const [page, setPage] = useState(1);
+  const itemId = "productId" in item ? item.productId : item.rawMaterialId;
   const query = useQuery({
-    queryKey: catalogKeys.relatedPurchases(rawMaterialId, page),
-    queryFn: () => listPurchasesOf(rawMaterialId, { page, pageSize: 10 }),
+    queryKey: catalogKeys.relatedPurchases(itemId, page),
+    queryFn: () =>
+      listPurchasesOf(
+        "productId" in item
+          ? { productId: item.productId }
+          : { rawMaterialId: item.rawMaterialId },
+        { page, pageSize: 10 },
+      ),
     placeholderData: (previous) => previous,
     ...tier("list"),
   });

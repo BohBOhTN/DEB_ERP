@@ -1,4 +1,10 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http } from "msw";
 import { RouterProvider } from "react-router-dom";
@@ -8,9 +14,11 @@ import { createTestRouter } from "../../app/router";
 import { toBusinessDate } from "../../i18n/format";
 import { shiftBusinessDate } from "../../lib/dates/periodRange";
 import {
+  makeAnalyticsDistributors,
   makeAnalyticsFrequency,
   makeAnalyticsOverview,
   makeAnalyticsProducts,
+  makeAnalyticsPurchases,
   makeFrequencyBlock,
   makeQuietOverview,
 } from "../../test/factories/analytics";
@@ -84,15 +92,31 @@ describe("Analyses: vue d'ensemble", () => {
     // 4 800 against 4 000 the period before.
     expect(screen.getByText("4 800,000")).toBeInTheDocument();
     expect(screen.getByText("+20 % vs période précédente")).toBeInTheDocument();
-    expect(screen.getByText("Ventes en caisse")).toBeInTheDocument();
-    expect(screen.getByText("360")).toBeInTheDocument();
-    expect(screen.getByText("hors 2 ventes annulées")).toBeInTheDocument();
-    expect(screen.getByText("Panier moyen")).toBeInTheDocument();
-    expect(screen.getByText("Reste à encaisser")).toBeInTheDocument();
-    expect(screen.getByText("240,000")).toBeInTheDocument();
-    // Spending went down: good news, in the direction of the arrow only.
-    expect(screen.getByText("dépenses validées")).toBeInTheDocument();
-    expect(screen.getByText("−10 % vs période précédente")).toBeInTheDocument();
+    // Issue 022: five figures. The number of sales sits under the revenue.
+    expect(
+      screen.getByText("360 ventes en caisse · 30 jours"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Ventes en caisse")).not.toBeInTheDocument();
+    expect(screen.queryByText("Panier moyen")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reste à encaisser")).not.toBeInTheDocument();
+    // 900 of expenses and 1 140 of raw materials against 2 000 before.
+    expect(screen.getByText("Total charges")).toBeInTheDocument();
+    expect(screen.getByText("2 040,000")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /^Dépenses 900,000.TND · matières premières 1 140,000.TND$/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("+2 % vs période précédente")).toBeInTheDocument();
+    expect(screen.getByText("Achats matières premières")).toBeInTheDocument();
+    expect(screen.getByText("1 140,000")).toBeInTheDocument();
+    expect(screen.getByText("+14 % vs période précédente")).toBeInTheDocument();
+    // Goods bought to be resold are stock, shown apart from the charges.
+    expect(screen.getByText("Achats produits de revente")).toBeInTheDocument();
+    expect(screen.getByText("360,000")).toBeInTheDocument();
+    expect(
+      screen.getByText("stock à revendre, hors charges"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Marge approximative")).toBeInTheDocument();
     expect(
       screen.getByText("ingrédients seulement · sur 75 % des ventes en caisse"),
@@ -131,12 +155,19 @@ describe("Analyses: vue d'ensemble", () => {
     renderAnalytics({
       permissions: ["analytics.view"],
       fixtures: {
-        overview: makeAnalyticsOverview({ expenses: null, margin: null }),
+        overview: makeAnalyticsOverview({
+          expenses: null,
+          margin: null,
+          purchases: null,
+          charges: null,
+        }),
       },
     });
 
     expect(await screen.findByText("Chiffre d'affaires")).toBeInTheDocument();
-    expect(screen.queryByText("dépenses validées")).toBeNull();
+    expect(screen.queryByText("Total charges")).toBeNull();
+    expect(screen.queryByText("Achats matières premières")).toBeNull();
+    expect(screen.queryByText("Achats produits de revente")).toBeNull();
     expect(screen.queryByText("Marge approximative")).toBeNull();
     expect(screen.queryByText("Dépenses par catégorie")).toBeNull();
     // Without customers.view the customer analysis is not offered.
@@ -149,8 +180,9 @@ describe("Analyses: vue d'ensemble", () => {
     expect(
       await screen.findByText("Aucune activité sur cette période"),
     ).toBeInTheDocument();
-    // Revenue, sales and expenses: nothing now, nothing before.
-    expect(screen.getAllByText("Comme la période précédente")).toHaveLength(3);
+    // Revenue, charges and both kinds of purchase: nothing now, nothing
+    // before.
+    expect(screen.getAllByText("Comme la période précédente")).toHaveLength(4);
     expect(
       screen.queryByRole("img", { name: "Chiffre d'affaires par jour" }),
     ).toBeNull();
@@ -470,6 +502,218 @@ describe("Analyses: clients", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("et 2 autres clients.")).toBeInTheDocument();
+  });
+
+  // Issue 021: the purchases, by what a line buys.
+  it("splits the purchases between raw materials and resold products, with suppliers and prices", async () => {
+    const seen: string[] = [];
+    renderAnalytics({
+      path: "/analyses?tab=purchases",
+      permissions: [...owner, "purchases.view"],
+      fixtures: { onRequest: (endpoint) => seen.push(endpoint) },
+    });
+
+    const total = (await screen.findByText("Total des achats")).closest(
+      "article, div",
+    ) as HTMLElement;
+    expect(seen).toContain("purchases");
+    expect(screen.getByText("1 500,000")).toBeInTheDocument();
+    expect(total.parentElement).toHaveTextContent("6 achats validés");
+    expect(screen.getByText("+25 % vs période précédente")).toBeInTheDocument();
+    expect(screen.getByText("76 % des achats")).toBeInTheDocument();
+    expect(screen.getByText("24 % des achats")).toBeInTheDocument();
+    expect(screen.getByText("420,000")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Achats par jour" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("figure", { name: "Achats par fournisseur" }),
+    ).toHaveTextContent("Minoterie du Sud");
+
+    const materials = screen.getByRole("table", {
+      name: "Matières premières achetées",
+    });
+    const flour = within(materials)
+      .getByText("Farine T55")
+      .closest("tr") as HTMLElement;
+    expect(flour).toHaveTextContent("1 000,000 TND");
+    expect(flour).toHaveTextContent("1,320 TND");
+    // Flour got dearer between the first and the last purchase.
+    expect(within(flour).getByText("+10 %")).toBeInTheDocument();
+    expect(
+      within(
+        within(materials).getByText("Sucre").closest("tr") as HTMLElement,
+      ).getByText("Stable"),
+    ).toBeInTheDocument();
+
+    const resold = screen.getByRole("table", {
+      name: "Produits de revente achetés",
+    });
+    const water = within(resold)
+      .getByText("Eau 1,5 L")
+      .closest("tr") as HTMLElement;
+    expect(
+      within(water).getByRole("link", { name: "Eau 1,5 L" }),
+    ).toHaveAttribute("href", "/produits/product-water");
+    // Bought beside sold, and the unit margin with margin.view.
+    expect(water).toHaveTextContent("432");
+    expect(water).toHaveTextContent("380");
+    expect(water).toHaveTextContent("456,000 TND");
+    expect(water).toHaveTextContent("0,350 TND");
+  });
+
+  it("hides the unit margin without a figure and says so when nothing was bought", async () => {
+    const base = makeAnalyticsPurchases();
+    renderAnalytics({
+      path: "/analyses?tab=purchases",
+      permissions: [...owner, "purchases.view"],
+      fixtures: {
+        purchases: makeAnalyticsPurchases({
+          resaleProducts: base.resaleProducts.map((row) => ({
+            ...row,
+            unitMarginTnd: null,
+          })),
+        }),
+      },
+    });
+
+    const resold = await screen.findByRole("table", {
+      name: "Produits de revente achetés",
+    });
+    expect(
+      within(resold).queryByRole("columnheader", { name: "Marge unitaire" }),
+    ).not.toBeInTheDocument();
+    cleanup();
+
+    renderAnalytics({
+      path: "/analyses?tab=purchases",
+      permissions: [...owner, "purchases.view"],
+      fixtures: {
+        purchases: makeAnalyticsPurchases({
+          totals: {
+            ...base.totals,
+            totalTnd: "0.000",
+            rawMaterialsTnd: "0.000",
+            resaleTnd: "0.000",
+            purchasesCount: 0,
+            remainingDueTnd: "0.000",
+          },
+          suppliers: [],
+          rawMaterials: [],
+          resaleProducts: [],
+        }),
+      },
+    });
+    expect(
+      await screen.findByText("Aucun achat sur cette période"),
+    ).toBeInTheDocument();
+  });
+
+  // Issue 021: the distributor channel.
+  it("reads the distributor channel: revenue, split, returns, balances and products", async () => {
+    renderAnalytics({
+      path: "/analyses?tab=distributors",
+      permissions: [...owner, "distributors.view"],
+    });
+
+    expect(
+      await screen.findByText("Chiffre d'affaires distributeurs"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("900,000")).toBeInTheDocument();
+    expect(screen.getByText("+20 % vs période précédente")).toBeInTheDocument();
+    expect(
+      screen.getByText("9 documents · 2 distributeurs actifs"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("60 % du canal")).toBeInTheDocument();
+    expect(
+      screen.getByText("40 % du canal · 17 % de retours"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Reste à encaisser")).toBeInTheDocument();
+    expect(screen.getByText("210,000")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", {
+        name: "Chiffre d'affaires distributeurs par jour",
+      }),
+    ).toBeInTheDocument();
+
+    const table = screen.getByRole("table", {
+      name: "Détail par distributeur",
+    });
+    const port = within(table)
+      .getByText("Épicerie du Port")
+      .closest("tr") as HTMLElement;
+    expect(
+      within(port).getByRole("link", { name: "Épicerie du Port" }),
+    ).toHaveAttribute("href", "/distributeurs/distributor-1");
+    expect(port).toHaveTextContent("600,000 TND");
+    expect(port).toHaveTextContent("17 %");
+    expect(port).toHaveTextContent("150,000 TND");
+
+    const products = screen.getByRole("table", {
+      name: "Produits vendus par les distributeurs",
+    });
+    const baguette = within(products)
+      .getByText("Baguette")
+      .closest("tr") as HTMLElement;
+    // No consignment settled for it: no rate rather than a zero.
+    expect(baguette).toHaveTextContent("—");
+    expect(baguette).toHaveTextContent("324,000 TND");
+  });
+
+  it("shows the return rate in place of the balances the caller may not see", async () => {
+    const base = makeAnalyticsDistributors();
+    renderAnalytics({
+      path: "/analyses?tab=distributors",
+      permissions: [...owner, "distributors.view"],
+      fixtures: {
+        distributors: makeAnalyticsDistributors({
+          totals: { ...base.totals, balanceTnd: null },
+          distributors: base.distributors.map((row) => ({
+            ...row,
+            balanceTnd: null,
+          })),
+        }),
+      },
+    });
+
+    // The fourth tile reads the return rate when the balances are withheld.
+    expect(
+      await screen.findByText("sur le dépôt-vente réglé"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Reste à encaisser")).not.toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("table", { name: "Détail par distributeur" }),
+      ).queryByRole("columnheader", { name: "Solde actuel" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers the purchases and distributors tabs only with their module's permission", async () => {
+    const seen: string[] = [];
+    renderAnalytics({
+      path: "/analyses?tab=purchases",
+      fixtures: { onRequest: (endpoint) => seen.push(endpoint) },
+    });
+
+    expect(await screen.findByText("Chiffre d'affaires")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Achats" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Distributeurs" }),
+    ).not.toBeInTheDocument();
+    expect(seen).not.toContain("purchases");
+    cleanup();
+
+    renderAnalytics({
+      permissions: [...owner, "purchases.view", "distributors.view"],
+    });
+    expect(
+      await screen.findByRole("tab", { name: "Achats" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: "Distributeurs" }),
+    ).toBeInTheDocument();
   });
 
   it("falls back to the overview when the tab is not offered", async () => {

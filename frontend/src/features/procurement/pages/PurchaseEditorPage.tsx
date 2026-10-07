@@ -17,8 +17,12 @@ import { applyFieldErrors } from "../../../lib/forms/applyFieldErrors.js";
 import { describeError } from "../../../i18n/errors.js";
 import { toBusinessDate } from "../../../i18n/format.js";
 import { useSessionPermissions } from "../../../app/sessionContext.js";
-import { getRawMaterial } from "../../catalog/catalog.api.js";
-import type { Purchase, PurchaseInput } from "../procurement.api.js";
+import { getProduct, getRawMaterial } from "../../catalog/catalog.api.js";
+import type {
+  Purchase,
+  PurchaseInput,
+  PurchaseLine,
+} from "../procurement.api.js";
 import { usePurchase, useSavePurchase } from "../procurement.queries.js";
 import {
   purchaseSchema,
@@ -33,6 +37,8 @@ import {
 } from "../purchaseFormErrors.js";
 import { PostPurchaseDialog } from "../components/PostPurchaseDialog.js";
 import {
+  allPurchaseKinds,
+  lineFromProduct,
   lineFromRawMaterial,
   newPurchaseLine,
   PurchaseLineEditor,
@@ -44,6 +50,8 @@ import {
 } from "../components/PurchaseTotalsCard.js";
 import { SupplierCombobox } from "../components/SupplierCombobox.js";
 import styles from "./ProcurementPages.module.css";
+
+const rawMaterialsOnly = ["RAW_MATERIAL"] as const;
 
 function emptyDefaults(): PurchaseFormInput {
   return {
@@ -103,11 +111,22 @@ export function PurchaseEditorPage() {
     let cancelled = false;
     (async () => {
       try {
-        const ids = [
-          ...new Set(purchase.lines.map((line) => line.rawMaterialId)),
+        const idsOf = (pick: (line: PurchaseLine) => string | null) => [
+          ...new Set(purchase.lines.flatMap((line) => pick(line) ?? [])),
         ];
-        const records = await Promise.all(ids.map((id) => getRawMaterial(id)));
+        // Issue 019: a draft can hold both kinds; each record is read once.
+        const [records, productRecords] = await Promise.all([
+          Promise.all(
+            idsOf((line) => line.rawMaterialId).map((id) => getRawMaterial(id)),
+          ),
+          Promise.all(
+            idsOf((line) => line.productId).map((id) => getProduct(id)),
+          ),
+        ]);
         const byId = new Map(records.map((record) => [record.id, record]));
+        const productById = new Map(
+          productRecords.map((record) => [record.id, record]),
+        );
         if (cancelled) return;
         form.reset({
           supplier: {
@@ -122,7 +141,18 @@ export function PurchaseEditorPage() {
             purchase.paymentTerms === "PARTIAL" ? purchase.paidAmountTnd : "",
           dueDate: purchase.dueDate ? toBusinessDate(purchase.dueDate) : "",
           lines: purchase.lines.map((line) => {
-            const rawMaterial = byId.get(line.rawMaterialId);
+            const product = line.productId
+              ? productById.get(line.productId)
+              : undefined;
+            if (product) {
+              return lineFromProduct(product, {
+                quantity: trimZeros(line.enteredQuantity),
+                unitPriceTnd: line.unitPriceTnd,
+              });
+            }
+            const rawMaterial = line.rawMaterialId
+              ? byId.get(line.rawMaterialId)
+              : undefined;
             return rawMaterial
               ? lineFromRawMaterial(rawMaterial, {
                   unitId: line.enteredUnitId,
@@ -131,8 +161,11 @@ export function PurchaseEditorPage() {
                 })
               : {
                   ...newPurchaseLine(),
+                  kind: line.productId
+                    ? ("PRODUCT" as const)
+                    : ("RAW_MATERIAL" as const),
                   item: {
-                    value: line.rawMaterialId,
+                    value: line.productId ?? line.rawMaterialId ?? "",
                     label: line.rawMaterialNameSnapshot,
                   },
                   quantity: trimZeros(line.enteredQuantity),
@@ -189,7 +222,9 @@ export function PurchaseEditorPage() {
       ? values.dueDate || undefined
       : undefined,
     lines: values.lines.map((line) => ({
-      rawMaterialId: line.item?.value ?? "",
+      ...(line.kind === "PRODUCT"
+        ? { productId: line.item?.value ?? "" }
+        : { rawMaterialId: line.item?.value ?? "" }),
       enteredUnitId: line.unitId ?? "",
       enteredQuantity: line.quantity,
       unitPriceTnd: line.unitPriceTnd,
@@ -256,6 +291,9 @@ export function PurchaseEditorPage() {
 
   const editing = Boolean(purchaseId);
   const busy = form.formState.isSubmitting;
+  // Issue 019: the products flagged for resale are read from the product
+  // list, which has its own permission.
+  const canBuyProducts = permissions.has("products.view");
 
   return (
     <>
@@ -341,7 +379,11 @@ export function PurchaseEditorPage() {
             <CardHeader
               as="h2"
               title="Lignes"
-              description="Le prix unitaire s'entend par unité de base de la matière."
+              description={
+                canBuyProducts
+                  ? "Matières premières et produits de revente. Le prix unitaire s'entend par unité de base."
+                  : "Le prix unitaire s'entend par unité de base de la matière."
+              }
             />
             <Controller
               control={form.control}
@@ -350,6 +392,7 @@ export function PurchaseEditorPage() {
                 <PurchaseLineEditor
                   lines={(field.value ?? []) as PurchaseEditorLine[]}
                   onChange={field.onChange}
+                  kinds={canBuyProducts ? allPurchaseKinds : rawMaterialsOnly}
                   errors={lineErrors}
                   disabled={busy}
                 />

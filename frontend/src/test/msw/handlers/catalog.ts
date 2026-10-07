@@ -2,6 +2,7 @@ import { http } from "msw";
 import type {
   Category,
   Product,
+  PurchasePricePoint,
   RawMaterial,
   Unit,
 } from "../../../features/catalog/catalog.api.js";
@@ -24,6 +25,81 @@ export interface CatalogStore {
   rawMaterials: RawMaterial[];
   categories: Category[];
   units: Unit[];
+  /// Issue 023: the prices paid per item id, oldest first, and the sale
+  /// prices a product had; an item absent here has none.
+  purchasePrices?: Record<string, PurchasePricePoint[]>;
+  salePrices?: Record<
+    string,
+    Array<{ id: string; salePriceTnd: string; effectiveAt: string }>
+  >;
+}
+
+/// Issue 023: three purchases of water and two of flour, each dearer than
+/// the last, for the price tabs.
+export function makePurchasePrices(): Record<string, PurchasePricePoint[]> {
+  const point = (
+    lineId: string,
+    purchasedAt: string,
+    unitPriceTnd: string,
+    quantity: string,
+    unitName: string,
+    reference: string,
+  ): PurchasePricePoint => ({
+    lineId,
+    purchaseId: `purchase-${lineId}`,
+    reference,
+    purchasedAt,
+    supplier: { id: "supplier-1", name: "Minoterie du Sud" },
+    unitPriceTnd,
+    quantity,
+    unitName,
+  });
+  return {
+    "product-water": [
+      point(
+        "w1",
+        "2026-09-01T00:00:00.000Z",
+        "0.800",
+        "24.000000",
+        "Pièce",
+        "AC-000010",
+      ),
+      point(
+        "w2",
+        "2026-09-15T00:00:00.000Z",
+        "0.820",
+        "48.000000",
+        "Pièce",
+        "AC-000012",
+      ),
+      point(
+        "w3",
+        "2026-10-01T00:00:00.000Z",
+        "0.850",
+        "24.000000",
+        "Pièce",
+        "AC-000015",
+      ),
+    ],
+    "raw-1": [
+      point(
+        "f1",
+        "2026-09-03T00:00:00.000Z",
+        "1.200",
+        "100.000000",
+        "Kilogramme",
+        "AC-000011",
+      ),
+      point(
+        "f2",
+        "2026-09-28T00:00:00.000Z",
+        "1.320",
+        "200.000000",
+        "Kilogramme",
+        "AC-000014",
+      ),
+    ],
+  };
 }
 
 export function makeCatalogStore(
@@ -56,12 +132,16 @@ function page<T extends { name: string; isActive: boolean }>(
   const url = new URL(request.url);
   const q = url.searchParams.get("q")?.toLowerCase() ?? "";
   const isActive = url.searchParams.get("isActive");
+  const isResale = url.searchParams.get("isResale");
   const pageNumber = Number(url.searchParams.get("page") ?? "1");
   const pageSize = Number(url.searchParams.get("pageSize") ?? "25");
   const matching = rows.filter(
     (row) =>
       row.name.toLowerCase().includes(q) &&
-      (isActive === null || String(row.isActive) === isActive),
+      (isActive === null || String(row.isActive) === isActive) &&
+      // Issue 019: the purchase picker asks for the resold products only.
+      (isResale === null ||
+        String((row as { isResale?: boolean }).isResale ?? false) === isResale),
   );
   const start = (pageNumber - 1) * pageSize;
 
@@ -78,6 +158,51 @@ export function catalogHandlers(store: CatalogStore = makeCatalogStore()) {
   return [
     http.get(`${apiV1}/catalog/products`, ({ request }) =>
       page(store.products, request),
+    ),
+    // Issue 023: the prices of an item over time.
+    http.get(
+      `${apiV1}/catalog/products/:productId/price-history`,
+      ({ params }) => {
+        const product = store.products.find(
+          (item) => item.id === params.productId,
+        );
+        if (!product)
+          return apiError(404, "PRODUCT_NOT_FOUND", "Produit introuvable.");
+        return ok({
+          priceHistory: {
+            productId: product.id,
+            currentSalePriceTnd: product.salePriceTnd,
+            salePrices: store.salePrices?.[product.id] ?? [
+              {
+                id: `sale-${product.id}`,
+                salePriceTnd: product.salePriceTnd,
+                effectiveAt: product.createdAt,
+              },
+            ],
+            purchasePrices: store.purchasePrices?.[product.id] ?? [],
+          },
+        });
+      },
+    ),
+    http.get(
+      `${apiV1}/catalog/raw-materials/:id/price-history`,
+      ({ params }) => {
+        const rawMaterial = store.rawMaterials.find(
+          (item) => item.id === params.id,
+        );
+        if (!rawMaterial)
+          return apiError(
+            404,
+            "RAW_MATERIAL_NOT_FOUND",
+            "Matière première introuvable.",
+          );
+        return ok({
+          priceHistory: {
+            rawMaterialId: rawMaterial.id,
+            purchasePrices: store.purchasePrices?.[rawMaterial.id] ?? [],
+          },
+        });
+      },
     ),
     http.get(`${apiV1}/catalog/products/:productId`, ({ params }) => {
       const product = store.products.find(
@@ -117,6 +242,8 @@ export function catalogHandlers(store: CatalogStore = makeCatalogStore()) {
         id: `product-${sequence}`,
         category,
         baseUnit,
+        // Issue 019: a resold product is stock-tracked whatever was sent.
+        isStockable: body.isResale ? true : (body.isStockable ?? true),
         version: 1,
       });
       store.products.push(product);

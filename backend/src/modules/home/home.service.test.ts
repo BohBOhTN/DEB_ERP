@@ -66,6 +66,7 @@ describe("HomeService summary scoping", () => {
         "orders.view",
         "inventory.view",
         "expenses.view",
+        "purchases.view",
         "distribution.custody.view",
         "audit.view",
         "margin.view",
@@ -73,6 +74,12 @@ describe("HomeService summary scoping", () => {
     });
 
     expect(summary.date).toBe("2026-09-22");
+    expect(summary.charges).toEqual({
+      dayTnd: "0.000",
+      expensesTnd: "0.000",
+      rawMaterialsTnd: "0.000",
+      previousDayTnd: "0.000",
+    });
     expect(summary.margin?.today).toEqual({
       revenueTnd: "0.000",
       costedRevenueTnd: "0.000",
@@ -114,6 +121,7 @@ describe("HomeService summary scoping", () => {
     expect(summary.receivables).toBeNull();
     expect(summary.stock).toBeNull();
     expect(summary.expenses).toBeNull();
+    expect(summary.charges).toBeNull();
     expect(summary.custody).toBeNull();
     expect(summary.recent).toBeNull();
     expect(summary.margin).toBeNull();
@@ -229,6 +237,74 @@ describe("HomeService summary scoping", () => {
         },
       }),
     );
+  });
+
+  // Issue 022, DEC-V2-012: the charges of a day are its posted expenses
+  // plus the raw materials of its posted purchases; products bought to be
+  // resold are stock and stay out.
+  it("adds the day's raw-material purchases to its expenses as the charges", async () => {
+    const expense = makeModel();
+    const figures = () => {
+      expense.aggregate
+        .mockResolvedValueOnce({
+          _sum: { amountTnd: money("85") },
+          _count: { _all: 3 },
+        })
+        .mockResolvedValueOnce({
+          _sum: { amountTnd: money("40") },
+          _count: { _all: 1 },
+        });
+      const prisma = makePrisma({ expense });
+      const windows: Date[] = [];
+      (prisma as unknown as { $queryRaw: unknown }).$queryRaw = vi.fn(
+        (strings: TemplateStringsArray, ...values: unknown[]) => {
+          if (!strings.join("?").includes('"purchase_lines"')) {
+            return Promise.resolve([]);
+          }
+          windows.push(values[0] as Date);
+          return Promise.resolve(
+            (values[0] as Date).toISOString() === "2026-09-30T23:00:00.000Z"
+              ? [
+                  { resale: false, total: "120.000" },
+                  { resale: true, total: "60.000" },
+                ]
+              : [{ resale: false, total: "30.000" }],
+          );
+        },
+      );
+      return { prisma, windows };
+    };
+
+    const { prisma, windows } = figures();
+    const summary = await new HomeService(prisma).getSummary({
+      date: "2026-10-01",
+      permissions: new Set(["expenses.view", "purchases.view"]),
+    });
+
+    expect(summary.charges).toEqual({
+      dayTnd: "205.000",
+      expensesTnd: "85.000",
+      rawMaterialsTnd: "120.000",
+      previousDayTnd: "70.000",
+    });
+    // The business day in Tunis, and the day before it.
+    expect(windows.map((start) => start.toISOString()).sort()).toEqual([
+      "2026-09-29T23:00:00.000Z",
+      "2026-09-30T23:00:00.000Z",
+    ]);
+
+    // Either permission missing: no figure rather than half of one.
+    for (const permissions of [["expenses.view"], ["purchases.view"]]) {
+      const partial = figures();
+      const without = await new HomeService(partial.prisma).getSummary({
+        date: "2026-10-01",
+        permissions: new Set(permissions),
+      });
+      expect(without.charges).toBeNull();
+      expect(partial.windows).toEqual([]);
+      expense.aggregate.mockReset();
+      expense.aggregate.mockResolvedValue({ _sum: {}, _count: { _all: 0 } });
+    }
   });
 
   // Issue #42: "Encaissé en espèces" is the drawer's cash of the day (V1

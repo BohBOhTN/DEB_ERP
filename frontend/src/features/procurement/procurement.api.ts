@@ -26,9 +26,13 @@ export interface SupplierDetail extends Supplier {
   balanceTnd: string;
 }
 
+/// Issue 019: a line buys a raw material or a product flagged for resale;
+/// exactly one of the two ids is set. `rawMaterialNameSnapshot` is the
+/// name of the item, whichever it is.
 export interface PurchaseLine {
   id: string;
-  rawMaterialId: string;
+  rawMaterialId: string | null;
+  productId: string | null;
   enteredUnitId: string;
   baseUnitId: string;
   enteredQuantity: string;
@@ -225,6 +229,7 @@ export interface PurchaseListQuery {
   paymentTerms?: PurchasePaymentTerms;
   dueState?: "OVERDUE" | "UPCOMING";
   rawMaterialId?: string;
+  productId?: string;
   from?: string;
   to?: string;
 }
@@ -246,7 +251,8 @@ export async function getPurchase(purchaseId: string): Promise<Purchase> {
 }
 
 export interface PurchaseLineInput {
-  rawMaterialId: string;
+  rawMaterialId?: string;
+  productId?: string;
   enteredUnitId: string;
   enteredQuantity: string;
   unitPriceTnd: string;

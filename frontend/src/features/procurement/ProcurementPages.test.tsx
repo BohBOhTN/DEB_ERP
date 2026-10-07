@@ -11,10 +11,15 @@ import { RouterProvider } from "react-router-dom";
 import { beforeAll, describe, expect, it } from "vitest";
 import { AppProviders, createQueryClient } from "../../app/providers";
 import { createTestRouter } from "../../app/router";
+import { makeProduct, makeResaleProduct } from "../../test/factories/catalog";
 import { makePurchase, makeSupplier } from "../../test/factories/procurement";
 import { makeUser } from "../../test/factories/user";
 import { apiError, apiV1 } from "../../test/msw/envelope";
 import { authHandlers } from "../../test/msw/handlers/auth";
+import {
+  catalogHandlers,
+  makeCatalogStore,
+} from "../../test/msw/handlers/catalog";
 import {
   makeProcurementStore,
   procurementHandlers,
@@ -39,9 +44,9 @@ const buyer = makeUser({
   ],
 });
 
-function renderAt(path: string, width = 1280) {
+function renderAt(path: string, width = 1280, user = buyer) {
   mockViewport(width);
-  server.use(...authHandlers(buyer));
+  server.use(...authHandlers(user));
   const router = createTestRouter([path]);
   render(
     <AppProviders client={createQueryClient({ retry: false })}>
@@ -429,6 +434,196 @@ describe("Procurement", () => {
 
   // Issue 016: the form refuses what the server would refuse, on the field
   // concerned, with a summary the user cannot miss.
+  // Issue 019, DEC-V2-010: a purchase line buys a raw material or a product
+  // flagged for resale; the picker offers both and says which is which.
+  describe("resold products on a purchase (issue 019)", () => {
+    const buyerOfGoods = makeUser({
+      effectivePermissions: [...buyer.effectivePermissions, "products.view"],
+    });
+
+    it("buys a resold product and a raw material on one purchase and posts it", async () => {
+      const store = makeProcurementStore();
+      server.use(
+        ...catalogHandlers(
+          makeCatalogStore({
+            products: [
+              makeProduct({ id: "product-1", name: "Pain complet" }),
+              makeResaleProduct(),
+            ],
+          }),
+        ),
+        ...procurementHandlers(store),
+      );
+      renderAt("/achats/nouveau", 1280, buyerOfGoods);
+
+      await screen.findByRole("heading", { level: 1, name: "Nouvel achat" });
+      await userEvent.click(
+        screen.getByRole("combobox", { name: "Fournisseur" }),
+      );
+      await userEvent.type(
+        screen.getByPlaceholderText("Nom du fournisseur"),
+        "minoterie",
+      );
+      await userEvent.click(await screen.findByText(/Solde dû 150,000/));
+
+      await userEvent.click(
+        screen.getByRole("combobox", { name: "Article 1" }),
+      );
+      await userEvent.type(
+        screen.getByPlaceholderText("Rechercher article"),
+        "eau",
+      );
+      // The option says what it is; a product made here is not offered.
+      expect(
+        await screen.findByText("Produit de revente · Pièce · Boissons"),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Pain complet")).not.toBeInTheDocument();
+      await userEvent.click(screen.getByText("Eau 1,5 L"));
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Quantité 1" }),
+        "24",
+      );
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Prix unitaire 1" }),
+        "0,85",
+      );
+      expect(
+        screen.getByRole("textbox", { name: "Total ligne 1" }),
+      ).toHaveValue("20,400");
+
+      await userEvent.click(
+        screen.getByRole("button", { name: "Ajouter une ligne" }),
+      );
+      await userEvent.click(
+        screen.getByRole("combobox", { name: "Article 2" }),
+      );
+      await userEvent.type(
+        screen.getByPlaceholderText("Rechercher article"),
+        "farine",
+      );
+      expect(
+        await screen.findByText(/^Matière première · Kilogramme/),
+      ).toBeInTheDocument();
+      await userEvent.click(screen.getByText("Farine T55"));
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Quantité 2" }),
+        "10",
+      );
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Prix unitaire 2" }),
+        "1,2",
+      );
+
+      await userEvent.click(screen.getByRole("radio", { name: "Payé" }));
+      await userEvent.click(
+        screen.getByRole("button", { name: "Valider l'achat" }),
+      );
+      const confirm = await screen.findByRole("alertdialog", {
+        name: /Valider l'achat/,
+      });
+      expect(confirm).toHaveTextContent("Eau 1,5 L");
+      expect(confirm).toHaveTextContent("Farine T55");
+      await userEvent.click(
+        within(confirm).getByRole("button", { name: "Valider" }),
+      );
+
+      expect(await screen.findByText("Achat validé")).toBeInTheDocument();
+      const posted = store.purchases[0];
+      expect(posted).toMatchObject({ status: "POSTED", totalTnd: "32.400" });
+      expect(posted?.lines).toEqual([
+        expect.objectContaining({
+          productId: "product-water",
+          rawMaterialId: null,
+          // A resold product is bought in its one unit.
+          enteredUnitId: "unit-piece",
+          normalizedQuantity: "24.000000",
+          lineTotalTnd: "20.400",
+        }),
+        expect.objectContaining({
+          productId: null,
+          rawMaterialId: "raw-1",
+          lineTotalTnd: "12.000",
+        }),
+      ]);
+
+      // The purchase page says which line is a resold product.
+      const lines = await screen.findByRole("table", {
+        name: "Lignes de l'achat",
+      });
+      const waterRow = within(lines)
+        .getByText("Eau 1,5 L")
+        .closest("tr") as HTMLElement;
+      expect(within(waterRow).getByText("Revente")).toBeInTheDocument();
+      expect(within(lines).getAllByText("Revente")).toHaveLength(1);
+    });
+
+    it("keeps a picker of raw materials for a buyer who cannot list the products", async () => {
+      server.use(...procurementHandlers(makeProcurementStore()));
+      const requests = countRequests();
+      renderAt("/achats/nouveau");
+
+      await screen.findByRole("heading", { level: 1, name: "Nouvel achat" });
+      await userEvent.click(
+        screen.getByRole("combobox", { name: "Matière première 1" }),
+      );
+      expect(await screen.findByText("Farine T55")).toBeInTheDocument();
+      expect(requests.of("/catalog/products")).toBe(0);
+    });
+
+    it("puts a refusal of the server about a product on its line", async () => {
+      server.use(
+        ...catalogHandlers(
+          makeCatalogStore({ products: [makeResaleProduct()] }),
+        ),
+        ...procurementHandlers(makeProcurementStore()),
+      );
+      server.use(
+        http.post(`${apiV1}/procurement/purchases`, () =>
+          apiError(
+            400,
+            "VALIDATION_ERROR",
+            "Les données saisies sont invalides.",
+            { "lines.0.productId": "Ce produit n'est plus à la revente." },
+          ),
+        ),
+      );
+      renderAt("/achats/nouveau", 1280, buyerOfGoods);
+
+      await screen.findByRole("heading", { level: 1, name: "Nouvel achat" });
+      await userEvent.click(
+        screen.getByRole("combobox", { name: "Fournisseur" }),
+      );
+      await userEvent.type(
+        screen.getByPlaceholderText("Nom du fournisseur"),
+        "minoterie",
+      );
+      await userEvent.click(await screen.findByText(/Solde dû 150,000/));
+      await userEvent.click(
+        screen.getByRole("combobox", { name: "Article 1" }),
+      );
+      await userEvent.click(await screen.findByText("Eau 1,5 L"));
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Quantité 1" }),
+        "6",
+      );
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Prix unitaire 1" }),
+        "0,85",
+      );
+      await userEvent.click(screen.getByRole("radio", { name: "Payé" }));
+      await userEvent.click(
+        screen.getByRole("button", { name: "Enregistrer le brouillon" }),
+      );
+
+      expect(
+        await screen.findByText("Ce produit n'est plus à la revente."),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Corrigez le champ signalé.",
+      );
+    });
+  });
+
   describe("purchase form validation (issue 016)", () => {
     async function pickFlour(line: number) {
       await userEvent.click(
@@ -456,9 +651,7 @@ describe("Procurement", () => {
       expect(
         screen.getByText("Choisissez un fournisseur."),
       ).toBeInTheDocument();
-      expect(
-        screen.getByText("Choisissez une matière première."),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Choisissez un article.")).toBeInTheDocument();
       expect(screen.getAllByText("Ce champ est obligatoire.")).toHaveLength(2);
       expect(store.purchases).toHaveLength(before);
     });

@@ -48,6 +48,13 @@ export function makeHomeSummary(
       ],
     },
     expenses: { dayTnd: "85.000", dayCount: 3, previousDayTnd: "40.000" },
+    // Issue 022: 85 of expenses and 120 of flour; 40 and 30 the day before.
+    charges: {
+      dayTnd: "205.000",
+      expensesTnd: "85.000",
+      rawMaterialsTnd: "120.000",
+      previousDayTnd: "70.000",
+    },
     margin: {
       today: {
         revenueTnd: "1250.000",
@@ -104,6 +111,12 @@ export function makeFreshHomeSummary(): HomeSummary {
     orders: { dueTodayCount: 0, overdueCount: 0, readyCount: 0 },
     stock: { negativeCount: 0, items: [] },
     expenses: { dayTnd: "0.000", dayCount: 0, previousDayTnd: "0.000" },
+    charges: {
+      dayTnd: "0.000",
+      expensesTnd: "0.000",
+      rawMaterialsTnd: "0.000",
+      previousDayTnd: "0.000",
+    },
     margin: null,
     custody: { heldLinesCount: 0 },
     recent: [],
