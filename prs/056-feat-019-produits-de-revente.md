@@ -34,9 +34,9 @@ four issue briefs.
   `productId`. The shopping trip inherits it through the shared helpers;
   its page keeps raw materials only until issue 020.
 - **The cost follows the purchase.** Posting sets `approximateCostTnd` of
-  each resold product on the purchase to the unit price just paid, with
-  an audit row; a product made here keeps its typed cost; a cancellation
-  does not rewind it.
+  each resold product on the purchase to the unit price just paid.
+  **Withdrawn by issue 023 (pull request 060), which the owner asked for
+  before this shipped: a purchase never changes the cost.**
 - **Product form and pages.** A switch `Produit de revente` that locks
   `Stockable` on and says the cost follows the last purchase; a `Revente`
   badge and an `Origine` filter in the list; the origin and an `Achats`

@@ -28,6 +28,7 @@ Workflow: branch `fix/<topic>` or `feat/<topic>` from `dev`, name the issue numb
 | [020](020-course-fournisseur-produits-de-revente.md) | Nouvelle course: a section for the resold products                                                | High     | 019, 018       |
 | [021](021-analyses-achats-et-distributeurs.md)       | Analyses: the purchases by kind and the distributor channel                                       | High     | 019, 014       |
 | [022](022-kpi-total-charges-et-vue-d-ensemble.md)    | KPIs: `Total charges` on Accueil, the five figures of `Vue d'ensemble`                            | High     | 019, 021       |
+| [023](023-historique-des-prix.md)                    | Prix: purchase and sale prices of an item over time; no automatic cost                            | Highest  | 019            |
 
 Suggested order: 007 → 003 → 001 → 005 → 004 → 006 → 002 → 008. After the client demo of 2026-09-26: 012 → 013 → 011. Requested on 2026-10-04: 014 (the first feature that lifts a deferred scope, see `DEC-V2-006`). Requested on 2026-10-06: 019 → 020 → 021 → 022, in that order, each on a branch cut from the one before (resold products, see `DEC-V2-010`). Issues 003, 005 (PR 1) and 002 are independent and can be picked up any time; 008 was added after the first seven were fixed.
 
