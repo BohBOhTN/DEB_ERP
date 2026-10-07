@@ -4,6 +4,51 @@ All notable project changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Issue 022, Accueil: the tile `Total charges` replaces `Encaissé en
+espèces`. It is the posted expenses of the day plus the raw materials
+  bought that day, with each part under it and the comparison with the
+  day before; it needs `expenses.view` and `purchases.view`. The cash of
+  the day stays on the session card and the session pages.
+- Issue 022, Analyses: `Vue d'ensemble` shows five figures against the
+  previous period: `Chiffre d'affaires` with the number of till sales
+  under it, `Total charges`, `Marge approximative`, `Achats matières
+premières` and `Achats produits de revente`. The tiles for the sales
+  count, the average basket, the expenses and what is still due are gone;
+  purchases of goods to resell are stock and stay out of the charges.
+
+### Added
+
+- Issue 019, Produits: a product can be flagged `Produit de revente`,
+  bought from a supplier to be resold as it is. Such a product is always
+  stock-tracked (the stock switch locks on), carries a `Revente` badge in
+  the list, can be filtered on, and shows its purchases on its page.
+- Issue 019, Achats: a purchase line buys a raw material or a product
+  flagged for resale. The picker of `Nouvel achat` finds both and says
+  which is which; a resold product is bought in its own unit. Posting
+  receives its stock and sets its cost to the price just paid, so its
+  margin follows what the supplier charged; cancelling takes the stock
+  back. The purchase page marks the resold lines. The API refuses a
+  product not flagged for resale (`ACTIVE_RESALE_PRODUCT_REQUIRED`).
+- Issue 020, Achats: `Nouvelle course` gains a card `Produits de revente`
+  between the raw materials and the other purchases. The raw materials
+  and the resold products of a trip are one purchase, paid on the same
+  terms (`Paiement des marchandises`); the totals show each part; the
+  confirmation lists the stock received for both. Any of the three cards
+  may be empty.
+- Issue 021, Analyses: a tab `Achats` (with `purchases.view`): the
+  purchases of the period against the one before, split between raw
+  materials and resold products, what is still owed on them, a trend by
+  kind, the suppliers, the raw materials with their average and last
+  price and how the price moved, the resold products with what was sold
+  of them over the same period.
+- Issue 021, Analyses: a tab `Distributeurs` (with `distributors.view`):
+  the revenue of the channel against the period before, direct sales
+  against consignment, the return rate, each distributor with its balance
+  (`distribution.balances.view`), the products sold through distributors
+  with their returns and approximate margin.
+
 ## [2.3.0] - 2026-10-06
 
 What the owner asked for after 2.2.0: the order queue and the purchase

@@ -6,7 +6,16 @@ import {
 } from "@prisma/client";
 import { sumOrZero } from "../../shared/ledger.js";
 import { marginFigures } from "../../shared/marginFigures.js";
-import { daysOf, weekdayOf, type AnalyticsPeriod } from "./period.js";
+import { purchaseTotalsByKind } from "../../shared/purchaseFigures.js";
+import { bucketFormat } from "./analytics.sql.js";
+import { distributorsAnalysis } from "./distributors.analysis.js";
+import {
+  daysOf,
+  describePeriod,
+  weekdayOf,
+  type AnalyticsPeriod,
+} from "./period.js";
+import { purchasesAnalysis } from "./purchases.analysis.js";
 
 /// DEC-V2-006: analyses over the history the application already records.
 /// Read-only, posted documents only, every figure aggregated by the
@@ -41,21 +50,16 @@ interface FrequencyRow {
   total: string | null;
 }
 
-/// `to_char` patterns per granularity; constants, never request input.
-const bucketFormat = {
-  day: Prisma.sql`'YYYY-MM-DD'`,
-  month: Prisma.sql`'YYYY-MM'`,
-} as const;
-
 export class AnalyticsService {
   public constructor(private readonly prisma: PrismaClient) {}
 
   /// Revenue by channel, till sales and average basket against the window
-  /// just before, expenses, approximate margin and the trend per bucket.
+  /// just before, expenses, approximate margin, purchases by kind, the
+  /// charges (issue 022) and the trend per bucket.
   public async getOverview(params: AnalyticsParams) {
     const { period } = params;
     const can = (key: string) => params.permissions.has(key);
-    const [current, previous, cancelledCount, expenses, margin] =
+    const [current, previous, cancelledCount, expenses, margin, bought] =
       await Promise.all([
         this.revenueBuckets(period.start, period.end, period.granularity),
         this.revenueBuckets(period.previous.start, period.previous.end, "day"),
@@ -70,6 +74,18 @@ export class AnalyticsService {
           ? Promise.all([
               marginFigures(this.prisma, period.start, period.end),
               marginFigures(
+                this.prisma,
+                period.previous.start,
+                period.previous.end,
+              ),
+            ]).then(([now, before]) => ({ current: now, previous: before }))
+          : null,
+        // Issue 022: what was bought, by kind, for the two purchase tiles
+        // and for the charges.
+        can("purchases.view")
+          ? Promise.all([
+              purchaseTotalsByKind(this.prisma, period.start, period.end),
+              purchaseTotalsByKind(
                 this.prisma,
                 period.previous.start,
                 period.previous.end,
@@ -132,6 +148,29 @@ export class AnalyticsService {
           }
         : null,
       margin,
+      purchases: bought
+        ? {
+            rawMaterialsTnd: bought.current.rawMaterialsTnd.toFixed(3),
+            previousRawMaterialsTnd: bought.previous.rawMaterialsTnd.toFixed(3),
+            resaleTnd: bought.current.resaleTnd.toFixed(3),
+            previousResaleTnd: bought.previous.resaleTnd.toFixed(3),
+          }
+        : null,
+      // DEC-V2-012: posted expenses plus the raw materials bought; the
+      // products bought to be resold are stock, shown on their own.
+      charges:
+        bought && expenses
+          ? {
+              totalTnd: bought.current.rawMaterialsTnd
+                .plus(expenses.totalTnd)
+                .toFixed(3),
+              previousTotalTnd: bought.previous.rawMaterialsTnd
+                .plus(expenses.previousTotalTnd)
+                .toFixed(3),
+              expensesTnd: expenses.totalTnd,
+              rawMaterialsTnd: bought.current.rawMaterialsTnd.toFixed(3),
+            }
+          : null,
       trend,
       bestBucket: best
         ? { bucket: best.bucket, revenueTnd: best.revenueTnd }
@@ -477,6 +516,17 @@ export class AnalyticsService {
     };
   }
 
+  /// Issue 021: what was bought, in raw materials and in products to
+  /// resell, from whom and at what price.
+  public getPurchases(params: AnalyticsParams) {
+    return purchasesAnalysis(this.prisma, params);
+  }
+
+  /// Issue 021: the distributor channel, who sells, what, what comes back.
+  public getDistributors(params: AnalyticsParams) {
+    return distributorsAnalysis(this.prisma, params);
+  }
+
   /// Revenue per bucket and per channel: till sales split by whether an
   /// order produced them, plus direct distributor sales and settlements.
   private async revenueBuckets(
@@ -657,17 +707,6 @@ function averageBasket(bucket: RevenueBucket): string | null {
         .plus(bucket.orders)
         .dividedBy(bucket.salesCount)
         .toFixed(3);
-}
-
-function describePeriod(period: AnalyticsPeriod) {
-  return {
-    from: period.from,
-    to: period.to,
-    days: period.days,
-    granularity: period.granularity,
-    previousFrom: period.previous.from,
-    previousTo: period.previous.to,
-  };
 }
 
 /// Shapes the weekday-by-hour rows: the non-empty cells, the seven weekdays

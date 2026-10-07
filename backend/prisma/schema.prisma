@@ -188,6 +188,10 @@ model Product {
   imageKey             String?                     @map("image_key")
   imageUpdatedAt       DateTime?                   @map("image_updated_at")
   isStockable          Boolean                     @default(true) @map("is_stockable")
+  /// Issue 019, DEC-V2-010: bought from a supplier to be resold as it is.
+  /// Such a product can sit on a purchase line, is always stock-tracked,
+  /// and its cost follows its last posted purchase price.
+  isResale             Boolean                     @default(false) @map("is_resale")
   isActive             Boolean                     @default(true) @map("is_active")
   notes                String?
   version              Int                         @default(1)
@@ -198,6 +202,7 @@ model Product {
   category             ProductCategory             @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   baseUnit             Unit                        @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
   inventoryMovements   InventoryMovement[]
+  purchaseLines        PurchaseLine[]
   saleLines            SaleLine[]
   customerOrderLines   CustomerOrderLine[]
   distributorSaleLines DistributorSaleLine[]
@@ -407,28 +412,34 @@ model Purchase {
   @@map("purchases")
 }
 
+/// Issue 019: a line buys a raw material or a product flagged for resale,
+/// exactly one of the two (`purchase_lines_one_item_check`). The name of
+/// the item, whichever it is, is kept in `raw_material_name_snapshot`.
 model PurchaseLine {
-  id                      String      @id @default(cuid())
-  purchaseId              String      @map("purchase_id")
-  rawMaterialId           String      @map("raw_material_id")
-  enteredUnitId           String      @map("entered_unit_id")
-  baseUnitId              String      @map("base_unit_id")
-  enteredQuantity         Decimal     @map("entered_quantity") @db.Decimal(18, 6)
-  conversionFactorToBase  Decimal     @map("conversion_factor_to_base") @db.Decimal(18, 6)
-  normalizedQuantity      Decimal     @map("normalized_quantity") @db.Decimal(18, 6)
-  unitPriceTnd            Decimal     @map("unit_price_tnd") @db.Decimal(14, 3)
-  lineTotalTnd            Decimal     @map("line_total_tnd") @db.Decimal(14, 3)
-  rawMaterialNameSnapshot String      @map("raw_material_name_snapshot")
-  enteredUnitNameSnapshot String      @map("entered_unit_name_snapshot")
-  baseUnitNameSnapshot    String      @map("base_unit_name_snapshot")
-  createdAt               DateTime    @default(now()) @map("created_at")
-  purchase                Purchase    @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  rawMaterial             RawMaterial @relation(fields: [rawMaterialId], references: [id], onDelete: Restrict)
-  enteredUnit             Unit        @relation("PurchaseLineEnteredUnit", fields: [enteredUnitId], references: [id], onDelete: Restrict)
-  baseUnit                Unit        @relation("PurchaseLineBaseUnit", fields: [baseUnitId], references: [id], onDelete: Restrict)
+  id                      String       @id @default(cuid())
+  purchaseId              String       @map("purchase_id")
+  rawMaterialId           String?      @map("raw_material_id")
+  productId               String?      @map("product_id")
+  enteredUnitId           String       @map("entered_unit_id")
+  baseUnitId              String       @map("base_unit_id")
+  enteredQuantity         Decimal      @map("entered_quantity") @db.Decimal(18, 6)
+  conversionFactorToBase  Decimal      @map("conversion_factor_to_base") @db.Decimal(18, 6)
+  normalizedQuantity      Decimal      @map("normalized_quantity") @db.Decimal(18, 6)
+  unitPriceTnd            Decimal      @map("unit_price_tnd") @db.Decimal(14, 3)
+  lineTotalTnd            Decimal      @map("line_total_tnd") @db.Decimal(14, 3)
+  rawMaterialNameSnapshot String       @map("raw_material_name_snapshot")
+  enteredUnitNameSnapshot String       @map("entered_unit_name_snapshot")
+  baseUnitNameSnapshot    String       @map("base_unit_name_snapshot")
+  createdAt               DateTime     @default(now()) @map("created_at")
+  purchase                Purchase     @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  rawMaterial             RawMaterial? @relation(fields: [rawMaterialId], references: [id], onDelete: Restrict)
+  product                 Product?     @relation(fields: [productId], references: [id], onDelete: Restrict)
+  enteredUnit             Unit         @relation("PurchaseLineEnteredUnit", fields: [enteredUnitId], references: [id], onDelete: Restrict)
+  baseUnit                Unit         @relation("PurchaseLineBaseUnit", fields: [baseUnitId], references: [id], onDelete: Restrict)
 
   @@index([purchaseId])
   @@index([rawMaterialId])
+  @@index([productId])
   @@index([enteredUnitId])
   @@index([baseUnitId])
   @@map("purchase_lines")

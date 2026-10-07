@@ -19,6 +19,8 @@ export const productSchema = z.object({
     .transform((value) => (value === "" ? null : value))
     .pipe(tnd().nullable()),
   isStockable: z.boolean(),
+  // Issue 019: bought to be resold; the form locks the stock switch on.
+  isResale: z.boolean().default(false),
   code: optionalString(40),
   barcode: optionalString(64),
   notes: optionalString(500),

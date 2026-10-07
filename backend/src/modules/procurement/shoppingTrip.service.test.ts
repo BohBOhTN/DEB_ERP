@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import { ExpensesService } from "../expenses/expenses.service.js";
 import { ProcurementService } from "./procurement.service.js";
+import { PurchasingPrismaDouble } from "./procurement.testDouble.js";
 import {
   assertShoppingTripInput,
   ShoppingTripService,
@@ -102,6 +103,93 @@ describe("ShoppingTripService", () => {
     expect(store.idempotencyRecords).toEqual([
       expect.objectContaining({ scope: "shopping_trip.post", key: "trip-1" }),
     ]);
+  });
+
+  // Issue 020: the raw materials and the resold products of a trip are one
+  // purchase; the other goods are its expenses.
+  it("posts one purchase of raw materials and resold products with its expenses", async () => {
+    const { service, prisma } = makeService();
+
+    const result = await service.post(
+      {
+        idempotencyKey: "trip-mixed",
+        supplierId: "store-a",
+        tripDate,
+        purchase: {
+          paymentTerms: "PAID",
+          paidAmountTnd: "32.400",
+          lines: [
+            flour,
+            {
+              productId: "bottle",
+              enteredUnitId: "piece",
+              enteredQuantity: "24",
+              unitPriceTnd: "0.850",
+            },
+          ],
+        },
+        expenses: [bags],
+      },
+      actor,
+    );
+
+    expect(result.purchase).toMatchObject({
+      status: "POSTED",
+      totalTnd: "32.400",
+      expensesTotalTnd: "12.500",
+    });
+    expect(result.totals).toEqual({
+      purchaseTnd: "32.400",
+      expensesTnd: "12.500",
+      totalTnd: "44.900",
+      paidTodayTnd: "44.900",
+    });
+    const store = prisma.snapshot();
+    expect(store.purchases).toHaveLength(1);
+    expect(
+      store.inventoryMovements.map((movement) => [
+        movement.itemType,
+        movement.rawMaterialId ?? movement.productId,
+        movement.quantityDelta,
+      ]),
+    ).toEqual([
+      ["RAW_MATERIAL", "flour", "10.000000"],
+      ["PRODUCT", "bottle", "24.000000"],
+    ]);
+    expect(store.products.find((row) => row.id === "bottle")).toMatchObject({
+      approximateCostTnd: "0.850",
+    });
+    expect(store.expenses).toHaveLength(1);
+  });
+
+  it("refuses a product made here on a trip and writes nothing", async () => {
+    const { service, prisma } = makeService();
+
+    await expect(
+      service.post(
+        {
+          idempotencyKey: "trip-not-resale",
+          supplierId: "store-a",
+          tripDate,
+          purchase: {
+            paymentTerms: "PAID",
+            paidAmountTnd: "1.000",
+            lines: [
+              {
+                productId: "baguette",
+                enteredUnitId: "piece",
+                enteredQuantity: "5",
+                unitPriceTnd: "0.200",
+              },
+            ],
+          },
+          expenses: [bags],
+        },
+        actor,
+      ),
+    ).rejects.toMatchObject({ code: "ACTIVE_RESALE_PRODUCT_REQUIRED" });
+    expect(prisma.snapshot().purchases).toHaveLength(0);
+    expect(prisma.snapshot().expenses).toHaveLength(0);
   });
 
   it("records the expenses alone when no raw material was bought", async () => {
@@ -352,6 +440,41 @@ describe("assertShoppingTripInput", () => {
     });
   });
 
+  it("answers a purchase line without an item, or a repeated product, under purchase.lines", () => {
+    const water = {
+      productId: "bottle",
+      enteredUnitId: "piece",
+      enteredQuantity: "24",
+      unitPriceTnd: "0.850",
+    };
+    const error = errorsOf(() =>
+      assertShoppingTripInput(
+        {
+          supplierId: "store-a",
+          tripDate,
+          purchase: {
+            paymentTerms: "PAID",
+            paidAmountTnd: "0",
+            lines: [
+              flour,
+              water,
+              { enteredUnitId: "kg", enteredQuantity: "1", unitPriceTnd: "1" },
+              water,
+            ],
+          },
+          expenses: [],
+        },
+        now,
+      ),
+    );
+
+    expect(error?.fieldErrors).toEqual({
+      "purchase.lines.2.rawMaterialId":
+        "Choisissez une matière première ou un produit de revente, un seul par ligne.",
+      "purchase.lines.3.productId": "Ce produit est déjà sur une autre ligne.",
+    });
+  });
+
   it("checks the date of an expenses-only trip too", () => {
     const error = errorsOf(() =>
       assertShoppingTripInput(
@@ -391,288 +514,10 @@ describe("assertShoppingTripInput", () => {
 });
 
 function makeService() {
-  const prisma = new TripPrismaDouble();
+  const prisma = new PurchasingPrismaDouble();
   const client = prisma as unknown as PrismaClient;
   const procurement = new ProcurementService(client);
   const expenses = new ExpensesService(client);
   const service = new ShoppingTripService(client, procurement, expenses);
   return { service, prisma };
-}
-
-type Row = Record<string, unknown>;
-
-interface Store {
-  suppliers: Row[];
-  rawMaterials: Row[];
-  stockLocations: Row[];
-  expenseCategories: Row[];
-  purchases: Row[];
-  purchaseLines: Row[];
-  inventoryMovements: Row[];
-  supplierLedgerEntries: Row[];
-  supplierPayments: Row[];
-  expenses: Row[];
-  auditEvents: Row[];
-  idempotencyRecords: Row[];
-  sequences: Record<string, number>;
-}
-
-function createStore(): Store {
-  return {
-    suppliers: [
-      { id: "store-a", name: "Magasin A", isActive: true },
-      { id: "store-closed", name: "Fermé", isActive: false },
-    ],
-    rawMaterials: [
-      {
-        id: "flour",
-        name: "Farine",
-        isActive: true,
-        baseUnitId: "kg",
-        baseUnit: { id: "kg", name: "kg" },
-        conversions: [],
-      },
-    ],
-    stockLocations: [{ id: "loc-main", code: "main" }],
-    expenseCategories: [
-      { id: "packaging", name: "Emballage", isActive: true },
-      { id: "closed", name: "Ancienne", isActive: false },
-    ],
-    purchases: [],
-    purchaseLines: [],
-    inventoryMovements: [],
-    supplierLedgerEntries: [],
-    supplierPayments: [],
-    expenses: [],
-    auditEvents: [],
-    idempotencyRecords: [],
-    sequences: {},
-  };
-}
-
-/// Every table the three services touch on a trip, staged per transaction
-/// and committed only when the callback returns, so a failure anywhere
-/// leaves the store as it was.
-class TripPrismaDouble {
-  private store = createStore();
-
-  public readonly idempotencyRecord = {
-    findUnique: async (args: {
-      where: { scope_key: { scope: string; key: string } };
-    }) => findRecord(this.store, args.where.scope_key),
-  };
-
-  public async $transaction<TResult>(
-    action: (tx: ReturnType<typeof makeTx>) => Promise<TResult>,
-  ): Promise<TResult> {
-    const staged = structuredClone(this.store);
-    const result = await action(makeTx(staged));
-    this.store = staged;
-    return result;
-  }
-
-  public removeMainLocation() {
-    this.store.stockLocations = [];
-  }
-
-  public snapshot() {
-    return this.store;
-  }
-}
-
-function findRecord(store: Store, key: { scope: string; key: string }) {
-  return (
-    store.idempotencyRecords.find(
-      (record) => record.scope === key.scope && record.key === key.key,
-    ) ?? null
-  );
-}
-
-function matches(row: Row, where?: Row): boolean {
-  if (!where) {
-    return true;
-  }
-  return Object.entries(where).every(([key, value]) => {
-    const actual = row[key];
-    if (value && typeof value === "object" && "in" in (value as Row)) {
-      return ((value as { in: unknown[] }).in ?? []).includes(actual);
-    }
-    return actual === value;
-  });
-}
-
-function makeTx(store: Store) {
-  let nextId = 0;
-  const id = (prefix: string) => `${prefix}-${++nextId}`;
-  const nextval = (sequence: string) => {
-    store.sequences[sequence] = (store.sequences[sequence] ?? 0) + 1;
-    return [{ nextval: BigInt(store.sequences[sequence]) }];
-  };
-  const hydratePurchase = (purchase: Row | undefined, include?: Row) => {
-    if (!purchase) {
-      return null;
-    }
-    return {
-      ...purchase,
-      supplier: store.suppliers.find((row) => row.id === purchase.supplierId),
-      lines: store.purchaseLines.filter(
-        (row) => row.purchaseId === purchase.id,
-      ),
-      payments: store.supplierPayments.filter(
-        (row) => row.purchaseId === purchase.id,
-      ),
-      ledgerEntries: store.supplierLedgerEntries.filter(
-        (row) => row.purchaseId === purchase.id,
-      ),
-      ...(include && "expenses" in include
-        ? {
-            expenses: store.expenses
-              .filter((row) => row.purchaseId === purchase.id)
-              .map((row) => ({
-                id: row.id,
-                reference: row.reference,
-                description: row.description,
-                amountTnd: row.amountTnd,
-                status: row.status,
-                category: store.expenseCategories.find(
-                  (category) => category.id === row.categoryId,
-                ),
-              })),
-          }
-        : {}),
-    };
-  };
-  const insert = (table: Row[], prefix: string, data: Row) => {
-    const row: Row & { id: string } = { id: id(prefix), ...data };
-    table.push(row);
-    return row;
-  };
-
-  return {
-    $queryRawUnsafe: async (sql: string) =>
-      nextval(/nextval\('([^']+)'\)/.exec(sql)?.[1] ?? "unknown"),
-    $queryRaw: async () => nextval("expense_reference_seq"),
-    supplier: {
-      findFirst: async (args: { where: Row }) =>
-        store.suppliers.find((row) => matches(row, args.where)) ?? null,
-    },
-    rawMaterial: {
-      findMany: async (args: { where: Row }) =>
-        store.rawMaterials.filter((row) => matches(row, args.where)),
-    },
-    stockLocation: {
-      findUnique: async (args: { where: { code: string } }) =>
-        store.stockLocations.find((row) => row.code === args.where.code) ??
-        null,
-    },
-    expenseCategory: {
-      findMany: async (args: { where: Row }) =>
-        store.expenseCategories.filter((row) => matches(row, args.where)),
-      findUnique: async (args: { where: { id: string } }) =>
-        store.expenseCategories.find((row) => row.id === args.where.id) ?? null,
-    },
-    purchase: {
-      create: async (args: { data: Row; include?: Row }) => {
-        const { lines, ...data } = args.data as Row & {
-          lines: { createMany: { data: Row[] } };
-        };
-        const purchase = insert(store.purchases, "purchase", {
-          status: "DRAFT",
-          reference: null,
-          ...data,
-        });
-        for (const line of lines.createMany.data) {
-          insert(store.purchaseLines, "line", {
-            ...line,
-            purchaseId: purchase.id,
-          });
-        }
-        return hydratePurchase(purchase, args.include);
-      },
-      findUnique: async (args: { where: { id: string }; include?: Row }) =>
-        hydratePurchase(
-          store.purchases.find((row) => row.id === args.where.id),
-          args.include,
-        ),
-      update: async (args: {
-        where: { id: string };
-        data: Row;
-        include?: Row;
-      }) => {
-        const purchase = store.purchases.find(
-          (row) => row.id === args.where.id,
-        );
-        if (!purchase) {
-          throw new Error("missing purchase");
-        }
-        Object.assign(purchase, args.data);
-        return hydratePurchase(purchase, args.include);
-      },
-    },
-    inventoryMovement: {
-      createMany: async (args: { data: Row[] }) => {
-        for (const row of args.data) {
-          insert(store.inventoryMovements, "movement", row);
-        }
-        return { count: args.data.length };
-      },
-    },
-    supplierLedgerEntry: {
-      create: async (args: { data: Row }) =>
-        insert(store.supplierLedgerEntries, "ledger", args.data),
-      aggregate: async (args: { where: Row }) => ({
-        _sum: {
-          amountTnd: store.supplierLedgerEntries
-            .filter((row) => matches(row, args.where))
-            .reduce((sum, row) => sum + Number(row.amountTnd), 0)
-            .toFixed(3),
-        },
-      }),
-    },
-    supplierPayment: {
-      create: async (args: { data: Row }) =>
-        insert(store.supplierPayments, "payment", args.data),
-    },
-    expense: {
-      create: async (args: { data: Row }) => {
-        const expense = insert(store.expenses, "expense", {
-          version: 1,
-          ...args.data,
-        });
-        return {
-          ...expense,
-          category: store.expenseCategories.find(
-            (row) => row.id === expense.categoryId,
-          ),
-          supplier: store.suppliers.find(
-            (row) => row.id === expense.supplierId,
-          ),
-          purchase: null,
-        };
-      },
-    },
-    auditEvent: {
-      create: async (args: { data: Row }) => {
-        insert(store.auditEvents, "audit", args.data);
-      },
-    },
-    idempotencyRecord: {
-      create: async (args: { data: Row }) =>
-        insert(store.idempotencyRecords, "idem", {
-          response: null,
-          ...args.data,
-        }),
-      update: async (args: {
-        where: { scope_key: { scope: string; key: string } };
-        data: Row;
-      }) => {
-        const record = findRecord(store, args.where.scope_key);
-        if (!record) {
-          throw new Error("missing record");
-        }
-        Object.assign(record, args.data);
-        return record;
-      },
-    },
-  };
 }

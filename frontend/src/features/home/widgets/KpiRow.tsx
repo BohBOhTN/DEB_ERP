@@ -1,6 +1,6 @@
 import Decimal from "decimal.js-light";
 import {
-  Banknote,
+  Coins,
   Receipt,
   ReceiptText,
   TrendingUp,
@@ -24,10 +24,12 @@ export interface KpiRowProps {
   period: HomePeriod;
 }
 
-/// Row 1 of `Accueil`: the four figures the owner looks at first. A tile is
+/// Row 1 of `Accueil`: the figures the owner looks at first. A tile is
 /// absent when its block is `null` (no permission), never shown as zero.
-/// The two daily tiles follow the period control; the two balances are
-/// current and say so (issue #42).
+/// The daily tiles follow the period control; the two balances are current
+/// and say so (issue #42). Issue 022: `Total charges` (expenses plus raw
+/// materials bought) took the place of the cash collected, which the
+/// session card and the session pages still show.
 export function KpiRow({ summary, loading, period }: KpiRowProps) {
   if (loading || !summary) {
     return (
@@ -57,17 +59,26 @@ export function KpiRow({ summary, loading, period }: KpiRowProps) {
         )}
         note={plural(summary.sales.today.count, "vente")}
       />,
+    );
+  }
+
+  if (summary.charges) {
+    const delta = salesDelta(
+      summary.charges.dayTnd,
+      summary.charges.previousDayTnd,
+    );
+    tiles.push(
       <KpiTile
-        key="cash"
-        label={fr.cashCollected}
-        value={formatMoney(summary.sales.today.cashTnd, { unit: false })}
-        unit="TND"
-        icon={<Banknote />}
-        note={
-          period === "yesterday"
-            ? "Espèces de la veille à la caisse"
-            : "Espèces du jour à la caisse"
+        key="charges"
+        label={
+          period === "yesterday" ? fr.totalChargesOfYesterday : fr.totalCharges
         }
+        value={formatMoney(summary.charges.dayTnd, { unit: false })}
+        unit="TND"
+        icon={<Coins />}
+        // Charges going up are not good news.
+        delta={delta ? { ...delta, positiveIsGood: false } : undefined}
+        note={`Dépenses ${formatMoney(summary.charges.expensesTnd)} · matières premières ${formatMoney(summary.charges.rawMaterialsTnd)}`}
       />,
     );
   }

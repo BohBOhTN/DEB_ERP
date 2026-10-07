@@ -1,15 +1,19 @@
 import { http } from "msw";
 import type {
   AnalyticsCustomers,
+  AnalyticsDistributors,
   AnalyticsFrequency,
   AnalyticsOverview,
   AnalyticsProducts,
+  AnalyticsPurchases,
 } from "../../../features/analytics/analytics.api.js";
 import {
   makeAnalyticsCustomers,
+  makeAnalyticsDistributors,
   makeAnalyticsFrequency,
   makeAnalyticsOverview,
   makeAnalyticsProducts,
+  makeAnalyticsPurchases,
 } from "../../factories/analytics.js";
 import { apiV1, ok } from "../envelope.js";
 
@@ -18,6 +22,8 @@ export interface AnalyticsFixtures {
   frequency?: AnalyticsFrequency;
   products?: AnalyticsProducts;
   customers?: AnalyticsCustomers;
+  purchases?: AnalyticsPurchases;
+  distributors?: AnalyticsDistributors;
   /// Called with the `from` and `to` of every request, to assert the period.
   onRequest?: (
     endpoint: string,
@@ -52,6 +58,16 @@ export function analyticsHandlers(fixtures: AnalyticsFixtures = {}) {
     http.get(`${apiV1}/analytics/customers`, ({ request }) => {
       seen("customers", request);
       return ok({ customers: fixtures.customers ?? makeAnalyticsCustomers() });
+    }),
+    http.get(`${apiV1}/analytics/purchases`, ({ request }) => {
+      seen("purchases", request);
+      return ok({ purchases: fixtures.purchases ?? makeAnalyticsPurchases() });
+    }),
+    http.get(`${apiV1}/analytics/distributors`, ({ request }) => {
+      seen("distributors", request);
+      return ok({
+        distributors: fixtures.distributors ?? makeAnalyticsDistributors(),
+      });
     }),
   ];
 }

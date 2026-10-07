@@ -452,6 +452,55 @@ describe("procurement routes", () => {
     );
   });
 
+  // Issue 019: a line buys a raw material or a resold product; which, and
+  // that it is one, is the service's to say.
+  it("passes a resold product line to the service and filters purchases by product", async () => {
+    const { app, cookie, procurementService } = await createTestApp([
+      "purchases.create",
+      "purchases.view",
+    ]);
+
+    await request(app)
+      .post("/api/procurement/purchases")
+      .set("Cookie", cookie)
+      .send({
+        supplierId: "supplier-1",
+        purchaseDate: "2026-10-05T08:00:00.000Z",
+        paymentTerms: "PAID",
+        paidAmountTnd: "20.400",
+        lines: [
+          {
+            productId: "product-1",
+            enteredUnitId: "unit-piece",
+            enteredQuantity: "24",
+            unitPriceTnd: "0.850",
+          },
+        ],
+      })
+      .expect(201);
+    expect(procurementService.createPurchase).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        lines: [
+          {
+            productId: "product-1",
+            enteredUnitId: "unit-piece",
+            enteredQuantity: "24",
+            unitPriceTnd: "0.850",
+          },
+        ],
+      }),
+      expect.anything(),
+    );
+
+    await request(app)
+      .get("/api/procurement/purchases?productId=product-1")
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(procurementService.listPurchases).toHaveBeenLastCalledWith(
+      expect.objectContaining({ productId: "product-1" }),
+    );
+  });
+
   it("replaces a draft purchase when the user has purchases.create", async () => {
     const { app, cookie, procurementService } = await createTestApp([
       "purchases.create",
@@ -612,6 +661,40 @@ describe("procurement routes", () => {
         expenses: tripBody.expenses,
       }),
       expect.objectContaining({ actorUserId: "user-1" }),
+    );
+  });
+
+  // Issue 020: a trip's purchase lines take a resold product too.
+  it("passes a resold product line of a shopping trip to the service", async () => {
+    const { app, cookie, shoppingTripService } =
+      await createTestApp(tripPermissions);
+    const water = {
+      productId: "product-1",
+      enteredUnitId: "unit-piece",
+      enteredQuantity: "24",
+      unitPriceTnd: "0.850",
+    };
+
+    await request(app)
+      .post("/api/procurement/shopping-trips")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", "trip-3")
+      .send({
+        ...tripBody,
+        purchase: {
+          ...tripBody.purchase,
+          lines: [...tripBody.purchase.lines, water],
+        },
+      })
+      .expect(201);
+
+    expect(shoppingTripService.post).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        purchase: expect.objectContaining({
+          lines: [...tripBody.purchase.lines, water],
+        }),
+      }),
+      expect.anything(),
     );
   });
 

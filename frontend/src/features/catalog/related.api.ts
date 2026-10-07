@@ -44,13 +44,17 @@ export interface PurchaseRow {
   supplier: { id: string; name: string };
 }
 
+/// The purchases holding one item: a raw material or, since issue 019, a
+/// product bought to be resold.
+export type PurchasedItem = { rawMaterialId: string } | { productId: string };
+
 export function listPurchasesOf(
-  rawMaterialId: string,
+  item: PurchasedItem,
   query: { page: number; pageSize: number },
 ): Promise<PageResult<PurchaseRow>> {
   return apiClient.list<PurchaseRow>("/procurement/purchases", {
     query: {
-      rawMaterialId,
+      ...item,
       page: query.page,
       pageSize: query.pageSize,
       sort: "purchaseDate:desc",

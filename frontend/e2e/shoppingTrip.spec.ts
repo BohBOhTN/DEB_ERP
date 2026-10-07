@@ -4,9 +4,10 @@ import { expectLineEditorFits } from "./lineEditor";
 import { mockApi, ownerPermissions } from "./mockApi";
 import { makeProcurementState, mockProcurement } from "./procurement";
 
-/// Issue 018 at 360, 768 and 1280 px: one trip to the Minoterie, 10 kg of
-/// flour at 1,200 TND paid on the spot and a pack of plastic bags filed
-/// under "Fournitures › Emballage", validated once. The purchase page then
+/// Issues 018 and 020 at 360, 768 and 1280 px: one trip to the Minoterie,
+/// 10 kg of flour at 1,200 TND, 24 bottles to resell at 0,850 TND and a
+/// pack of plastic bags filed under "Fournitures › Emballage", validated
+/// once. One purchase holds the flour and the bottles; the purchase page
 /// shows the bags as the other goods of the trip.
 test("records a shopping trip of raw materials and other goods in one validation", async ({
   page,
@@ -28,11 +29,29 @@ test("records a shopping trip of raw materials and other goods in one validation
   await page.getByRole("combobox", { name: "Matière première 1" }).click();
   await page.getByPlaceholder("Rechercher matière première").fill("farine");
   await page.getByText("Farine T55").click();
-  await page.getByRole("textbox", { name: "Quantité 1" }).fill("10");
-  await page.getByRole("textbox", { name: "Prix unitaire 1" }).fill("1,2");
+  const materials = page.getByRole("group", { name: "Matières premières" });
+  await materials.getByRole("textbox", { name: "Quantité 1" }).fill("10");
+  await materials.getByRole("textbox", { name: "Prix unitaire 1" }).fill("1,2");
   await expect(
-    page.getByRole("textbox", { name: "Total ligne 1" }),
+    materials.getByRole("textbox", { name: "Total ligne 1" }),
   ).toHaveValue("12,000");
+
+  const goods = page.getByRole("group", { name: "Produits de revente" });
+  await goods.getByRole("button", { name: "Ajouter une ligne" }).click();
+  await goods.getByRole("combobox", { name: "Produit de revente 1" }).click();
+  await page.getByPlaceholder("Rechercher produit de revente").fill("eau");
+  await page.getByText("Eau 1,5 L").click();
+  await goods.getByRole("textbox", { name: "Quantité 1" }).fill("24");
+  await goods.getByRole("textbox", { name: "Prix unitaire 1" }).fill("0,85");
+  await expect(
+    goods.getByRole("textbox", { name: "Total ligne 1" }),
+  ).toHaveValue("20,400");
+  await expectLineEditorFits(
+    page,
+    goods
+      .getByRole("combobox", { name: "Produit de revente 1" })
+      .locator("xpath=ancestor::li[1]"),
+  );
 
   await page.getByRole("combobox", { name: "Catégorie 1" }).click();
   await page.getByRole("option", { name: "Fournitures › Emballage" }).click();
@@ -58,17 +77,19 @@ test("records a shopping trip of raw materials and other goods in one validation
   const totals = page.getByRole("complementary", { name: "Totaux" });
   await expect(totals).toContainText("12,000 TND");
   await expect(totals).toContainText("12,500 TND");
-  await expect(totals).toContainText("24,500 TND");
+  await expect(totals).toContainText("20,400 TND");
+  await expect(totals).toContainText("44,900 TND");
 
   await page.getByRole("button", { name: "Valider la course" }).click();
   const confirm = page.getByRole("alertdialog", { name: /Valider la course/ });
-  await expect(confirm).toContainText("Stock : +10 kg Farine T55.");
+  await expect(confirm).toContainText("+10 kg Farine T55");
+  await expect(confirm).toContainText("Eau 1,5 L");
   await expect(confirm).toContainText(
     "Dette fournisseur Minoterie du Sud : aucune.",
   );
   await expect(confirm).toContainText("1 dépense pour 12,500 TND");
   await expect(confirm).toContainText(
-    "Sortie de caisse aujourd'hui : 24,500 TND.",
+    "Sortie de caisse aujourd'hui : 44,900 TND.",
   );
   const violations = (
     await new AxeBuilder({ page }).include("[role=alertdialog]").analyze()
@@ -95,8 +116,12 @@ test("records a shopping trip of raw materials and other goods in one validation
   expect(state.purchases[0]).toMatchObject({
     status: "POSTED",
     paymentTerms: "PAID",
-    totalTnd: "12.000",
+    totalTnd: "32.400",
   });
+  expect(state.purchases[0]?.lines).toMatchObject([
+    { rawMaterialId: "raw-1", productId: null },
+    { productId: "product-water", enteredUnitId: "unit-piece" },
+  ]);
   expect(state.expenses[0]).toMatchObject({
     description: "Sachets plastiques",
     amountTnd: "12.500",
@@ -130,7 +155,7 @@ test("refuses an empty trip before any request and keeps the summary in view", a
     "Le formulaire contient des erreurs.",
   );
   await expect(page.getByRole("main")).toContainText(
-    "Ajoutez au moins une matière première ou une dépense.",
+    "Ajoutez au moins une matière première, un produit de revente ou une dépense.",
   );
   expect(posted).toBe(0);
   expect(state.purchases).toHaveLength(0);

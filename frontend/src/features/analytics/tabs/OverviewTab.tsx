@@ -1,18 +1,11 @@
-import {
-  HandCoins,
-  Receipt,
-  ReceiptText,
-  ShoppingBasket,
-  TrendingUp,
-  Wallet,
-} from "lucide-react";
+import { Boxes, Coins, TrendingUp, Wallet, Wheat } from "lucide-react";
 import { BarChart } from "../../../components/patterns/BarChart/BarChart.js";
 import { KpiGrid } from "../../../components/patterns/KpiGrid/KpiGrid.js";
 import { KpiTile } from "../../../components/patterns/KpiTile/KpiTile.js";
 import { TrendChart } from "../../../components/patterns/TrendChart/TrendChart.js";
 import { Card, CardHeader } from "../../../components/ui/Card/Card.js";
 import { EmptyState } from "../../../components/ui/EmptyState/EmptyState.js";
-import { formatInteger, formatMoney } from "../../../i18n/format.js";
+import { formatMoney } from "../../../i18n/format.js";
 import { plural } from "../../../i18n/fr.js";
 import type { AnalyticsOverview, AnalyticsQuery } from "../analytics.api.js";
 import { useAnalyticsOverview } from "../analytics.queries.js";
@@ -25,8 +18,8 @@ import {
 import { AnalysisState } from "../AnalysisState.js";
 import styles from "../Analytics.module.css";
 
-/// `Vue d'ensemble`: what the period earned and cost against the period
-/// just before, how the revenue moved, and where it came from.
+/// `Vue d'ensemble`: what the period earned, cost and bought against the
+/// period just before, how the revenue moved, and where it came from.
 export function OverviewTab({ query }: { query: AnalyticsQuery }) {
   return (
     <AnalysisState query={useAnalyticsOverview(query)}>
@@ -37,7 +30,7 @@ export function OverviewTab({ query }: { query: AnalyticsQuery }) {
             <EmptyState
               illustration="ledger"
               title="Aucune activité sur cette période"
-              description="Aucune vente ni dépense validée entre ces dates. Choisissez une période plus longue."
+              description="Aucune vente, dépense ni achat validé entre ces dates. Choisissez une période plus longue."
             />
           ) : (
             <>
@@ -58,12 +51,22 @@ function isQuiet(overview: AnalyticsOverview): boolean {
   return (
     Number(overview.revenue.totalTnd) === 0 &&
     overview.sales.count === 0 &&
-    Number(overview.expenses?.totalTnd ?? 0) === 0
+    Number(overview.expenses?.totalTnd ?? 0) === 0 &&
+    Number(overview.purchases?.rawMaterialsTnd ?? 0) === 0 &&
+    Number(overview.purchases?.resaleTnd ?? 0) === 0
   );
 }
 
+/// Issue 022: the five figures the owner asked for, each against the
+/// period before. The number of sales sits under the revenue; a tile whose
+/// block the caller may not see is absent.
 function OverviewKpis({ overview }: { overview: AnalyticsOverview }) {
-  const { revenue, sales, expenses, margin, period } = overview;
+  const { revenue, sales, charges, margin, purchases, period } = overview;
+  // A cost going up is not good news; the arrow still says which way.
+  const cost = (current: string, previous: string) => ({
+    ...periodDelta(current, previous),
+    positiveIsGood: false,
+  });
   const tiles = [
     <KpiTile
       key="revenue"
@@ -73,53 +76,20 @@ function OverviewKpis({ overview }: { overview: AnalyticsOverview }) {
       unit="TND"
       icon={<TrendingUp />}
       delta={periodDelta(revenue.totalTnd, revenue.previousTotalTnd)}
-      note={`${plural(period.days, "jour")} · ventes validées`}
-    />,
-    <KpiTile
-      key="sales"
-      label="Ventes en caisse"
-      value={formatInteger(sales.count)}
-      icon={<Receipt />}
-      delta={periodDelta(sales.count, sales.previousCount)}
-      note={
-        sales.cancelledCount > 0
-          ? `hors ${plural(sales.cancelledCount, "vente annulée", "ventes annulées")}`
-          : "comptoir et commandes"
-      }
-    />,
-    <KpiTile
-      key="basket"
-      label="Panier moyen"
-      value={
-        sales.averageBasketTnd
-          ? formatMoney(sales.averageBasketTnd, { unit: false })
-          : "—"
-      }
-      unit={sales.averageBasketTnd ? "TND" : undefined}
-      icon={<ShoppingBasket />}
-      delta={
-        sales.averageBasketTnd && sales.previousAverageBasketTnd
-          ? periodDelta(sales.averageBasketTnd, sales.previousAverageBasketTnd)
-          : undefined
-      }
-      note="par vente en caisse"
+      note={`${plural(sales.count, "vente")} en caisse · ${plural(period.days, "jour")}`}
     />,
   ];
 
-  if (expenses) {
+  if (charges) {
     tiles.push(
       <KpiTile
-        key="expenses"
-        label="Dépenses"
-        value={formatMoney(expenses.totalTnd, { unit: false })}
+        key="charges"
+        label="Total charges"
+        value={formatMoney(charges.totalTnd, { unit: false })}
         unit="TND"
-        icon={<ReceiptText />}
-        // Spending going up is not good news.
-        delta={{
-          ...periodDelta(expenses.totalTnd, expenses.previousTotalTnd),
-          positiveIsGood: false,
-        }}
-        note="dépenses validées"
+        icon={<Coins />}
+        delta={cost(charges.totalTnd, charges.previousTotalTnd)}
+        note={`Dépenses ${formatMoney(charges.expensesTnd)} · matières premières ${formatMoney(charges.rawMaterialsTnd)}`}
       />,
     );
   }
@@ -143,16 +113,31 @@ function OverviewKpis({ overview }: { overview: AnalyticsOverview }) {
     );
   }
 
-  tiles.push(
-    <KpiTile
-      key="due"
-      label="Reste à encaisser"
-      value={formatMoney(sales.remainingDueTnd, { unit: false })}
-      unit="TND"
-      icon={<HandCoins />}
-      note="sur les ventes de la période"
-    />,
-  );
+  if (purchases) {
+    tiles.push(
+      <KpiTile
+        key="raw-materials"
+        label="Achats matières premières"
+        value={formatMoney(purchases.rawMaterialsTnd, { unit: false })}
+        unit="TND"
+        icon={<Wheat />}
+        delta={cost(
+          purchases.rawMaterialsTnd,
+          purchases.previousRawMaterialsTnd,
+        )}
+        note="achats validés, payés ou non"
+      />,
+      <KpiTile
+        key="resale"
+        label="Achats produits de revente"
+        value={formatMoney(purchases.resaleTnd, { unit: false })}
+        unit="TND"
+        icon={<Boxes />}
+        delta={cost(purchases.resaleTnd, purchases.previousResaleTnd)}
+        note="stock à revendre, hors charges"
+      />,
+    );
+  }
 
   return <KpiGrid columns={tiles.length === 4 ? 4 : 3}>{tiles}</KpiGrid>;
 }

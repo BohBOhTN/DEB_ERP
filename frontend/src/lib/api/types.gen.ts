@@ -191,6 +191,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/analytics/purchases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Purchases by kind (raw materials, resold products), suppliers and prices */
+        get: operations["analytics.purchases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/analytics/distributors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The distributor channel: revenue, distributors, returns and products */
+        get: operations["analytics.distributors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/access/permissions": {
         parameters: {
             query?: never;
@@ -2243,6 +2277,120 @@ export interface operations {
             };
         };
     };
+    "analytics.purchases": {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            purchases: {
+                                [key: string]: unknown;
+                            };
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Validation failed (`VALIDATION_ERROR`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    "analytics.distributors": {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            distributors: {
+                                [key: string]: unknown;
+                            };
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Validation failed (`VALIDATION_ERROR`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Permission denied. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     "access.listPermissions": {
         parameters: {
             query?: never;
@@ -4110,6 +4258,7 @@ export interface operations {
                 pageSize?: number;
                 categoryId?: string;
                 isStockable?: "true" | "false";
+                isResale?: "true" | "false";
             };
             header?: never;
             path?: never;
@@ -4176,6 +4325,7 @@ export interface operations {
                     salePriceTnd: string;
                     approximateCostTnd?: (string | "") | null;
                     isStockable: boolean;
+                    isResale?: boolean;
                     notes?: string;
                 };
             };
@@ -4312,6 +4462,7 @@ export interface operations {
                     salePriceTnd?: string;
                     approximateCostTnd?: (string | "") | null;
                     isStockable?: boolean;
+                    isResale?: boolean;
                     notes?: string;
                 };
             };
@@ -5194,6 +5345,7 @@ export interface operations {
                 status?: "DRAFT" | "POSTED" | "CANCELLED";
                 paymentTerms?: "PAID" | "PARTIAL" | "UNPAID";
                 rawMaterialId?: string;
+                productId?: string;
                 from?: string;
                 to?: string;
                 dueState?: "OVERDUE" | "UPCOMING";
@@ -5269,7 +5421,8 @@ export interface operations {
                     dueDate?: string;
                     notes?: string;
                     lines: {
-                        rawMaterialId: string;
+                        rawMaterialId?: string;
+                        productId?: string;
                         enteredUnitId: string;
                         enteredQuantity: string;
                         unitPriceTnd: string;
@@ -5412,7 +5565,8 @@ export interface operations {
                     dueDate?: string;
                     notes?: string;
                     lines: {
-                        rawMaterialId: string;
+                        rawMaterialId?: string;
+                        productId?: string;
                         enteredUnitId: string;
                         enteredQuantity: string;
                         unitPriceTnd: string;
@@ -5580,7 +5734,8 @@ export interface operations {
                         /** Format: date-time */
                         dueDate?: string;
                         lines: {
-                            rawMaterialId: string;
+                            rawMaterialId?: string;
+                            productId?: string;
                             enteredUnitId: string;
                             enteredQuantity: string;
                             unitPriceTnd: string;

@@ -26,8 +26,8 @@ export const catalogKeys = {
     ["catalog", "reference", "units", query] as const,
   relatedAudit: (entity: string, targetId: string) =>
     ["catalog", "related", "audit", entity, targetId] as const,
-  relatedPurchases: (rawMaterialId: string, page: number) =>
-    ["catalog", "related", "purchases", rawMaterialId, page] as const,
+  relatedPurchases: (itemId: string, page: number) =>
+    ["catalog", "related", "purchases", itemId, page] as const,
 };
 
 /// Every active category or unit, for selects: one page of 100 is more than

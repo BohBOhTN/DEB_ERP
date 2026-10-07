@@ -56,12 +56,16 @@ function page<T extends { name: string; isActive: boolean }>(
   const url = new URL(request.url);
   const q = url.searchParams.get("q")?.toLowerCase() ?? "";
   const isActive = url.searchParams.get("isActive");
+  const isResale = url.searchParams.get("isResale");
   const pageNumber = Number(url.searchParams.get("page") ?? "1");
   const pageSize = Number(url.searchParams.get("pageSize") ?? "25");
   const matching = rows.filter(
     (row) =>
       row.name.toLowerCase().includes(q) &&
-      (isActive === null || String(row.isActive) === isActive),
+      (isActive === null || String(row.isActive) === isActive) &&
+      // Issue 019: the purchase picker asks for the resold products only.
+      (isResale === null ||
+        String((row as { isResale?: boolean }).isResale ?? false) === isResale),
   );
   const start = (pageNumber - 1) * pageSize;
 
@@ -117,6 +121,8 @@ export function catalogHandlers(store: CatalogStore = makeCatalogStore()) {
         id: `product-${sequence}`,
         category,
         baseUnit,
+        // Issue 019: a resold product is stock-tracked whatever was sent.
+        isStockable: body.isResale ? true : (body.isStockable ?? true),
         version: 1,
       });
       store.products.push(product);

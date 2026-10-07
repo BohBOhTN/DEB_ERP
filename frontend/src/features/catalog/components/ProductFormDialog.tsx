@@ -52,6 +52,7 @@ function defaultsFor(product: Product | null | undefined): ProductFormInput {
     salePriceTnd: product?.salePriceTnd ?? "",
     approximateCostTnd: product?.approximateCostTnd ?? "",
     isStockable: product?.isStockable ?? true,
+    isResale: product?.isResale ?? false,
     code: product?.code ?? "",
     barcode: product?.barcode ?? "",
     notes: product?.notes ?? "",
@@ -119,6 +120,7 @@ export function ProductFormDialog({
     resolver: zodResolver(productSchema),
     defaultValues: defaultsFor(product),
   });
+  const isResale = form.watch("isResale") ?? false;
   const errors = form.formState.errors;
 
   useEffect(() => {
@@ -237,7 +239,11 @@ export function ProductFormDialog({
         <FormField
           label={fr.approximateCost}
           error={errors.approximateCostTnd?.message}
-          hint="Facultatif · par unité de base, ingrédients seulement"
+          hint={
+            isResale
+              ? "Suit le prix du dernier achat validé de ce produit"
+              : "Facultatif · par unité de base, ingrédients seulement"
+          }
         >
           <Controller
             control={form.control}
@@ -261,13 +267,33 @@ export function ProductFormDialog({
       </FormField>
       <Controller
         control={form.control}
+        name="isResale"
+        render={({ field }) => (
+          <Switch
+            label="Produit de revente"
+            description="Acheté chez un fournisseur pour être revendu : il se retrouve sur les achats et son stock est toujours suivi."
+            checked={field.value ?? false}
+            onCheckedChange={(checked) => {
+              field.onChange(checked);
+              if (checked) form.setValue("isStockable", true);
+            }}
+          />
+        )}
+      />
+      <Controller
+        control={form.control}
         name="isStockable"
         render={({ field }) => (
           <Switch
             label="Stockable"
-            description="Le stock est suivi pour ce produit."
-            checked={field.value ?? true}
+            description={
+              isResale
+                ? "Toujours suivi pour un produit de revente."
+                : "Le stock est suivi pour ce produit."
+            }
+            checked={isResale ? true : (field.value ?? true)}
             onCheckedChange={field.onChange}
+            disabled={isResale}
           />
         )}
       />

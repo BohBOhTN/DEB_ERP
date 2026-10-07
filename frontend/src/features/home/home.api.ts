@@ -52,6 +52,15 @@ export interface HomeSummary {
     }>;
   } | null;
   expenses: { dayTnd: string; dayCount: number; previousDayTnd: string } | null;
+  /// Issue 022, DEC-V2-012: the posted expenses of the day plus the raw
+  /// materials of its posted purchases; `null` without `expenses.view` or
+  /// `purchases.view`. Products bought to be resold are not a charge.
+  charges: {
+    dayTnd: string;
+    expensesTnd: string;
+    rawMaterialsTnd: string;
+    previousDayTnd: string;
+  } | null;
   /// Issue 008: revenue and cost of the day's posted sale lines that carry
   /// a cost snapshot; `null` without `margin.view`.
   margin: { today: MarginDay; previousDay: MarginDay } | null;

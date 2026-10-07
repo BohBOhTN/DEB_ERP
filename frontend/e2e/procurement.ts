@@ -16,7 +16,8 @@ interface Supplier {
 
 interface Line {
   id: string;
-  rawMaterialId: string;
+  rawMaterialId: string | null;
+  productId: string | null;
   enteredUnitId: string;
   baseUnitId: string;
   enteredQuantity: string;
@@ -163,6 +164,40 @@ const flour = {
   ],
 };
 
+/// Issue 019: a product bought to be resold, counted in pieces.
+const pieceUnit = {
+  id: "unit-piece",
+  code: "PC",
+  name: "Pièce",
+  symbol: "pièce",
+  precision: 0,
+  isActive: true,
+};
+const water = {
+  id: "product-water",
+  code: null,
+  barcode: null,
+  name: "Eau 1,5 L",
+  categoryId: "category-drinks",
+  baseUnitId: pieceUnit.id,
+  salePriceTnd: "1.200",
+  approximateCostTnd: null,
+  imageUrl: null,
+  isStockable: true,
+  isResale: true,
+  isActive: true,
+  notes: null,
+  version: 1,
+  createdAt: "2026-09-01T08:00:00.000Z",
+  category: {
+    id: "category-drinks",
+    name: "Boissons",
+    description: null,
+    isActive: true,
+  },
+  baseUnit: pieceUnit,
+};
+
 export function makeProcurementState(): ProcurementState {
   return {
     suppliers: [
@@ -275,11 +310,30 @@ function buildPurchase(
   sequence += 1;
   const lines = (input.lines as Array<Record<string, string>>).map(
     (line, index) => {
+      if (line.productId) {
+        const quantity = Number(line.enteredQuantity);
+        return {
+          id: `line-${sequence}-${index}`,
+          rawMaterialId: null,
+          productId: line.productId,
+          enteredUnitId: line.enteredUnitId ?? "",
+          baseUnitId: pieceUnit.id,
+          enteredQuantity: quantity.toFixed(6),
+          conversionFactorToBase: (1).toFixed(6),
+          normalizedQuantity: quantity.toFixed(6),
+          unitPriceTnd: money(Number(line.unitPriceTnd)),
+          lineTotalTnd: money(quantity * Number(line.unitPriceTnd)),
+          rawMaterialNameSnapshot: water.name,
+          enteredUnitNameSnapshot: pieceUnit.name,
+          baseUnitNameSnapshot: pieceUnit.name,
+        };
+      }
       const factor = line.enteredUnitId === sac.id ? 50 : 1;
       const normalized = Number(line.enteredQuantity) * factor;
       return {
         id: `line-${sequence}-${index}`,
         rawMaterialId: line.rawMaterialId ?? "",
+        productId: null,
         enteredUnitId: line.enteredUnitId ?? "",
         baseUnitId: kg.id,
         enteredQuantity: Number(line.enteredQuantity).toFixed(6),
@@ -338,6 +392,23 @@ export async function handleProcurement(
     return (route.fulfill(page([flour])), true);
   if (path === "/expense-categories")
     return (route.fulfill(envelope({ expenseCategories })), true);
+  // Issue 019: the picker asks for the products flagged for resale.
+  if (path === "/catalog/products") {
+    const q = url.searchParams.get("q")?.toLowerCase() ?? "";
+    return (
+      route.fulfill(
+        page(
+          url.searchParams.get("isResale") === "true" &&
+            water.name.toLowerCase().includes(q)
+            ? [water]
+            : [],
+        ),
+      ),
+      true
+    );
+  }
+  if (path === `/catalog/products/${water.id}`)
+    return (route.fulfill(envelope({ product: water })), true);
 
   // Issue 018: the trip posts the purchase and records its expenses at once.
   if (path === "/procurement/shopping-trips" && method === "POST") {
@@ -810,6 +881,9 @@ export async function mockProcurement(
     handleProcurement(route, state),
   );
   await page.route("**/api/v1/expense-categories**", (route) =>
+    handleProcurement(route, state),
+  );
+  await page.route("**/api/v1/catalog/products**", (route) =>
     handleProcurement(route, state),
   );
 }

@@ -21,8 +21,8 @@ test("creates and posts a purchase, then pays the supplier with allocations", as
   await page.getByRole("combobox", { name: "Fournisseur" }).click();
   await page.getByPlaceholder("Nom du fournisseur").fill("minoterie");
   await page.getByText("Minoterie du Sud").click();
-  await page.getByRole("combobox", { name: "Matière première 1" }).click();
-  await page.getByPlaceholder("Rechercher matière première").fill("farine");
+  await page.getByRole("combobox", { name: "Article 1" }).click();
+  await page.getByPlaceholder("Rechercher article").fill("farine");
   await page.getByText("Farine T55").click();
   await page.getByRole("textbox", { name: "Quantité 1" }).fill("4");
   await page.getByRole("combobox", { name: "Unité 1" }).click();
@@ -42,7 +42,7 @@ test("creates and posts a purchase, then pays the supplier with allocations", as
   await expectLineEditorFits(
     page,
     page
-      .getByRole("combobox", { name: "Matière première 1" })
+      .getByRole("combobox", { name: "Article 1" })
       .locator("xpath=ancestor::li[1]"),
   );
   await page.getByRole("radio", { name: "Impayé" }).click();
@@ -91,4 +91,73 @@ test("creates and posts a purchase, then pays the supplier with allocations", as
   expect(state.payments[0]?.allocations.map((a) => a.amountTnd).sort()).toEqual(
     ["100.000", "200.000"],
   );
+});
+
+/// Issue 019 at the three widths: a product flagged for resale is found on
+/// `Nouvel achat` beside the raw materials, bought in its own unit, and the
+/// purchase page says which line it is.
+test("buys a resold product beside a raw material on one purchase", async ({
+  page,
+}) => {
+  const state = makeProcurementState();
+  await mockApi(page, { signedIn: true, permissions: ownerPermissions });
+  await mockProcurement(page, state);
+
+  await page.goto("/achats/nouveau");
+  await page.getByRole("combobox", { name: "Fournisseur" }).click();
+  await page.getByPlaceholder("Nom du fournisseur").fill("minoterie");
+  await page.getByText("Minoterie du Sud").click();
+
+  await page.getByRole("combobox", { name: "Article 1" }).click();
+  await page.getByPlaceholder("Rechercher article").fill("eau");
+  await expect(
+    page.getByText("Produit de revente · Pièce · Boissons"),
+  ).toBeVisible();
+  await page.getByText("Eau 1,5 L").click();
+  await page.getByRole("textbox", { name: "Quantité 1" }).fill("24");
+  await page.getByRole("textbox", { name: "Prix unitaire 1" }).fill("0,85");
+  await expect(
+    page.getByRole("textbox", { name: "Total ligne 1" }),
+  ).toHaveValue("20,400");
+  await expect(page.getByRole("combobox", { name: "Unité 1" })).toContainText(
+    "Pièce",
+  );
+
+  await page.getByRole("button", { name: "Ajouter une ligne" }).click();
+  await page.getByRole("combobox", { name: "Article 2" }).click();
+  await page.getByPlaceholder("Rechercher article").fill("farine");
+  await page.getByText("Farine T55").click();
+  await page.getByRole("textbox", { name: "Quantité 2" }).fill("10");
+  await page.getByRole("textbox", { name: "Prix unitaire 2" }).fill("1,2");
+  await expectLineEditorFits(
+    page,
+    page
+      .getByRole("combobox", { name: "Article 1" })
+      .locator("xpath=ancestor::li[1]"),
+  );
+
+  await page.getByRole("radio", { name: "Payé", exact: true }).click();
+  await page.getByRole("button", { name: "Valider l'achat" }).click();
+  const confirm = page.getByRole("alertdialog", { name: /Valider l'achat/ });
+  await expect(confirm).toContainText("Eau 1,5 L");
+  await expect(confirm).toContainText("Farine T55");
+  await confirm.getByRole("button", { name: "Valider" }).click();
+  await expect(page.getByText("Achat validé").first()).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      level: 1,
+      name: state.purchases[0]?.reference ?? "",
+    }),
+  ).toBeVisible();
+  await expect(page.getByRole("main")).toContainText(/revente/i);
+  expect(state.purchases[0]?.lines).toMatchObject([
+    {
+      productId: "product-water",
+      rawMaterialId: null,
+      enteredUnitId: "unit-piece",
+      lineTotalTnd: "20.400",
+    },
+    { rawMaterialId: "raw-1", productId: null, enteredUnitId: "unit-kg" },
+  ]);
+  expect(state.purchases[0]).toMatchObject({ totalTnd: "32.400" });
 });

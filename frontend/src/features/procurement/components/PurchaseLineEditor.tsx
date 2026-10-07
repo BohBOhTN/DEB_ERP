@@ -11,10 +11,20 @@ import { formatQuantity } from "../../../i18n/format.js";
 import { useCachedSearch } from "../../../lib/query/cachedOptions.js";
 import { roots } from "../../../lib/query/invalidation.js";
 import {
+  listProducts,
   listRawMaterials,
+  type Product,
   type RawMaterial,
 } from "../../catalog/catalog.api.js";
 import { purchaseLineTotal } from "../procurement.schemas.js";
+
+/// What a purchase line buys (issue 019): a raw material, or a product
+/// flagged for resale.
+export type PurchaseLineKind = "RAW_MATERIAL" | "PRODUCT";
+export const allPurchaseKinds: readonly PurchaseLineKind[] = [
+  "RAW_MATERIAL",
+  "PRODUCT",
+];
 
 async function fetchRawMaterials(query: string): Promise<RawMaterial[]> {
   const page = await listRawMaterials({
@@ -27,26 +37,54 @@ async function fetchRawMaterials(query: string): Promise<RawMaterial[]> {
   return page.items;
 }
 
-/// A purchase line keeps the raw material record with it so the unit
+async function fetchResaleProducts(query: string): Promise<Product[]> {
+  const page = await listProducts({
+    page: 1,
+    pageSize: 8,
+    q: query || undefined,
+    isActive: true,
+    isResale: true,
+    sort: { field: "name", direction: "asc" },
+  } as Parameters<typeof listProducts>[0]);
+  return page.items;
+}
+
+/// A purchase line keeps the record of what it buys with it, so the unit
 /// options, the conversion factor and the base symbol never need a lookup.
 export interface PurchaseEditorLine extends EditorLine {
+  kind: PurchaseLineKind;
   rawMaterial: RawMaterial | null;
+  product: Product | null;
   factorToBase: string;
 }
 
-interface RawMaterialOption extends ComboboxOption {
-  rawMaterial: RawMaterial;
+interface PurchaseItemOption extends ComboboxOption {
+  kind: PurchaseLineKind;
+  rawMaterial?: RawMaterial;
+  product?: Product;
 }
 
 export interface PurchaseLineEditorProps {
   lines: PurchaseEditorLine[];
   onChange: (lines: PurchaseEditorLine[]) => void;
+  /// What the picker offers: both kinds on a purchase, one kind per card on
+  /// a shopping trip. A caller without `products.view` passes the raw
+  /// materials alone.
+  kinds?: readonly PurchaseLineKind[];
   errors?: Record<string, string | undefined>;
   disabled?: boolean;
 }
 
-export function newPurchaseLine(): PurchaseEditorLine {
-  return { ...newLine(), rawMaterial: null, factorToBase: "1" };
+export function newPurchaseLine(
+  kind: PurchaseLineKind = "RAW_MATERIAL",
+): PurchaseEditorLine {
+  return {
+    ...newLine(),
+    kind,
+    rawMaterial: null,
+    product: null,
+    factorToBase: "1",
+  };
 }
 
 export function lineFromRawMaterial(
@@ -55,12 +93,32 @@ export function lineFromRawMaterial(
 ): PurchaseEditorLine {
   return {
     ...newLine(),
+    kind: "RAW_MATERIAL",
     item: { value: rawMaterial.id, label: rawMaterial.name },
     rawMaterial,
+    product: null,
     quantity: fields.quantity,
     unitId: fields.unitId,
     unitPriceTnd: fields.unitPriceTnd,
     factorToBase: factorFor(rawMaterial, fields.unitId),
+  };
+}
+
+/// A resold product is bought in its own unit: no conversion.
+export function lineFromProduct(
+  product: Product,
+  fields: { quantity: string; unitPriceTnd: string },
+): PurchaseEditorLine {
+  return {
+    ...newLine(),
+    kind: "PRODUCT",
+    item: { value: product.id, label: product.name },
+    rawMaterial: null,
+    product,
+    quantity: fields.quantity,
+    unitId: product.baseUnitId,
+    unitPriceTnd: fields.unitPriceTnd,
+    factorToBase: "1",
   };
 }
 
@@ -79,41 +137,81 @@ export function factorFor(
   );
 }
 
-/// Raw material lines of a purchase (07 section 4.3): the picker searches
-/// the catalogue by name and leaves out the materials already on another
-/// line, the unit list comes from the material's active conversions and,
-/// for a unit other than the base one, the hints state the base quantity
-/// ("= 50 kg") and the unit of the price ("par kg").
+const labels: Record<string, string> = {
+  RAW_MATERIAL: "Matière première",
+  PRODUCT: "Produit de revente",
+};
+
+/// The lines of a purchase (07 section 4.3, issue 019): the picker searches
+/// the raw materials and the products flagged for resale by name, says
+/// which is which, and leaves out what another line already holds. A raw
+/// material takes its unit from its active conversions and, for a unit
+/// other than the base one, the hints state the base quantity ("= 50 kg")
+/// and the unit of the price ("par kg"); a resold product has its one unit.
 export function PurchaseLineEditor({
   lines,
   onChange,
+  kinds = allPurchaseKinds,
   errors,
   disabled,
 }: PurchaseLineEditorProps) {
-  const cache = useRef(new Map<string, RawMaterial>());
-  // Issue 009: one read per query for the session, refreshed by a
-  // raw-material write.
-  const search = useCachedSearch(roots.catalogRawMaterials, fetchRawMaterials);
+  const rawMaterials = useRef(new Map<string, RawMaterial>());
+  const products = useRef(new Map<string, Product>());
+  // Issue 009: one read per query for the session, refreshed by a write on
+  // the catalogue.
+  const searchRawMaterials = useCachedSearch(
+    roots.catalogRawMaterials,
+    fetchRawMaterials,
+  );
+  const searchProducts = useCachedSearch(
+    roots.catalogProducts,
+    fetchResaleProducts,
+    { prefetch: false },
+  );
+  const withRawMaterials = kinds.includes("RAW_MATERIAL");
+  const withProducts = kinds.includes("PRODUCT");
+  const mixed = withRawMaterials && withProducts;
 
   const loadItems = useCallback(
-    async (query: string): Promise<RawMaterialOption[]> => {
-      const items = await search(query);
+    async (query: string): Promise<PurchaseItemOption[]> => {
+      const [materialRows, productRows] = await Promise.all([
+        withRawMaterials ? searchRawMaterials(query) : [],
+        withProducts ? searchProducts(query) : [],
+      ]);
 
-      return items.map((rawMaterial) => {
-        cache.current.set(rawMaterial.id, rawMaterial);
-        return {
-          value: rawMaterial.id,
-          label: rawMaterial.name,
-          description: `${rawMaterial.baseUnit.name}${rawMaterial.category ? ` · ${rawMaterial.category}` : ""}`,
-          rawMaterial,
-        };
-      });
+      return [
+        ...materialRows.map((rawMaterial): PurchaseItemOption => {
+          rawMaterials.current.set(rawMaterial.id, rawMaterial);
+          const detail = `${rawMaterial.baseUnit.name}${rawMaterial.category ? ` · ${rawMaterial.category}` : ""}`;
+          return {
+            value: rawMaterial.id,
+            label: rawMaterial.name,
+            description: mixed ? `Matière première · ${detail}` : detail,
+            kind: "RAW_MATERIAL",
+            rawMaterial,
+          };
+        }),
+        ...productRows.map((product): PurchaseItemOption => {
+          products.current.set(product.id, product);
+          const detail = `${product.baseUnit.name} · ${product.category.name}`;
+          return {
+            value: product.id,
+            label: product.name,
+            description: mixed ? `Produit de revente · ${detail}` : detail,
+            kind: "PRODUCT",
+            product,
+          };
+        }),
+      ];
     },
-    [search],
+    [searchRawMaterials, searchProducts, withRawMaterials, withProducts, mixed],
   );
 
   const handleChange = (next: EditorLine[]) => {
     const previousByKey = new Map(lines.map((line) => [line.key, line]));
+    const defaultKind: PurchaseLineKind = withRawMaterials
+      ? "RAW_MATERIAL"
+      : "PRODUCT";
 
     onChange(
       next.map((line) => {
@@ -121,17 +219,51 @@ export function PurchaseLineEditor({
         const candidate = line as PurchaseEditorLine;
 
         if (!previous) {
-          return { ...candidate, rawMaterial: null, factorToBase: "1" };
+          return {
+            ...candidate,
+            kind: defaultKind,
+            rawMaterial: null,
+            product: null,
+            factorToBase: "1",
+          };
         }
 
         if (line.item?.value !== previous.item?.value) {
+          const product = line.item
+            ? (products.current.get(line.item.value) ?? null)
+            : null;
+          if (product) {
+            return {
+              ...candidate,
+              kind: "PRODUCT",
+              rawMaterial: null,
+              product,
+              unitId: product.baseUnitId,
+              factorToBase: "1",
+            };
+          }
           const rawMaterial = line.item
-            ? (cache.current.get(line.item.value) ?? null)
+            ? (rawMaterials.current.get(line.item.value) ?? null)
             : null;
           return {
             ...candidate,
+            kind: rawMaterial ? "RAW_MATERIAL" : defaultKind,
             rawMaterial,
+            product: null,
             unitId: rawMaterial?.baseUnitId ?? null,
+            factorToBase: "1",
+          };
+        }
+
+        // A line with an item always has a unit: a unit select emptied
+        // while its options were changing falls back to the base unit.
+        if (!line.unitId && (previous.product ?? previous.rawMaterial)) {
+          return {
+            ...candidate,
+            unitId:
+              previous.product?.baseUnitId ??
+              previous.rawMaterial?.baseUnitId ??
+              null,
             factorToBase: "1",
           };
         }
@@ -153,9 +285,12 @@ export function PurchaseLineEditor({
       lines={lines}
       onChange={handleChange}
       loadItems={loadItems}
-      itemLabel="Matière première"
+      itemLabel={mixed ? "Article" : labels[kinds[0] ?? "RAW_MATERIAL"]}
       unitsFor={(line) => {
-        const rawMaterial = (line as PurchaseEditorLine).rawMaterial;
+        const { rawMaterial, product } = line as PurchaseEditorLine;
+        if (product) {
+          return [{ value: product.baseUnitId, label: product.baseUnit.name }];
+        }
         if (!rawMaterial) {
           return [];
         }
@@ -199,6 +334,13 @@ export function PurchaseLineEditor({
       errors={errors}
       disabled={disabled}
     />
+  );
+}
+
+/// The symbol of the unit a line's stock is counted in.
+export function baseUnitSymbolOf(line: PurchaseEditorLine): string {
+  return (
+    line.product?.baseUnit.symbol ?? line.rawMaterial?.baseUnit.symbol ?? ""
   );
 }
 

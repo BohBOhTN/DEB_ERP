@@ -12,6 +12,10 @@ export const analyticsKeys = {
     ["analytics", "products", query] as const,
   customers: (query: api.AnalyticsQuery) =>
     ["analytics", "customers", query] as const,
+  purchases: (query: api.AnalyticsQuery) =>
+    ["analytics", "purchases", query] as const,
+  distributors: (query: api.AnalyticsQuery) =>
+    ["analytics", "distributors", query] as const,
 };
 
 /// Analyses read history: the `list` tier, with the previous period kept on
@@ -49,6 +53,22 @@ export function useAnalyticsCustomers(query: api.AnalyticsQuery) {
   return useQuery({
     queryKey: analyticsKeys.customers(query),
     queryFn: () => api.getCustomers(query),
+    ...options,
+  });
+}
+
+export function useAnalyticsPurchases(query: api.AnalyticsQuery) {
+  return useQuery({
+    queryKey: analyticsKeys.purchases(query),
+    queryFn: () => api.getPurchases(query),
+    ...options,
+  });
+}
+
+export function useAnalyticsDistributors(query: api.AnalyticsQuery) {
+  return useQuery({
+    queryKey: analyticsKeys.distributors(query),
+    queryFn: () => api.getDistributors(query),
     ...options,
   });
 }
