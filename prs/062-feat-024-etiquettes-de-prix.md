@@ -36,10 +36,12 @@ change.
   wins, ties to the fewer turned. The waste gathers at the right and the
   bottom. `70 × 40` gives 18 per sheet (14 upright, 4 turned),
   `50 × 30` gives 33, `100 × 60` gives 7.
-- **Tag.** Cream card, a hairline as the cut guide, a gold frame; the
-  logo and the bakery's name on top, the product's name (two lines at
-  most), the price large in navy with `TND` and `/ kg` when the unit is
-  divisible. Type scales with the tag; colours are forced on print.
+- **Tag.** Cream card with a hairline as the cut guide and a double gold
+  frame; everything centred: the logo in a gold ring beside the bakery's
+  name, a gold rule broken by a diamond, the product's name in the serif
+  (two lines at most), then the price in a navy band with cream figures,
+  smaller decimals and `TND` (`/ kg` when the unit is divisible). Type
+  scales with the tag; colours are forced on print.
 - **Print.** `Imprimer` opens the print dialog on the sheets alone, A4
   with no page margin, one sheet per page. On screen the same sheets are
   scaled to the width available, with no horizontal scroll down to
