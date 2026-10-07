@@ -55,3 +55,17 @@
   object-fit: cover;
   background: var(--bg-surface-muted);
 }
+
+/* The Prix tab (issue 023): tiles, the chart and the tables, stacked. */
+.priceStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.cardTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}

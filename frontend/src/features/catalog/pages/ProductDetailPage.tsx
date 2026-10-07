@@ -25,6 +25,7 @@ import {
   MovementsTab,
   StockTab,
 } from "../components/detailTabs.js";
+import { PriceHistoryTab } from "../components/PriceHistoryTab.js";
 import { StockMovementDialog } from "../../inventory/components/StockMovementDialog.js";
 import { useBalances } from "../../inventory/inventory.queries.js";
 import styles from "./CatalogPages.module.css";
@@ -222,6 +223,23 @@ export function ProductDetailPage() {
                     value: "purchases",
                     label: "Achats",
                     content: <PurchasesTab productId={product.id} />,
+                  },
+                ]
+              : []),
+            // Issue 023: the prices paid beside the sale prices it had.
+            ...(product.isResale
+              ? [
+                  {
+                    value: "prices",
+                    label: "Prix",
+                    content: (
+                      <PriceHistoryTab
+                        item={{
+                          productId: product.id,
+                          unitSymbol: product.baseUnit.symbol,
+                        }}
+                      />
+                    ),
                   },
                 ]
               : []),

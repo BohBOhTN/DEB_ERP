@@ -28,6 +28,10 @@ export const catalogKeys = {
     ["catalog", "related", "audit", entity, targetId] as const,
   relatedPurchases: (itemId: string, page: number) =>
     ["catalog", "related", "purchases", itemId, page] as const,
+  /// Issue 023: under the related root, so a purchase posted or a price
+  /// changed refreshes it.
+  priceHistory: (kind: "product" | "rawMaterial", itemId: string) =>
+    ["catalog", "related", "prices", kind, itemId] as const,
 };
 
 /// Every active category or unit, for selects: one page of 100 is more than
@@ -264,5 +268,21 @@ export function useUpdateUnit() {
       return api.updateUnit(unitId, fields);
     },
     onSuccess: invalidate,
+  });
+}
+
+export function useProductPriceHistory(productId: string) {
+  return useQuery({
+    queryKey: catalogKeys.priceHistory("product", productId),
+    queryFn: () => api.getProductPriceHistory(productId),
+    ...tier("list"),
+  });
+}
+
+export function useRawMaterialPriceHistory(rawMaterialId: string) {
+  return useQuery({
+    queryKey: catalogKeys.priceHistory("rawMaterial", rawMaterialId),
+    queryFn: () => api.getRawMaterialPriceHistory(rawMaterialId),
+    ...tier("list"),
   });
 }
