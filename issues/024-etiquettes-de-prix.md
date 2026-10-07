@@ -26,15 +26,15 @@ Frontend only.
 
 1. **A page `/produits/etiquettes`** (`products.view`), entry `Étiquettes` in the `Catalogue` group and a button on `Produits`. Three parts: the picker, the format, the preview.
 2. **Picker.** Search, category filter, origin filter (made here, resold); active products only, by name. A checkbox per row, `Tout sélectionner` for the rows shown, and a selection that survives a change of filter. Each picked product has a number of copies (default 1). The selection lists what is picked with its copies and a way to remove one or clear all.
-3. **Format.** Width and height of the tag in millimetres with three presets (`50 × 30`, `70 × 40`, `100 × 60`), free values from 25 to 200 by 15 to 280, kept in the URL with the filters.
-4. **Placement.** A4 portrait, 8 mm of margin kept out of the printer's unprintable edge. The tags are placed from the top-left corner with no gap: a grid of upright tags, then the right-hand strip and the bottom strip filled with tags turned by a quarter turn when they fit; the same with the roles swapped; the layout keeping the most tags per page wins, ties going to the one with fewer turned tags. All waste is pushed to the right and the bottom, so two straight cuts separate it. The page states the count: tags, pages, tags per page, share of the sheet used. A tag larger than the sheet is refused with a message.
+3. **Format.** Width and height of the tag in millimetres with three presets (`50 × 30`, `70 × 40`, `100 × 60`), free values from 25 to 194 by 15 to 281 (the printable area), kept in the URL with the filters; a value typed outside is brought back to the limit.
+4. **Placement.** A4 portrait, 8 mm of margin kept out of the printer's unprintable edge. The tags are placed from the top-left corner with no gap: a grid of upright tags, then the right-hand strip and the bottom strip filled with tags turned by a quarter turn when they fit; the same with the roles swapped; the layout keeping the most tags per page wins, ties going to the one with fewer turned tags. All waste is pushed to the right and the bottom, so two straight cuts separate it. The page states the count: tags, pages, tags per page, share of the sheet used.
 5. **Tag design.** Cream card with a thin outer hairline as the cut guide and a gold inner frame; the logo at the top left with the bakery's name beside it in the display face, the product name below, the price large in navy with `TND` small and, for a divisible unit (kilogramme, litre), `/ kg` after it. Type scales with the tag so a `50 × 30` and a `100 × 60` tag read alike. Colours are forced on print so the cream and the gold survive the browser's default "no background graphics".
 6. **Print.** `Imprimer` opens the print dialog with page size A4 and no margin, the sheets alone printed, one per page; the preview on screen is the same sheets scaled to the width available.
 
 ## Tests
 
 - Unit: the packing (counts for known sizes, upright first, turned strips, the swap, the refusal, the order of the slots, the pages).
-- Page: the rows from the API, the search and the category filter, select and unselect, copies, `Tout sélectionner`, the summary line, the format presets and free values, the refusal message, `Imprimer` calling `window.print`, the button on `Produits`.
+- Page: the rows from the API, the search and the category filter, select and unselect, copies, `Tout sélectionner`, the summary line, the format presets and free values brought back to the limits, `Imprimer` calling `window.print`, the button on `Produits`.
 - Playwright: pick two products, set a format, read the summary and the count of tags on the sheet.
 
 ## Acceptance criteria
@@ -42,7 +42,7 @@ Frontend only.
 - Picking twelve products of the category `Pains` and the format `70 × 40` gives one A4 sheet of eighteen slots (fourteen upright, four turned on the right), the twelve tags from the top left, the waste at the bottom right; `Imprimer` shows the sheet alone in the print dialog.
 - Each tag shows the logo, the product's name and its price in TND; a price per kilogramme reads `/ kg`.
 - Three copies of a product give three tags.
-- A `250 × 100` tag is refused with a message; `200 × 280` gives one tag per page.
+- A width typed as `300` comes back as `194`; `194 × 281` gives one tag per page.
 
 ## Decisions surfaced
 
