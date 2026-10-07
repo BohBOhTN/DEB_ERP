@@ -20,6 +20,7 @@ import {
   PurchasesTab,
   StockTab,
 } from "../components/detailTabs.js";
+import { PriceHistoryTab } from "../components/PriceHistoryTab.js";
 import { conversionsSummary } from "./RawMaterialsPage.js";
 import styles from "./CatalogPages.module.css";
 
@@ -116,6 +117,23 @@ export function RawMaterialDetailPage() {
               label: "Achats",
               content: <PurchasesTab rawMaterialId={rawMaterial.id} />,
             },
+            // Issue 023: how the price paid moved, purchase after purchase.
+            ...(permissions.has("purchases.view")
+              ? [
+                  {
+                    value: "prices",
+                    label: "Prix",
+                    content: (
+                      <PriceHistoryTab
+                        item={{
+                          rawMaterialId: rawMaterial.id,
+                          unitSymbol: rawMaterial.baseUnit.symbol,
+                        }}
+                      />
+                    ),
+                  },
+                ]
+              : []),
           ]}
         />
       </div>

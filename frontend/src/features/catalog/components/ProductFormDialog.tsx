@@ -241,7 +241,7 @@ export function ProductFormDialog({
           error={errors.approximateCostTnd?.message}
           hint={
             isResale
-              ? "Suit le prix du dernier achat validé de ce produit"
+              ? "Facultatif · votre coût d'achat de référence ; les prix payés se lisent dans l'onglet Prix"
               : "Facultatif · par unité de base, ingrédients seulement"
           }
         >
